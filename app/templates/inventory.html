@@ -36,8 +36,17 @@
   {% if content.truncated %}
   <p class="error">File is large — showing the first 512 KB only.</p>
   {% endif %}
-  <pre class="log">{{ content.content }}</pre>
+  {% set ext = content.rel_path.rsplit('.', 1)[-1].lower() if '.' in content.rel_path else '' %}
+  {% set hl_lang = 'ini' if ext in ['ini', 'cfg'] else 'yaml' %}
+  <pre style="margin:0;"><code class="language-{{ hl_lang }}" id="inventory-code">{{ content.content }}</code></pre>
   {% endif %}
 </div>
 {% endif %}
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  const inventoryCodeEl = document.getElementById("inventory-code");
+  if (inventoryCodeEl) hljs.highlightElement(inventoryCodeEl);
+</script>
 {% endblock %}

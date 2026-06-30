@@ -21,7 +21,7 @@
   <div class="playbook-row">
     <div class="playbook-row-header">
       <a class="playbook-name" href="/playbooks/view?rel_path={{ pb.rel_path | urlencode }}">{{ pb.name }}</a>
-      <a class="playbook-path" href="/playbooks/view?rel_path={{ pb.rel_path | urlencode }}">{{ pb.rel_path }}</a>
+      <span class="playbook-path">{{ pb.rel_path }}</span>
     </div>
     <form method="post" action="/playbooks/run" class="playbook-run-form">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
