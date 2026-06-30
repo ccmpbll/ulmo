@@ -82,8 +82,7 @@ button:active, .btn:active { transform: scale(0.97); }
 button:disabled, .btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; opacity: 1; transform: none; }
 button:disabled:hover, .btn:disabled:hover { opacity: 1; }
 
-.sync-btn { display: inline-flex; align-items: center; gap: 7px; }
-.sync-btn .sync-icon { font-size: 1rem; line-height: 1; }
+.sync-btn { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 
 .error { color: var(--red); }
 .ok { color: var(--green); }
