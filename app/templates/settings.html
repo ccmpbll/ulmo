@@ -61,12 +61,17 @@
     <p class="muted">No keys configured yet.</p>
     {% endif %}
 
-    <form method="post" action="/settings/ssh-key">
-      <label>Key name (matches the filename in <code>ansible_ssh_private_key_file</code>)
-        <input type="text" name="filename" required placeholder="ansible-ed25519" />
+    <form method="post" action="/settings/ssh-key" enctype="multipart/form-data">
+      <label>Key name (matches the filename in <code>ansible_ssh_private_key_file</code> — leave
+        blank to use the uploaded file's name)
+        <input type="text" name="filename" placeholder="ansible-ed25519" />
       </label>
-      <label>Private key (PEM / OpenSSH format)
-        <textarea name="private_key" rows="10" required
+      <label>Upload a file
+        <input type="file" name="key_file" />
+      </label>
+      <p class="muted" style="margin: 4px 0 14px;">— or —</p>
+      <label>Paste a private key (PEM / OpenSSH format)
+        <textarea name="private_key" rows="10"
           style="width:100%; margin-top:6px; padding:8px 10px; background:#11141a; border:1px solid var(--border); border-radius:6px; color:var(--text); font-family: ui-monospace, monospace; font-size:0.8rem;"
           placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
       </label>

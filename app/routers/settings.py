@@ -1,6 +1,6 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
@@ -54,9 +54,23 @@ def update_settings(
 
 
 @router.post("/settings/ssh-key")
-def upload_ssh_key(request: Request, filename: str = Form(...), private_key: str = Form(...)):
+async def upload_ssh_key(
+    request: Request,
+    filename: str = Form(""),
+    private_key: str = Form(""),
+    key_file: UploadFile | None = File(None),
+):
     try:
-        ssh_keys.save_key(filename, private_key)
+        if key_file is not None and key_file.filename:
+            content = (await key_file.read()).decode("utf-8", errors="replace")
+            filename = filename.strip() or key_file.filename
+        else:
+            content = private_key
+
+        if not filename.strip():
+            raise ValueError("Give the key a name, or upload a file (its filename will be used).")
+
+        ssh_keys.save_key(filename, content)
     except ValueError as exc:
         return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+saved", status_code=303)
