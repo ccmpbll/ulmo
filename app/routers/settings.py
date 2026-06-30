@@ -53,6 +53,7 @@ def update_settings(
     git_sync_cron: str = Form(""),
     extra_args: str = Form(""),
     recent_runs_count: str = Form("5"),
+    run_timeout_minutes: str = Form("60"),
 ):
     try:
         recent_runs_count_int = int(recent_runs_count.strip())
@@ -61,6 +62,15 @@ def update_settings(
     except ValueError:
         return RedirectResponse(
             "/settings?error=Recent+runs+to+show+must+be+a+positive+number", status_code=303
+        )
+
+    try:
+        run_timeout_minutes_int = int(run_timeout_minutes.strip())
+        if run_timeout_minutes_int < 0:
+            raise ValueError
+    except ValueError:
+        return RedirectResponse(
+            "/settings?error=Run+timeout+must+be+0+or+a+positive+number", status_code=303
         )
 
     settings_store.set_many(
@@ -72,6 +82,7 @@ def update_settings(
             "git_sync_cron": git_sync_cron.strip(),
             "extra_args": extra_args.strip(),
             "recent_runs_count": str(recent_runs_count_int),
+            "run_timeout_minutes": str(run_timeout_minutes_int),
         }
     )
     scheduler.reschedule(git_sync_cron.strip())

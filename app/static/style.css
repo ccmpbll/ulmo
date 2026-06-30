@@ -114,6 +114,25 @@ th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: u
 .badge.failed { background: rgba(239, 91, 91, 0.15); color: var(--red); }
 .badge.running { background: rgba(224, 179, 65, 0.15); color: var(--yellow); }
 
+#progress-panel { display: flex; flex-direction: column; gap: 10px; }
+#progress-hosts { display: flex; flex-wrap: wrap; gap: 6px; }
+.host-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 100px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  background: #11141a;
+  color: var(--text);
+}
+.host-chip.pending { color: var(--muted); }
+.host-chip.running { color: var(--yellow); border-color: rgba(224, 179, 65, 0.4); }
+.host-chip.ok, .host-chip.changed { color: var(--green); border-color: rgba(62, 207, 142, 0.4); }
+.host-chip.skipped { color: var(--muted); }
+.host-chip.failed, .host-chip.unreachable { color: var(--red); border-color: rgba(239, 91, 91, 0.4); }
+
 pre.log {
   background: #0a0c10;
   border: 1px solid var(--border);

@@ -12,6 +12,7 @@ DEFAULTS = {
     "extra_args": "",  # extra ansible-playbook CLI args, e.g. --tags foo
     "inventory_path": "inventory.yaml",  # relative to repo root; file or directory
     "recent_runs_count": "5",  # how many rows to show in the dashboard's Recent Runs table
+    "run_timeout_minutes": "60",  # kill a run after this long; 0 = no timeout
     "notify_on": "",  # "" | "all" | "failure"
     "notify_pushover_token": "",
     "notify_pushover_user": "",

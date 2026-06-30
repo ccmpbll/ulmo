@@ -31,6 +31,9 @@
       <label>Recent runs to show on dashboard
         <input type="number" name="recent_runs_count" value="{{ settings.recent_runs_count }}" min="1" step="1" />
       </label>
+      <label>Run timeout, minutes (0 = no timeout)
+        <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
+      </label>
       <button type="submit">Save settings</button>
     </form>
   </div>

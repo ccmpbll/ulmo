@@ -12,10 +12,39 @@
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 {% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
+
+{% if run.status == "running" %}
+<div class="card" id="progress-panel">
+  <p class="muted" id="progress-phase">starting…</p>
+  <div id="progress-hosts"></div>
+</div>
+{% endif %}
+
 <pre class="log" id="log"></pre>
 <p id="run-complete-msg" class="{{ 'ok' if run.status == 'success' else 'error' }}" style="{% if run.status == 'running' %}display:none;{% endif %}">
   {% if run.status == "success" %}Playbook completed successfully.{% elif run.status == "failed" %}Playbook failed.{% endif %}
 </p>
+
+<div class="card" id="recap-panel" style="{% if not recap %}display:none;{% endif %} margin-top:16px;">
+  <h3 style="margin:0 0 10px;">Play Recap</h3>
+  <table id="recap-table">
+    <thead><tr><th>Host</th><th>OK</th><th>Changed</th><th>Unreachable</th><th>Failed</th><th>Skipped</th></tr></thead>
+    <tbody>
+      {% if recap %}
+      {% for host in recap.processed.keys() %}
+      <tr>
+        <td>{{ host }}</td>
+        <td>{{ recap.ok.get(host, 0) }}</td>
+        <td>{{ recap.changed.get(host, 0) }}</td>
+        <td>{{ recap.dark.get(host, 0) }}</td>
+        <td>{{ recap.failures.get(host, 0) }}</td>
+        <td>{{ recap.skipped.get(host, 0) }}</td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+    </tbody>
+  </table>
+</div>
 
 <script src="https://unpkg.com/ansi_up@5.2.1/ansi_up.js"></script>
 <script>
@@ -26,10 +55,44 @@
   logEl.innerHTML = ansiUp.ansi_to_html(initialLog || (isRunning ? "Starting run...\n" : ""));
   logEl.scrollTop = logEl.scrollHeight;
 
+  function renderHostChips(hosts) {
+    const container = document.getElementById("progress-hosts");
+    if (!container) return;
+    container.innerHTML = "";
+    for (const host in hosts) {
+      const span = document.createElement("span");
+      span.className = "host-chip " + hosts[host];
+      span.textContent = host + ": " + hosts[host];
+      container.appendChild(span);
+    }
+  }
+
+  function renderRecap(recap) {
+    const panel = document.getElementById("recap-panel");
+    const tbody = document.querySelector("#recap-table tbody");
+    if (!panel || !tbody) return;
+    tbody.innerHTML = "";
+    const hosts = Object.keys(recap.processed || {});
+    for (const host of hosts) {
+      const tr = document.createElement("tr");
+      const cell = (n) => "<td>" + n + "</td>";
+      tr.innerHTML =
+        cell(host) +
+        cell((recap.ok || {})[host] || 0) +
+        cell((recap.changed || {})[host] || 0) +
+        cell((recap.dark || {})[host] || 0) +
+        cell((recap.failures || {})[host] || 0) +
+        cell((recap.skipped || {})[host] || 0);
+      tbody.appendChild(tr);
+    }
+    panel.style.display = "";
+  }
+
   {% if run.status == "running" %}
   const badgeEl = document.getElementById("status-badge");
   const cancelBtn = document.getElementById("cancel-btn");
   const completeMsg = document.getElementById("run-complete-msg");
+  const phaseEl = document.getElementById("progress-phase");
   let receivedAny = false;
   const source = new EventSource("/runs/{{ run.id }}/stream");
   source.onmessage = (event) => {
@@ -40,6 +103,16 @@
     logEl.insertAdjacentHTML("beforeend", ansiUp.ansi_to_html(JSON.parse(event.data)));
     logEl.scrollTop = logEl.scrollHeight;
   };
+  source.addEventListener("progress", (event) => {
+    const data = JSON.parse(event.data);
+    if (phaseEl) {
+      phaseEl.textContent = data.current_task ? data.phase + " — " + data.current_task : data.phase;
+    }
+    renderHostChips(data.hosts || {});
+  });
+  source.addEventListener("recap", (event) => {
+    renderRecap(JSON.parse(event.data));
+  });
   source.addEventListener("done", (event) => {
     const status = event.data;
     badgeEl.textContent = status;
@@ -48,6 +121,8 @@
     completeMsg.textContent = status === "success" ? "Playbook completed successfully." : "Playbook failed.";
     completeMsg.className = status === "success" ? "ok" : "error";
     completeMsg.style.display = "";
+    const progressPanel = document.getElementById("progress-panel");
+    if (progressPanel) progressPanel.style.display = "none";
     source.close();
   });
   {% endif %}

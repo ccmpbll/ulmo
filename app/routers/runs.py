@@ -28,13 +28,17 @@ def run_detail(request: Request, run_id: int):
     if run is None:
         return RedirectResponse("/runs", status_code=303)
     log = runner.read_log(run_id)
-    return templates.TemplateResponse(request, "run_detail.html", {"run": run, "log": log})
+    recap = runner.get_recap(run_id)
+    return templates.TemplateResponse(
+        request, "run_detail.html", {"run": run, "log": log, "recap": recap}
+    )
 
 
 @router.get("/runs/{run_id}/stream")
 async def run_stream(run_id: int):
     async def event_source():
         last_pos = 0
+        last_progress_json = None
         while True:
             with Session(engine) as session:
                 run = session.get(RunHistory, run_id)
@@ -54,7 +58,17 @@ async def run_stream(run_id: int):
                 except OSError:
                     pass
 
+            progress = runner.get_progress(run_id)
+            if progress is not None:
+                progress_json = json.dumps(progress)
+                if progress_json != last_progress_json:
+                    last_progress_json = progress_json
+                    yield f"event: progress\ndata: {progress_json}\n\n"
+
             if run.status != "running":
+                recap = runner.get_recap(run_id)
+                if recap is not None:
+                    yield f"event: recap\ndata: {json.dumps(recap)}\n\n"
                 yield f"event: done\ndata: {run.status}\n\n"
                 return
 
