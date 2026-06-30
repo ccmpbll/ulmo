@@ -4,36 +4,50 @@
 <div class="page-header">
   <h1>{{ run.playbook }} <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span></h1>
   <div style="display:flex;gap:8px;align-items:center;">
-    {% if run.status == "running" %}
-    <form method="post" action="/runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this run?');">
-      <button type="submit" class="danger">Cancel</button>
+    <form method="post" action="/runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this run?');" id="cancel-form">
+      <button type="submit" class="danger" id="cancel-btn" {% if run.status != "running" %}disabled{% endif %}>Cancel</button>
     </form>
-    {% endif %}
     <a class="btn secondary" href="/runs">Back to history</a>
   </div>
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 {% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
 <pre class="log" id="log"></pre>
+<p id="run-complete-msg" class="{{ 'ok' if run.status == 'success' else 'error' }}" style="{% if run.status == 'running' %}display:none;{% endif %}">
+  {% if run.status == "success" %}Playbook completed successfully.{% elif run.status == "failed" %}Playbook failed.{% endif %}
+</p>
 
 <script src="https://unpkg.com/ansi_up@5.2.1/ansi_up.js"></script>
 <script>
   const logEl = document.getElementById("log");
   const ansiUp = new AnsiUp();
   const initialLog = {{ log | tojson }};
-  logEl.innerHTML = ansiUp.ansi_to_html(initialLog);
+  const isRunning = {{ "true" if run.status == "running" else "false" }};
+  logEl.innerHTML = ansiUp.ansi_to_html(initialLog || (isRunning ? "Starting run...\n" : ""));
   logEl.scrollTop = logEl.scrollHeight;
 
   {% if run.status == "running" %}
   const badgeEl = document.getElementById("status-badge");
+  const cancelBtn = document.getElementById("cancel-btn");
+  const completeMsg = document.getElementById("run-complete-msg");
+  let receivedAny = false;
   const source = new EventSource("/runs/{{ run.id }}/stream");
   source.onmessage = (event) => {
+    if (!receivedAny) {
+      receivedAny = true;
+      logEl.innerHTML = "";
+    }
     logEl.insertAdjacentHTML("beforeend", ansiUp.ansi_to_html(JSON.parse(event.data)));
     logEl.scrollTop = logEl.scrollHeight;
   };
   source.addEventListener("done", (event) => {
-    badgeEl.textContent = event.data;
-    badgeEl.className = "badge " + event.data;
+    const status = event.data;
+    badgeEl.textContent = status;
+    badgeEl.className = "badge " + status;
+    cancelBtn.disabled = true;
+    completeMsg.textContent = status === "success" ? "Playbook completed successfully." : "Playbook failed.";
+    completeMsg.className = status === "success" ? "ok" : "error";
+    completeMsg.style.display = "";
     source.close();
   });
   {% endif %}

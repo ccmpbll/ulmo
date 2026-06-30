@@ -77,6 +77,8 @@ button, .btn {
 button.secondary, .btn.secondary { background: #2a2e38; }
 button.danger, .btn.danger { background: var(--red); }
 button:hover, .btn:hover { opacity: 0.9; }
+button:disabled, .btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; opacity: 1; }
+button:disabled:hover, .btn:disabled:hover { opacity: 1; }
 
 .error { color: var(--red); }
 .ok { color: var(--green); }
