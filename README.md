@@ -166,9 +166,9 @@ Two environment variables are set for every run (and for the collection install 
 Each "Sync from git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
 repo has one — see [Repo layout](#repo-layout) for where it's expected. This is what provides
 things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable; those
-moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions. (For
-backward compatibility the lookup also checks inside the playbooks subdirectory before falling
-back to root, but root is the documented location.)
+moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions. (The
+lookup checks the repo root first, then falls back to inside the playbooks subdirectory, for
+repos that predate this convention.)
 
 ## Per-playbook schedules
 

@@ -29,10 +29,10 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
 def _find_requirements_file() -> Path | None:
     subdir = settings_store.get("playbooks_subdir").strip("/") or "."
     candidates = [
-        REPO_DIR / subdir / "requirements.yaml",
-        REPO_DIR / subdir / "requirements.yml",
         REPO_DIR / "requirements.yaml",
         REPO_DIR / "requirements.yml",
+        REPO_DIR / subdir / "requirements.yaml",
+        REPO_DIR / subdir / "requirements.yml",
     ]
     return next((p for p in candidates if p.exists()), None)
 
