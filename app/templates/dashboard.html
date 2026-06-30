@@ -25,18 +25,34 @@
     </div>
     <form method="post" action="/playbooks/run" class="playbook-run-form">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      <div class="tag-area">
+      <div class="run-options">
         {% if pb.tags %}
-        <div class="tag-list">
-          {% for tag in pb.tags %}
-          <label class="tag-chip">
-            <input type="checkbox" name="tags" value="{{ tag }}" />
-            {{ tag }}
-          </label>
-          {% endfor %}
+        <div class="chip-section">
+          <span class="chip-label muted">Tags</span>
+          <div class="chip-list">
+            {% for tag in pb.tags %}
+            <label class="tag-chip">
+              <input type="checkbox" name="tags" value="{{ tag }}" />
+              {{ tag }}
+            </label>
+            {% endfor %}
+          </div>
         </div>
         {% elif pb.tag_error %}
         <span class="muted" style="font-size:0.78rem;">couldn't list tags</span>
+        {% endif %}
+        {% if hosts %}
+        <details class="limit-details">
+          <summary class="chip-label muted">Limit hosts</summary>
+          <div class="chip-list" style="margin-top:6px;">
+            {% for host in hosts %}
+            <label class="tag-chip">
+              <input type="checkbox" name="limit" value="{{ host }}" />
+              {{ host }}
+            </label>
+            {% endfor %}
+          </div>
+        </details>
         {% endif %}
       </div>
       <button type="submit">Run</button>
@@ -53,7 +69,11 @@
     <tbody>
       {% for run in recent_runs %}
       <tr>
-        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a>{% if run.tags %} <span class="muted">({{ run.tags }})</span>{% endif %}</td>
+        <td>
+          <a href="/runs/{{ run.id }}">{{ run.playbook }}</a>
+          {% if run.tags %}<span class="muted"> ({{ run.tags }})</span>{% endif %}
+          {% if run.limit %}<span class="muted"> [{{ run.limit }}]</span>{% endif %}
+        </td>
         <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
         <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
       </tr>

@@ -61,3 +61,9 @@ async def run_stream(run_id: int):
             await asyncio.sleep(1)
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+@router.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: int):
+    runner.cancel_run(run_id)
+    return RedirectResponse(f"/runs/{run_id}", status_code=303)

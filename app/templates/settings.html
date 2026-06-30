@@ -126,6 +126,52 @@
   </div>
 </div>
 
+<div class="settings-section">
+  <h2>Notifications</h2>
+  <div class="card">
+    <form method="post" action="/settings/notifications">
+      <label>Notify on
+        <select name="notify_on">
+          <option value=""{% if not settings.notify_on %} selected{% endif %}>Disabled</option>
+          <option value="all"{% if settings.notify_on == "all" %} selected{% endif %}>Every run</option>
+          <option value="failure"{% if settings.notify_on == "failure" %} selected{% endif %}>Failures only</option>
+        </select>
+      </label>
+      <label>Pushover app token
+        <input type="text" name="notify_pushover_token" value="{{ settings.notify_pushover_token }}" placeholder="aXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" />
+      </label>
+      <label>Pushover user key
+        <input type="text" name="notify_pushover_user" value="{{ settings.notify_pushover_user }}" placeholder="uXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" />
+      </label>
+      <label>ntfy URL
+        <input type="text" name="notify_ntfy_url" value="{{ settings.notify_ntfy_url }}" placeholder="https://ntfy.sh/my-topic" />
+      </label>
+      <button type="submit">Save notification settings</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Playbook Schedules</h2>
+  <div class="card">
+    {% if playbooks %}
+    {% for pb in playbooks %}
+    <form method="post" action="/settings/playbook-schedule" class="schedule-row">
+      <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
+      <div class="schedule-name">
+        <span class="playbook-name">{{ pb.name }}</span>
+        <span class="muted" style="font-size:0.78rem;">{{ pb.rel_path }}</span>
+      </div>
+      <input type="text" name="cron" value="{{ pb.cron }}" placeholder="*/30 * * * *  (blank = disabled)" class="schedule-cron" />
+      <button type="submit" class="secondary">Save</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    <p class="muted">Sync a repo first to see playbooks here.</p>
+    {% endif %}
+  </div>
+</div>
+
 {% if not auth_disabled %}
 <div class="settings-section">
   <h2>Change your password</h2>

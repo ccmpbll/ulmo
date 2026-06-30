@@ -1,31 +1,45 @@
-import os
-import shlex
-import subprocess
 import threading
+from pathlib import Path
+from typing import Any
 
+import ansible_runner
 from sqlmodel import Session
 
-from app.config import COLLECTIONS_DIR, REPO_DIR, RUNS_DIR
+from app.config import COLLECTIONS_DIR, REPO_DIR, RUNNER_DATA_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
 from app.services import settings_store
 
+_active_runners: dict[int, Any] = {}
+_lock = threading.Lock()
 
-def log_path(run_id: int):
-    return RUNS_DIR / f"{run_id}.log"
+
+def log_path(run_id: int) -> Path:
+    return RUNNER_DATA_DIR / "artifacts" / str(run_id) / "stdout"
 
 
-def start_run(playbook_rel_path: str, triggered_by: str = "manual", tags: str = "") -> RunHistory:
+def start_run(
+    playbook_rel_path: str,
+    triggered_by: str = "manual",
+    tags: str = "",
+    limit: str = "",
+) -> RunHistory:
     tags = tags.strip()
+    limit = limit.strip()
     with Session(engine) as session:
-        record = RunHistory(playbook=playbook_rel_path, triggered_by=triggered_by, tags=tags or None)
+        record = RunHistory(
+            playbook=playbook_rel_path,
+            triggered_by=triggered_by,
+            tags=tags or None,
+            limit=limit or None,
+        )
         session.add(record)
         session.commit()
         session.refresh(record)
         run_id = record.id
 
     thread = threading.Thread(
-        target=_execute, args=(run_id, playbook_rel_path, tags), daemon=True
+        target=_execute, args=(run_id, playbook_rel_path, tags, limit), daemon=True
     )
     thread.start()
 
@@ -33,70 +47,51 @@ def start_run(playbook_rel_path: str, triggered_by: str = "manual", tags: str = 
         return session.get(RunHistory, run_id)
 
 
-def _execute(run_id: int, playbook_rel_path: str, tags: str = "") -> None:
+def cancel_run(run_id: int) -> bool:
+    with _lock:
+        runner = _active_runners.get(run_id)
+    if runner is None:
+        return False
+    runner.cancel()
+    return True
+
+
+def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "") -> None:
+    from app.services import notifier
+
     settings = settings_store.get_all()
-    extra_args = shlex.split(settings.get("extra_args", "") or "")
-    cmd = ["ansible-playbook", playbook_rel_path, *extra_args]
-    if tags:
-        cmd += ["--tags", tags]
+    extra_args = settings.get("extra_args", "").strip() or None
 
-    env = os.environ.copy()
-    env["ANSIBLE_FORCE_COLOR"] = "true"
-    # Ansible only auto-detects collections under ~/.ansible/collections (not
-    # persisted across container restarts); point it at the volume-backed
-    # location collections get installed into during git sync.
-    env["ANSIBLE_COLLECTIONS_PATH"] = str(COLLECTIONS_DIR)
+    envvars = {
+        "ANSIBLE_FORCE_COLOR": "true",
+        "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_DIR),
+    }
 
-    out_path = log_path(run_id)
-    with open(out_path, "w") as log_file:
-        log_file.write(f"$ {' '.join(cmd)}\n(cwd: {REPO_DIR})\n\n")
-        log_file.flush()
-        try:
-            process = subprocess.Popen(
-                cmd,
-                cwd=REPO_DIR,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            timed_out = False
+    ar_thread, runner = ansible_runner.run_async(
+        private_data_dir=str(RUNNER_DATA_DIR),
+        project_dir=str(REPO_DIR),
+        playbook=playbook_rel_path,
+        tags=tags or None,
+        limit=limit or None,
+        envvars=envvars,
+        cmdline=extra_args,
+        ident=str(run_id),
+        quiet=True,
+    )
 
-            def _kill():
-                nonlocal timed_out
-                timed_out = True
-                try:
-                    process.kill()
-                except OSError:
-                    pass
+    with _lock:
+        _active_runners[run_id] = runner
 
-            killer = threading.Timer(3600, _kill)
-            killer.daemon = True
-            killer.start()
-            try:
-                for line in process.stdout:
-                    log_file.write(line)
-                    log_file.flush()
-                return_code = process.wait()
-            finally:
-                killer.cancel()
+    ar_thread.join()
 
-            if timed_out:
-                log_file.write("\n[ulmo] killed after 1h timeout\n")
-                status = "failed"
-            else:
-                status = "success" if return_code == 0 else "failed"
-        except Exception as exc:  # noqa: BLE001
-            log_file.write(f"\n[ulmo] failed to launch ansible-playbook: {exc}\n")
-            return_code = -1
-            status = "failed"
+    with _lock:
+        _active_runners.pop(run_id, None)
 
-        if status == "success":
-            log_file.write("\n\033[1;32m=== DONE! ===\033[0m\n")
-        else:
-            log_file.write(f"\n\033[1;31m=== FAILED (exit code {return_code}) ===\033[0m\n")
-        log_file.flush()
+    if runner.status == "successful":
+        status = "success"
+    else:
+        status = "failed"
+    return_code = runner.rc if runner.rc is not None else -1
 
     with Session(engine) as session:
         record = session.get(RunHistory, run_id)
@@ -105,10 +100,13 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "") -> None:
         record.finished_at = utcnow()
         session.add(record)
         session.commit()
+        session.refresh(record)
+
+    notifier.notify_run_complete(record)
 
 
 def read_log(run_id: int) -> str:
     path = log_path(run_id)
     if not path.exists():
         return ""
-    return path.read_text()
+    return path.read_text(errors="replace")

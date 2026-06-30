@@ -1,3 +1,5 @@
+import json
+import subprocess
 from pathlib import Path
 
 from app.config import REPO_DIR
@@ -36,6 +38,26 @@ def list_files() -> list[dict]:
             continue
         files.append({"rel_path": str(path.relative_to(REPO_DIR)), "name": path.name})
     return files
+
+
+def list_hosts() -> list[str]:
+    root = _inventory_root()
+    if root is None or not root.exists():
+        return []
+    try:
+        result = subprocess.run(
+            ["ansible-inventory", "-i", str(root), "--list"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return []
+        data = json.loads(result.stdout)
+        return sorted(data.get("_meta", {}).get("hostvars", {}).keys())
+    except Exception:
+        return []
 
 
 def read_file(rel_path: str) -> dict:

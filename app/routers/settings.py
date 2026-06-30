@@ -7,8 +7,8 @@ from sqlmodel import Session, select
 from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
-from app.models import User
-from app.services import scheduler, settings_store, ssh_keys
+from app.models import PlaybookSchedule, User
+from app.services import git_sync, scheduler, settings_store, ssh_keys
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -18,6 +18,15 @@ router = APIRouter(dependencies=[Depends(require_login)])
 def settings_page(request: Request, error: str | None = None, ok: str | None = None):
     with Session(engine) as session:
         users = session.exec(select(User).order_by(User.username)).all()
+    playbooks = git_sync.list_playbooks()
+    with Session(engine) as session:
+        schedules = {
+            s.rel_path: s.cron
+            for s in session.exec(select(PlaybookSchedule)).all()
+        }
+    for pb in playbooks:
+        pb["cron"] = schedules.get(pb["rel_path"], "")
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -29,6 +38,7 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "ssh_keys": ssh_keys.list_keys(),
             "ssh_link_warnings": ssh_keys.ensure_symlinks(),
             "auth_disabled": AUTH_DISABLED,
+            "playbooks": playbooks,
         },
     )
 
@@ -124,3 +134,54 @@ def remove_ssh_key(request: Request, filename: str):
     except ValueError as exc:
         return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+removed", status_code=303)
+
+
+@router.post("/settings/notifications")
+def update_notifications(
+    request: Request,
+    notify_on: str = Form(""),
+    notify_pushover_token: str = Form(""),
+    notify_pushover_user: str = Form(""),
+    notify_ntfy_url: str = Form(""),
+):
+    settings_store.set_many(
+        {
+            "notify_on": notify_on.strip(),
+            "notify_pushover_token": notify_pushover_token.strip(),
+            "notify_pushover_user": notify_pushover_user.strip(),
+            "notify_ntfy_url": notify_ntfy_url.strip(),
+        }
+    )
+    return RedirectResponse("/settings?ok=Notification+settings+saved", status_code=303)
+
+
+@router.post("/settings/playbook-schedule")
+def update_playbook_schedule(
+    request: Request,
+    rel_path: str = Form(...),
+    cron: str = Form(""),
+):
+    cron = cron.strip()
+    if cron:
+        from apscheduler.triggers.cron import CronTrigger
+        try:
+            CronTrigger.from_crontab(cron)
+        except ValueError:
+            return RedirectResponse(
+                f"/settings?error={quote(f'Invalid cron expression for {rel_path}')}",
+                status_code=303,
+            )
+    with Session(engine) as session:
+        row = session.get(PlaybookSchedule, rel_path)
+        if row is None:
+            row = PlaybookSchedule(rel_path=rel_path, cron=cron)
+        else:
+            row.cron = cron
+        session.add(row)
+        session.commit()
+    scheduler.reschedule_playbook(rel_path, cron)
+    action = "enabled" if cron else "disabled"
+    return RedirectResponse(
+        f"/settings?ok={quote(f'Schedule {action} for {rel_path}')}",
+        status_code=303,
+    )

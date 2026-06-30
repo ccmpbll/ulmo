@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
-from app.services import git_sync, playbook_tags, runner, settings_store
+from app.services import git_sync, inventory, playbook_tags, runner, settings_store
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -37,6 +37,7 @@ def dashboard(request: Request):
             "playbooks": playbooks,
             "recent_runs": recent_runs,
             "repo_synced": git_sync.repo_synced(),
+            "hosts": inventory.list_hosts(),
         },
     )
 
@@ -55,9 +56,15 @@ def run_playbook(
     user=Depends(require_login),
     rel_path: str = Form(...),
     tags: list[str] = Form([]),
+    limit: list[str] = Form([]),
 ):
     valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
     if rel_path not in valid_paths:
         return RedirectResponse("/?error=Unknown+playbook", status_code=303)
-    record = runner.start_run(rel_path, triggered_by=user.username, tags=",".join(tags))
+    record = runner.start_run(
+        rel_path,
+        triggered_by=user.username,
+        tags=",".join(tags),
+        limit=",".join(limit),
+    )
     return RedirectResponse(f"/runs/{record.id}", status_code=303)

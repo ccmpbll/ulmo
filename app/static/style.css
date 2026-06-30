@@ -130,9 +130,11 @@ pre.log {
 .playbook-name { font-weight: 700; font-size: 1.05rem; }
 .playbook-path { color: var(--muted); font-size: 0.8rem; }
 
-.playbook-run-form { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; margin: 0; }
-.tag-area { min-width: 0; }
-.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.playbook-run-form { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 12px; margin: 0; }
+.run-options { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.chip-section { display: flex; flex-direction: column; gap: 4px; }
+.chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-chip {
   display: inline-flex;
   align-items: center;
@@ -149,6 +151,17 @@ pre.log {
 }
 .tag-chip input[type="checkbox"] { display: inline; width: auto; margin: 0; }
 .tag-chip:has(input:checked) { border-color: var(--accent); background: rgba(79, 140, 255, 0.12); }
+
+.limit-details { padding: 0; }
+.limit-details summary { cursor: pointer; list-style: none; display: inline-block; }
+.limit-details summary::-webkit-details-marker { display: none; }
+.limit-details summary::before { content: "▸ "; font-size: 0.65rem; }
+.limit-details[open] summary::before { content: "▾ "; }
+
+.schedule-row { display: grid; grid-template-columns: 1fr 220px auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); margin: 0; }
+.schedule-row:last-child { border-bottom: none; }
+.schedule-name { display: flex; flex-direction: column; gap: 2px; }
+.schedule-cron { margin-top: 0 !important; }
 
 .settings-section { margin-bottom: 32px; }
 .settings-section h2 { font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }

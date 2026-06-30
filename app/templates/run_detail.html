@@ -3,9 +3,17 @@
 {% block content %}
 <div class="page-header">
   <h1>{{ run.playbook }} <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span></h1>
-  <a class="btn secondary" href="/runs">Back to history</a>
+  <div style="display:flex;gap:8px;align-items:center;">
+    {% if run.status == "running" %}
+    <form method="post" action="/runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this run?');">
+      <button type="submit" class="danger">Cancel</button>
+    </form>
+    {% endif %}
+    <a class="btn secondary" href="/runs">Back to history</a>
+  </div>
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
+{% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
 <pre class="log" id="log"></pre>
 
 <script src="https://unpkg.com/ansi_up@5.2.1/ansi_up.js"></script>
