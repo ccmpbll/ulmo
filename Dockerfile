@@ -1,14 +1,18 @@
-FROM python:3.12-slim
+FROM debian:bookworm-slim
 
 ENV PYTHONUNBUFFERED=1 \
-    HOMELAB_DECK_DATA_DIR=/data
+    HOMELAB_DECK_DATA_DIR=/data \
+    PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-venv \
         git \
         openssh-client \
         sshpass \
         ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/venv
 
 WORKDIR /app
 
