@@ -10,6 +10,7 @@ from app.auth import (
     hash_password,
     verify_password,
 )
+from app.config import AUTH_DISABLED
 from app.database import engine
 from app.models import User
 from app.templating import templates
@@ -19,6 +20,8 @@ router = APIRouter()
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_form(request: Request):
+    if AUTH_DISABLED:
+        return RedirectResponse("/", status_code=303)
     if any_user_exists():
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(request, "setup.html", {"error": None})
@@ -31,6 +34,8 @@ def setup_submit(
     password: str = Form(...),
     password_confirm: str = Form(...),
 ):
+    if AUTH_DISABLED:
+        return RedirectResponse("/", status_code=303)
     if any_user_exists():
         return RedirectResponse("/login", status_code=303)
     if not username.strip() or not password:
@@ -48,6 +53,8 @@ def setup_submit(
 
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
+    if AUTH_DISABLED:
+        return RedirectResponse("/", status_code=303)
     if not any_user_exists():
         return RedirectResponse("/setup", status_code=303)
     if current_user(request):
@@ -57,6 +64,8 @@ def login_form(request: Request):
 
 @router.post("/login", response_class=HTMLResponse)
 def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+    if AUTH_DISABLED:
+        return RedirectResponse("/", status_code=303)
     user = get_user_by_username(username.strip())
     if user is None or not verify_password(password, user.password_hash):
         return templates.TemplateResponse(
@@ -68,6 +77,8 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 
 @router.post("/logout")
 def logout(request: Request):
+    if AUTH_DISABLED:
+        return RedirectResponse("/", status_code=303)
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
 
@@ -79,6 +90,8 @@ def change_password(
     new_password: str = Form(...),
     new_password_confirm: str = Form(...),
 ):
+    if AUTH_DISABLED:
+        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
     user = current_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
@@ -96,6 +109,8 @@ def change_password(
 
 @router.post("/settings/users/add")
 def add_user(request: Request, username: str = Form(...), password: str = Form(...)):
+    if AUTH_DISABLED:
+        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
     if current_user(request) is None:
         return RedirectResponse("/login", status_code=303)
     if get_user_by_username(username.strip()):
@@ -106,6 +121,8 @@ def add_user(request: Request, username: str = Form(...), password: str = Form(.
 
 @router.post("/settings/users/{user_id}/delete")
 def delete_user(request: Request, user_id: int):
+    if AUTH_DISABLED:
+        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
     requester = current_user(request)
     if requester is None:
         return RedirectResponse("/login", status_code=303)

@@ -1,11 +1,24 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import bcrypt
 from fastapi import Request
 from sqlmodel import Session, select
 
+from app.config import AUTH_DISABLED
 from app.database import engine
 from app.models import User
+
+
+@dataclass
+class AnonymousUser:
+    """Stand-in for the logged-in user when HOMELAB_DECK_DISABLE_AUTH is set."""
+
+    id: None = None
+    username: str = "local"
+
+
+ANONYMOUS_USER = AnonymousUser()
 
 
 def hash_password(password: str) -> str:
@@ -36,6 +49,8 @@ def create_user(username: str, password: str) -> User:
 
 
 def current_user(request: Request) -> Optional[User]:
+    if AUTH_DISABLED:
+        return ANONYMOUS_USER
     user_id = request.session.get("user_id")
     if user_id is None:
         return None

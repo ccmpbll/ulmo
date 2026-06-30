@@ -8,6 +8,9 @@ services:
       - "8000:8000"
     environment:
       HOMELAB_DECK_SECRET_KEY: "${HOMELAB_DECK_SECRET_KEY:?set this in .env}"
+      # Uncomment to skip the login screen entirely (e.g. behind your own reverse
+      # proxy or VPN-only network). Off by default.
+      # HOMELAB_DECK_DISABLE_AUTH: "true"
     volumes:
       - ./data:/data
       # The SSH private key used by ansible-playbook to reach your managed hosts is

@@ -18,10 +18,14 @@
       <a href="/runs">Run History</a>
       <a href="/settings">Settings</a>
     </nav>
+    {% if AUTH_DISABLED %}
+    <span class="who muted">auth disabled</span>
+    {% else %}
     <form method="post" action="/logout" class="logout-form">
       <span class="who">{{ user.username }}</span>
       <button type="submit">Log out</button>
     </form>
+    {% endif %}
   </header>
   {% endif %}
   <main class="container">

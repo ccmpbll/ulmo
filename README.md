@@ -12,7 +12,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Settings page: git repo URL/branch, playbooks subdirectory, inventory path, sync cron schedule,
   extra `ansible-playbook` args
 - Upload one or more named SSH keys (file or paste) for connecting to managed hosts
-- Simple login with SQLite-backed users (first run prompts you to create an admin account)
+- Simple login with SQLite-backed users (first run prompts you to create an admin account), or
+  disable login entirely with `HOMELAB_DECK_DISABLE_AUTH=true`
 
 ## Running
 
@@ -30,6 +31,15 @@ Then go to **Settings** and set:
 - **Sync schedule** — a standard 5-field cron expression (e.g. `*/30 * * * *`), or leave blank to only sync manually
 
 Click **Sync from git** on the dashboard to do the first clone.
+
+## Disabling login
+
+If homelab-deck already sits behind your own access control (a reverse proxy with auth, a
+VPN-only network, etc.) you can skip the login screen entirely by setting
+`HOMELAB_DECK_DISABLE_AUTH=true` (uncomment the line in `docker-compose.yml`) and restarting the
+container. Every request is then treated as a single anonymous user — `/login` and `/setup`
+redirect to the dashboard, and password/user management is hidden from Settings. This is off by
+default; only enable it if you trust everything that can reach the container's port.
 
 ## SSH access to target hosts
 

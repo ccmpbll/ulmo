@@ -18,6 +18,15 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 SECRET_KEY = os.environ.get("HOMELAB_DECK_SECRET_KEY", "dev-secret-change-me")
 
+# When set, login is skipped entirely and every request is treated as a fixed
+# anonymous user. Off by default — only enable this if homelab-deck sits
+# behind its own access control (e.g. a reverse proxy, VPN-only network).
+AUTH_DISABLED = os.environ.get("HOMELAB_DECK_DISABLE_AUTH", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Persistent storage for SSH private keys used by ansible-playbook runs. Each
 # uploaded key is its own file here (named to match what an inventory's
 # ansible_ssh_private_key_file expects, e.g. "ansible-ed25519"). This directory

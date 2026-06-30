@@ -84,6 +84,27 @@
 </div>
 
 <div class="settings-section">
+  <h2>Authentication</h2>
+  <div class="card">
+    {% if auth_disabled %}
+    <p class="muted">
+      Login is currently <strong>disabled</strong> via the <code>HOMELAB_DECK_DISABLE_AUTH</code>
+      environment variable — every request is treated as a single anonymous user, and password /
+      user management is unavailable. Unset that variable and restart the container to re-enable
+      login.
+    </p>
+    {% else %}
+    <p class="muted">
+      To run homelab-deck without a login screen (e.g. behind your own reverse proxy or VPN-only
+      network), set <code>HOMELAB_DECK_DISABLE_AUTH=true</code> in <code>docker-compose.yml</code>
+      and restart the container.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+{% if not auth_disabled %}
+<div class="settings-section">
   <h2>Change your password</h2>
   <div class="card">
     <form method="post" action="/settings/users/password">
@@ -114,4 +135,5 @@
     </form>
   </div>
 </div>
+{% endif %}
 {% endblock %}

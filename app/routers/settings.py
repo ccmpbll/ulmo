@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
+from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
 from app.models import User
@@ -27,6 +28,7 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "ok": ok,
             "ssh_keys": ssh_keys.list_keys(),
             "ssh_link_warnings": ssh_keys.ensure_symlinks(),
+            "auth_disabled": AUTH_DISABLED,
         },
     )
 
