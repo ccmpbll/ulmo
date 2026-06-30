@@ -7,7 +7,7 @@
     <form method="post" action="/runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this run?');" id="cancel-form">
       <button type="submit" class="danger" id="cancel-btn" {% if run.status != "running" %}disabled{% endif %}>Cancel</button>
     </form>
-    <a class="btn secondary" href="/runs">Back to history</a>
+    <a class="btn secondary" href="/">Back to playbooks</a>
   </div>
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
