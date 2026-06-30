@@ -67,7 +67,7 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "") -> None:
             return_code = process.wait()
             status = "success" if return_code == 0 else "failed"
         except Exception as exc:  # noqa: BLE001
-            log_file.write(f"\n[homelab-deck] failed to launch ansible-playbook: {exc}\n")
+            log_file.write(f"\n[ulmo] failed to launch ansible-playbook: {exc}\n")
             return_code = -1
             status = "failed"
 

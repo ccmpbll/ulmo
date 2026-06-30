@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}homelab-deck{% endblock %}</title>
+  <title>{% block title %}ulmo{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <link rel="stylesheet" href="/static/style.css?v={{ STATIC_VERSION }}" />
 </head>
@@ -11,7 +11,7 @@
   {% set user = current_user(request) %}
   {% if user %}
   <header class="topbar">
-    <a class="brand" href="/">homelab-deck</a>
+    <a class="brand" href="/">ulmo</a>
     <nav>
       <a href="/">Playbooks</a>
       <a href="/inventory">Inventory</a>

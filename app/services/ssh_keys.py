@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.config import SSH_KEY_LINK_HOMES, SSH_STORAGE_DIR
 
-logger = logging.getLogger("homelab-deck.ssh_keys")
+logger = logging.getLogger("ulmo.ssh_keys")
 
 # Files that aren't user-managed keys, even though they live alongside them.
 RESERVED_FILENAMES = {"known_hosts", "known_hosts.old", "config"}
@@ -36,8 +36,8 @@ def ensure_symlinks() -> list[str]:
                 ssh_dir.unlink()
             elif ssh_dir.exists():
                 warnings.append(
-                    f"{ssh_dir} already exists and is not managed by homelab-deck — "
-                    "remove it or change HOMELAB_DECK_SSH_LINK_HOMES."
+                    f"{ssh_dir} already exists and is not managed by ulmo — "
+                    "remove it or change ULMO_SSH_LINK_HOMES."
                 )
                 continue
             ssh_dir.parent.mkdir(parents=True, exist_ok=True)

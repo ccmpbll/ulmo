@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     scheduler.scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="homelab-deck", lifespan=lifespan)
+app = FastAPI(title="ulmo", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

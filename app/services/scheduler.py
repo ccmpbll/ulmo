@@ -5,7 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.services import git_sync, settings_store
 
-logger = logging.getLogger("homelab-deck.scheduler")
+logger = logging.getLogger("ulmo.scheduler")
 
 scheduler = BackgroundScheduler()
 JOB_ID = "git-sync"

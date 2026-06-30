@@ -74,7 +74,7 @@ def download_backup(request: Request):
     return Response(
         content=content,
         media_type="application/x-yaml",
-        headers={"Content-Disposition": "attachment; filename=homelab-deck-settings.yaml"},
+        headers={"Content-Disposition": "attachment; filename=ulmo-settings.yaml"},
     )
 
 

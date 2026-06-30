@@ -1,4 +1,4 @@
-# homelab-deck
+# ulmo
 
 A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync.
 
@@ -15,7 +15,7 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Download/restore Settings as a YAML backup file
 - Upload one or more named SSH keys (file or paste) for connecting to managed hosts
 - Simple login with SQLite-backed users (first run prompts you to create an admin account), or
-  disable login entirely with `HOMELAB_DECK_DISABLE_AUTH=true`
+  disable login entirely with `ULMO_DISABLE_AUTH=true`
 
 ## Running
 
@@ -36,7 +36,7 @@ Click **Sync from git** on the dashboard to do the first clone.
 
 ## Session secret key
 
-`HOMELAB_DECK_SECRET_KEY` signs login session cookies. You don't need to set it — if it's unset,
+`ULMO_SECRET_KEY` signs login session cookies. You don't need to set it — if it's unset,
 a random key is generated on first startup and persisted to `./data/secret_key`, reused on every
 restart. Only set it explicitly if you want a stable key independent of `./data` (e.g. you wipe
 `./data` but want existing sessions to survive, or you run multiple replicas that need to share
@@ -44,9 +44,9 @@ one key).
 
 ## Disabling login
 
-If homelab-deck already sits behind your own access control (a reverse proxy with auth, a
+If ulmo already sits behind your own access control (a reverse proxy with auth, a
 VPN-only network, etc.) you can skip the login screen entirely by setting
-`HOMELAB_DECK_DISABLE_AUTH=true` (uncomment the line in `docker-compose.yml`) and restarting the
+`ULMO_DISABLE_AUTH=true` (uncomment the line in `docker-compose.yml`) and restarting the
 container. Every request is then treated as a single anonymous user — `/login` and `/setup`
 redirect to the dashboard, and password/user management is hidden from Settings. This is off by
 default; only enable it if you trust everything that can reach the container's port.
@@ -64,7 +64,7 @@ expects:
   `StrictHostKeyChecking=accept-new`) persists across container restarts too.
 
 If your inventory's `ansible_ssh_private_key_file` points somewhere else, set
-`HOMELAB_DECK_SSH_LINK_HOMES` (comma-separated list of home directories whose `.ssh` should be
+`ULMO_SSH_LINK_HOMES` (comma-separated list of home directories whose `.ssh` should be
 linked) instead of editing the inventory. The key must be unencrypted — passphrase-protected
 keys can't be used for unattended runs.
 
@@ -97,7 +97,7 @@ host. Tags are computed once per **sync**, not on every dashboard load, and cach
 the change reflected. Check any tags on a playbook's row and only matching tasks run
 (`--tags a,b`); leave everything unchecked to run the whole playbook.
 
-Runs invoke `ansible-playbook <playbook> [extra args] [--tags ...]` with the synced repo root as the working directory, so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings, etc.) is respected as-is — no special configuration needed in homelab-deck itself.
+Runs invoke `ansible-playbook <playbook> [extra args] [--tags ...]` with the synced repo root as the working directory, so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings, etc.) is respected as-is — no special configuration needed in ulmo itself.
 
 Two environment variables are set for every run (and for the collection install during sync):
 
@@ -117,19 +117,18 @@ those moved out of `ansible-core` into `ansible.posix`/`community.general` in re
 
 Everything lives under `/data` in the container (mounted to `./data` by the compose file):
 
-- `homelab-deck.db` — SQLite database (users, settings, run/sync history)
+- `ulmo.db` — SQLite database (users, settings, run/sync history)
 - `repo/` — the synced git repo
 - `runs/` — per-run log files
 - `ssh_home/.ssh/` — uploaded SSH private keys + `known_hosts`
 - `collections/` — collections installed from the repo's `requirements.yaml`
 - `playbook_tags.json` — cached per-playbook tags, refreshed on each sync
-- `secret_key` — auto-generated session signing key (only created if `HOMELAB_DECK_SECRET_KEY`
-  isn't set)
+- `secret_key` — auto-generated session signing key (only created if `ULMO_SECRET_KEY` isn't set)
 
 ## Development
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-HOMELAB_DECK_DATA_DIR=./data uvicorn app.main:app --reload
+ULMO_DATA_DIR=./data uvicorn app.main:app --reload
 ```

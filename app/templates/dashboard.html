@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Playbooks - homelab-deck{% endblock %}
+{% block title %}Playbooks - ulmo{% endblock %}
 {% block content %}
 {% if request.query_params.get("error") %}<p class="error">{{ request.query_params.get("error") }}</p>{% endif %}
 {% if request.query_params.get("ok") %}<p class="ok">{{ request.query_params.get("ok") }}</p>{% endif %}

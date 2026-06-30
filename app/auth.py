@@ -12,7 +12,7 @@ from app.models import User
 
 @dataclass
 class AnonymousUser:
-    """Stand-in for the logged-in user when HOMELAB_DECK_DISABLE_AUTH is set."""
+    """Stand-in for the logged-in user when ULMO_DISABLE_AUTH is set."""
 
     id: None = None
     username: str = "local"

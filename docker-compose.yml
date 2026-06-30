@@ -1,8 +1,8 @@
 services:
-  homelab-deck:
+  ulmo:
     build: .
-    image: homelab-deck:latest
-    container_name: homelab-deck
+    image: ulmo:latest
+    container_name: ulmo
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -11,10 +11,10 @@ services:
       # persisted to ./data/secret_key, so this doesn't need to be set manually.
       # Set it explicitly only if you want a stable key across a fresh ./data
       # (e.g. restoring from a backup that doesn't include secret_key).
-      HOMELAB_DECK_SECRET_KEY: "${HOMELAB_DECK_SECRET_KEY:-}"
+      ULMO_SECRET_KEY: "${ULMO_SECRET_KEY:-}"
       # Uncomment to skip the login screen entirely (e.g. behind your own reverse
       # proxy or VPN-only network). Off by default.
-      # HOMELAB_DECK_DISABLE_AUTH: "true"
+      # ULMO_DISABLE_AUTH: "true"
     volumes:
       - ./data:/data
       # The SSH private key used by ansible-playbook to reach your managed hosts is

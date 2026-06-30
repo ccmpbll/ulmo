@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings - homelab-deck{% endblock %}
+{% block title %}Settings - ulmo{% endblock %}
 {% block content %}
 <h1>Settings</h1>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -111,15 +111,15 @@
   <div class="card">
     {% if auth_disabled %}
     <p class="muted">
-      Login is currently <strong>disabled</strong> via the <code>HOMELAB_DECK_DISABLE_AUTH</code>
+      Login is currently <strong>disabled</strong> via the <code>ULMO_DISABLE_AUTH</code>
       environment variable — every request is treated as a single anonymous user, and password /
       user management is unavailable. Unset that variable and restart the container to re-enable
       login.
     </p>
     {% else %}
     <p class="muted">
-      To run homelab-deck without a login screen (e.g. behind your own reverse proxy or VPN-only
-      network), set <code>HOMELAB_DECK_DISABLE_AUTH=true</code> in <code>docker-compose.yml</code>
+      To run ulmo without a login screen (e.g. behind your own reverse proxy or VPN-only
+      network), set <code>ULMO_DISABLE_AUTH=true</code> in <code>docker-compose.yml</code>
       and restart the container.
     </p>
     {% endif %}

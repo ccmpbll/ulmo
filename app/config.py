@@ -2,7 +2,7 @@ import os
 import secrets
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("HOMELAB_DECK_DATA_DIR", "/data"))
+DATA_DIR = Path(os.environ.get("ULMO_DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 REPO_DIR = DATA_DIR / "repo"
@@ -14,11 +14,11 @@ RUNS_DIR.mkdir(parents=True, exist_ok=True)
 # needing to be reinstalled from Galaxy every time.
 COLLECTIONS_DIR = DATA_DIR / "collections"
 
-DB_PATH = DATA_DIR / "homelab-deck.db"
+DB_PATH = DATA_DIR / "ulmo.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 def _resolve_secret_key() -> str:
-    env_value = os.environ.get("HOMELAB_DECK_SECRET_KEY", "").strip()
+    env_value = os.environ.get("ULMO_SECRET_KEY", "").strip()
     if env_value:
         return env_value
     # No key provided — generate one and persist it so sessions survive restarts
@@ -37,9 +37,9 @@ def _resolve_secret_key() -> str:
 SECRET_KEY = _resolve_secret_key()
 
 # When set, login is skipped entirely and every request is treated as a fixed
-# anonymous user. Off by default — only enable this if homelab-deck sits
-# behind its own access control (e.g. a reverse proxy, VPN-only network).
-AUTH_DISABLED = os.environ.get("HOMELAB_DECK_DISABLE_AUTH", "").strip().lower() in (
+# anonymous user. Off by default — only enable this if ulmo sits behind its
+# own access control (e.g. a reverse proxy, VPN-only network).
+AUTH_DISABLED = os.environ.get("ULMO_DISABLE_AUTH", "").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -56,10 +56,10 @@ SSH_STORAGE_DIR = DATA_DIR / "ssh_home" / ".ssh"
 # Defaults match this project's existing inventory.yaml convention
 # (ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519) plus root,
 # so SSH also persists known_hosts across container restarts. Override with a
-# comma-separated list via HOMELAB_DECK_SSH_LINK_HOMES if your inventory uses a
+# comma-separated list via ULMO_SSH_LINK_HOMES if your inventory uses a
 # different path.
 SSH_KEY_LINK_HOMES = [
     p.strip()
-    for p in os.environ.get("HOMELAB_DECK_SSH_LINK_HOMES", "/home/ansible,/root").split(",")
+    for p in os.environ.get("ULMO_SSH_LINK_HOMES", "/home/ansible,/root").split(",")
     if p.strip()
 ]
