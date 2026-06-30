@@ -1,6 +1,5 @@
 import threading
 from pathlib import Path
-from typing import Any
 
 import ansible_runner
 from sqlmodel import Session
@@ -10,7 +9,7 @@ from app.database import engine
 from app.models import RunHistory, utcnow
 from app.services import settings_store
 
-_active_runners: dict[int, Any] = {}
+_cancel_events: dict[int, threading.Event] = {}
 _lock = threading.Lock()
 
 
@@ -49,10 +48,10 @@ def start_run(
 
 def cancel_run(run_id: int) -> bool:
     with _lock:
-        runner = _active_runners.get(run_id)
-    if runner is None:
+        event = _cancel_events.get(run_id)
+    if event is None:
         return False
-    runner.cancel()
+    event.set()
     return True
 
 
@@ -67,6 +66,10 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
         "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_DIR),
     }
 
+    cancel_event = threading.Event()
+    with _lock:
+        _cancel_events[run_id] = cancel_event
+
     ar_thread, runner = ansible_runner.run_async(
         private_data_dir=str(RUNNER_DATA_DIR),
         project_dir=str(REPO_DIR),
@@ -77,17 +80,17 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
         cmdline=extra_args,
         ident=str(run_id),
         quiet=True,
+        cancel_callback=cancel_event.is_set,
     )
-
-    with _lock:
-        _active_runners[run_id] = runner
 
     ar_thread.join()
 
     with _lock:
-        _active_runners.pop(run_id, None)
+        _cancel_events.pop(run_id, None)
 
-    if runner.status == "successful":
+    if cancel_event.is_set():
+        status = "failed"
+    elif runner.status == "successful":
         status = "success"
     else:
         status = "failed"
