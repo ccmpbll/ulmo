@@ -1,7 +1,7 @@
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlmodel import Session, select
 
 from app.config import AUTH_DISABLED
@@ -66,6 +66,32 @@ def update_settings(
     )
     scheduler.reschedule(git_sync_cron.strip())
     return RedirectResponse("/settings?ok=Settings+saved", status_code=303)
+
+
+@router.get("/settings/backup")
+def download_backup(request: Request):
+    content = settings_store.export_yaml()
+    return Response(
+        content=content,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": "attachment; filename=homelab-deck-settings.yaml"},
+    )
+
+
+@router.post("/settings/restore")
+async def restore_backup(request: Request, backup_file: UploadFile = File(...)):
+    try:
+        text = (await backup_file.read()).decode("utf-8", errors="replace")
+        applied, ignored = settings_store.import_yaml(text)
+    except ValueError as exc:
+        return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
+
+    scheduler.reschedule(settings_store.get("git_sync_cron"))
+
+    message = f"Restored {len(applied)} setting(s)"
+    if ignored:
+        message += f"; ignored unknown keys: {', '.join(ignored)}"
+    return RedirectResponse(f"/settings?ok={quote(message)}", status_code=303)
 
 
 @router.post("/settings/ssh-key")

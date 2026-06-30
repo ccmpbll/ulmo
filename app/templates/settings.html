@@ -37,6 +37,25 @@
 </div>
 
 <div class="settings-section">
+  <h2>Backup &amp; Restore</h2>
+  <div class="card">
+    <p class="muted">
+      Backs up the settings above (git repo, schedule, etc.) as a YAML file. SSH keys and user
+      accounts are <strong>not</strong> included — those are credentials, not config, so they're
+      kept out of a file you might share or store loosely.
+    </p>
+    <a class="btn secondary" href="/settings/backup">Download backup</a>
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <form method="post" action="/settings/restore" enctype="multipart/form-data">
+      <label>Restore from backup file
+        <input type="file" name="backup_file" accept=".yaml,.yml" required />
+      </label>
+      <button type="submit" class="secondary">Restore</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
   <h2>SSH Keys</h2>
   <div class="card">
     {% if ssh_link_warnings %}

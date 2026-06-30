@@ -1,3 +1,4 @@
+import yaml
 from sqlmodel import Session, select
 
 from app.database import engine
@@ -39,3 +40,37 @@ def set_many(values: dict) -> None:
                 row.value = value or ""
             session.add(row)
         session.commit()
+
+
+def export_yaml() -> str:
+    """Dump known settings as YAML. Deliberately excludes SSH keys and user
+    accounts — those are credentials, not config, and shouldn't end up in a
+    casually-shared backup file."""
+    data = {key: get(key) for key in DEFAULTS}
+    return yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+
+
+def import_yaml(text: str) -> tuple[dict, list[str]]:
+    """Restore settings from a YAML backup. Returns (applied, ignored_keys).
+    Only known setting keys are applied — anything else in the file is
+    reported back as ignored rather than silently stored."""
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML: {exc}") from exc
+
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError("Expected a YAML mapping of setting names to values.")
+
+    applied = {}
+    ignored = []
+    for key, value in data.items():
+        if key not in DEFAULTS:
+            ignored.append(str(key))
+            continue
+        applied[key] = "" if value is None else str(value)
+
+    set_many(applied)
+    return applied, ignored

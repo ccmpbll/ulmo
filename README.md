@@ -12,6 +12,7 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
   `requirements.yaml`
 - Settings page: git repo URL/branch, playbooks subdirectory, inventory path, sync cron schedule,
   extra `ansible-playbook` args, number of recent runs shown on the dashboard
+- Download/restore Settings as a YAML backup file
 - Upload one or more named SSH keys (file or paste) for connecting to managed hosts
 - Simple login with SQLite-backed users (first run prompts you to create an admin account), or
   disable login entirely with `HOMELAB_DECK_DISABLE_AUTH=true`
@@ -75,6 +76,17 @@ volumes:
   - ./data:/data
   - ~/.ssh/git_deploy_key:/root/.ssh/git_deploy_key:ro
 ```
+
+## Settings backup & restore
+
+**Settings → Backup & Restore** lets you download the settings above (git repo, branch,
+playbooks subdirectory, inventory path, sync schedule, extra args, recent-runs count) as a YAML
+file, and restore from one later. Restoring only applies known setting keys — anything else in
+the file is reported back as ignored rather than silently applied, so a backup edited by hand
+(or from a future version with different keys) fails safe.
+
+SSH keys and user accounts are **not** included in this backup — those are credentials, not
+config. Back up `./data/ssh_home/` and your user list separately if you need them.
 
 ## How playbook runs work
 
