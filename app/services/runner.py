@@ -66,6 +66,12 @@ def _execute(run_id: int, playbook_rel_path: str) -> None:
             return_code = -1
             status = "failed"
 
+        if status == "success":
+            log_file.write("\n\033[1;32m=== DONE! ===\033[0m\n")
+        else:
+            log_file.write(f"\n\033[1;31m=== FAILED (exit code {return_code}) ===\033[0m\n")
+        log_file.flush()
+
     with Session(engine) as session:
         record = session.get(RunHistory, run_id)
         record.status = status
