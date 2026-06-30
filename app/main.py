@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SECRET_KEY
 from app.database import init_db
-from app.routers import auth, playbooks, runs, settings
+from app.routers import auth, inventory, playbooks, runs, settings
 from app.services import scheduler, ssh_keys
 
 
@@ -24,6 +24,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth.router)
+app.include_router(inventory.router)
 app.include_router(playbooks.router)
 app.include_router(runs.router)
 app.include_router(settings.router)

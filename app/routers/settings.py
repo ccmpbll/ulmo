@@ -37,6 +37,7 @@ def update_settings(
     git_repo_url: str = Form(""),
     git_branch: str = Form("main"),
     playbooks_subdir: str = Form("playbooks"),
+    inventory_path: str = Form("inventory.yaml"),
     git_sync_cron: str = Form(""),
     extra_args: str = Form(""),
 ):
@@ -45,6 +46,7 @@ def update_settings(
             "git_repo_url": git_repo_url.strip(),
             "git_branch": git_branch.strip() or "main",
             "playbooks_subdir": playbooks_subdir.strip(),
+            "inventory_path": inventory_path.strip() or "inventory.yaml",
             "git_sync_cron": git_sync_cron.strip(),
             "extra_args": extra_args.strip(),
         }

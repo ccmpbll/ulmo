@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Inventory - homelab-deck{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Inventory</h1></div>
+
+{% if not repo_synced %}
+<div class="card">
+  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then sync from the dashboard.</p>
+</div>
+{% elif not files %}
+<div class="card">
+  <p class="muted">
+    No inventory found at <code>{{ settings_inventory_path if settings_inventory_path else "inventory.yaml" }}</code>.
+    Check the inventory path in <a href="/settings">Settings</a>.
+  </p>
+</div>
+{% else %}
+
+{% if files|length > 1 %}
+<div class="card" style="margin-bottom: 16px;">
+  {% for f in files %}
+  <a href="/inventory?file={{ f.rel_path | urlencode }}"
+     class="btn {{ 'secondary' if f.rel_path != selected else '' }}"
+     style="margin: 0 8px 8px 0; display: inline-block;">{{ f.rel_path }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  {% if error %}
+  <p class="error">{{ error }}</p>
+  {% elif content %}
+  <div class="page-header" style="margin-bottom: 8px;">
+    <span class="muted">{{ content.rel_path }} ({{ content.size }} bytes) — read-only</span>
+  </div>
+  {% if content.truncated %}
+  <p class="error">File is large — showing the first 512 KB only.</p>
+  {% endif %}
+  <pre class="log">{{ content.content }}</pre>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

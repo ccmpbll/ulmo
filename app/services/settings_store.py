@@ -9,6 +9,7 @@ DEFAULTS = {
     "playbooks_subdir": "playbooks",
     "git_sync_cron": "",  # empty = scheduled sync disabled
     "extra_args": "",  # extra ansible-playbook CLI args, e.g. --tags foo
+    "inventory_path": "inventory.yaml",  # relative to repo root; file or directory
 }
 
 
