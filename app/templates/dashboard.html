@@ -7,13 +7,13 @@
 <div class="page-header">
   <h1>Playbooks</h1>
   <form method="post" action="/sync">
-    <button type="submit" class="secondary">Sync from git</button>
+    <button type="submit" class="secondary sync-btn"><span class="sync-icon">⟳</span> Sync from Git</button>
   </form>
 </div>
 
 <div class="card">
   {% if not repo_synced %}
-  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then click "Sync from git".</p>
+  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then click "Sync from Git".</p>
   {% elif not playbooks %}
   <p class="muted">No playbooks found in the configured subdirectory.</p>
   {% else %}

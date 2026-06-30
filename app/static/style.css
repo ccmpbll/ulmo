@@ -76,9 +76,14 @@ button, .btn {
 }
 button.secondary, .btn.secondary { background: #2a2e38; }
 button.danger, .btn.danger { background: var(--red); }
+button, .btn { transition: opacity 0.15s ease, transform 0.15s ease; }
 button:hover, .btn:hover { opacity: 0.9; }
-button:disabled, .btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; opacity: 1; }
+button:active, .btn:active { transform: scale(0.97); }
+button:disabled, .btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; opacity: 1; transform: none; }
 button:disabled:hover, .btn:disabled:hover { opacity: 1; }
+
+.sync-btn { display: inline-flex; align-items: center; gap: 7px; }
+.sync-btn .sync-icon { font-size: 1rem; line-height: 1; }
 
 .error { color: var(--red); }
 .ok { color: var(--green); }

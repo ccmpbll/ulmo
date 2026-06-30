@@ -20,7 +20,7 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
   unattended
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — on every run or failures only
 - Read-only inventory viewer
-- Manual "Sync from git" button — also installs any collections listed in the repo's
+- Manual "Sync from Git" button — also installs any collections listed in the repo's
   `requirements.yaml`
 - Sync Logs tab — full output of every git sync (clone/pull + collection install), not just
   pass/fail
@@ -46,7 +46,7 @@ Then go to **Settings** and set:
 - **Playbooks subdirectory** — defaults to `playbooks` (relative to the repo root)
 - **Sync schedule** — a standard 5-field cron expression (e.g. `*/30 * * * *`), or leave blank to only sync manually
 
-Click **Sync from git** on the dashboard to do the first clone.
+Click **Sync from Git** on the dashboard to do the first clone.
 
 ## Repo layout
 
@@ -56,7 +56,7 @@ ulmo expects a few specific files at the **root** of your synced repo:
 |---|---|
 | `ansible.cfg` | Every `ansible-playbook`/`ansible-galaxy` call runs with the repo root as its working directory, and Ansible only auto-discovers `ansible.cfg` from the current directory — there's no Settings field for this, it must be at root. |
 | `inventory.yaml` | Default value of the **Inventory path** setting (Settings → Git Sync). Drives the read-only Inventory tab and the `--limit` host checkboxes on each playbook. Change the setting if yours lives elsewhere or is named differently. |
-| `requirements.yaml` | Collections to install on every "Sync from git" — see [How playbook runs work](#how-playbook-runs-work). Looked for at the repo root. |
+| `requirements.yaml` | Collections to install on every "Sync from Git" — see [How playbook runs work](#how-playbook-runs-work). Looked for at the repo root. |
 
 Playbooks themselves live in a subdirectory — `playbooks/` by default, configurable via the
 **Playbooks subdirectory** setting — so a typical repo looks like:
@@ -130,7 +130,7 @@ config. Back up `./data/ssh_home/` and your user list separately if you need the
 Each playbook's tags are discovered by running `ansible-playbook <playbook> --list-tags` — this
 only parses the playbook (and any roles/includes it pulls in) locally, it never connects to a
 host. Tags are computed once per **sync**, not on every dashboard load, and cached to
-`./data/playbook_tags.json` — edit a playbook's tags in git, then click "Sync from git" to see
+`./data/playbook_tags.json` — edit a playbook's tags in git, then click "Sync from Git" to see
 the change reflected. Check any tags on a playbook's row and only matching tasks run
 (`--tags a,b`); leave everything unchecked to run the whole playbook.
 
@@ -165,7 +165,7 @@ Two environment variables are set for every run (and for the collection install 
   installed into during sync, since Ansible only auto-discovers `~/.ansible/collections` by
   default, which doesn't survive container restarts.
 
-Each "Sync from git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
+Each "Sync from Git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
 repo has one — see [Repo layout](#repo-layout) for where it's expected. This is what provides
 things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable; those
 moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions. (The
