@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
-from app.services import git_sync, playbook_tags, runner
+from app.services import git_sync, playbook_tags, runner, settings_store
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -20,9 +20,14 @@ def dashboard(request: Request):
         result = playbook_tags.get_cached_tags(pb["rel_path"])
         pb["tags"] = result["tags"]
         pb["tag_error"] = result["error"]
+    try:
+        recent_runs_count = max(1, int(settings_store.get("recent_runs_count")))
+    except ValueError:
+        recent_runs_count = 5
+
     with Session(engine) as session:
         recent_runs = session.exec(
-            select(RunHistory).order_by(RunHistory.started_at.desc()).limit(5)
+            select(RunHistory).order_by(RunHistory.started_at.desc()).limit(recent_runs_count)
         ).all()
     return templates.TemplateResponse(
         request,

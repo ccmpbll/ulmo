@@ -27,6 +27,10 @@
       <label>Extra ansible-playbook args
         <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
       </label>
+      <hr style="border-color: var(--border); margin: 16px 0;" />
+      <label>Recent runs to show on dashboard
+        <input type="number" name="recent_runs_count" value="{{ settings.recent_runs_count }}" min="1" step="1" />
+      </label>
       <button type="submit">Save settings</button>
     </form>
   </div>

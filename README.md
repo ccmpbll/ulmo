@@ -11,7 +11,7 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Manual "Sync from git" button — also installs any collections listed in the repo's
   `requirements.yaml`
 - Settings page: git repo URL/branch, playbooks subdirectory, inventory path, sync cron schedule,
-  extra `ansible-playbook` args
+  extra `ansible-playbook` args, number of recent runs shown on the dashboard
 - Upload one or more named SSH keys (file or paste) for connecting to managed hosts
 - Simple login with SQLite-backed users (first run prompts you to create an admin account), or
   disable login entirely with `HOMELAB_DECK_DISABLE_AUTH=true`

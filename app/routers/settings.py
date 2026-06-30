@@ -42,7 +42,17 @@ def update_settings(
     inventory_path: str = Form("inventory.yaml"),
     git_sync_cron: str = Form(""),
     extra_args: str = Form(""),
+    recent_runs_count: str = Form("5"),
 ):
+    try:
+        recent_runs_count_int = int(recent_runs_count.strip())
+        if recent_runs_count_int < 1:
+            raise ValueError
+    except ValueError:
+        return RedirectResponse(
+            "/settings?error=Recent+runs+to+show+must+be+a+positive+number", status_code=303
+        )
+
     settings_store.set_many(
         {
             "git_repo_url": git_repo_url.strip(),
@@ -51,6 +61,7 @@ def update_settings(
             "inventory_path": inventory_path.strip() or "inventory.yaml",
             "git_sync_cron": git_sync_cron.strip(),
             "extra_args": extra_args.strip(),
+            "recent_runs_count": str(recent_runs_count_int),
         }
     )
     scheduler.reschedule(git_sync_cron.strip())
