@@ -25,7 +25,9 @@ def _apply_column_migrations() -> None:
             }
             for name, sql_type in columns:
                 if name not in existing:
-                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
+                    # Quote the column name — "limit" (used by RunHistory.limit) is a
+                    # reserved SQL keyword and breaks unquoted ALTER TABLE syntax.
+                    conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN "{name}" {sql_type}')
         conn.commit()
 
 
