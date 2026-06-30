@@ -1,7 +1,9 @@
 FROM debian:bookworm-slim
 
+ARG VERSION=dev
 ENV PYTHONUNBUFFERED=1 \
     ULMO_DATA_DIR=/data \
+    ULMO_VERSION=$VERSION \
     PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

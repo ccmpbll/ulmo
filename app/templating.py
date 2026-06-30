@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from app.auth import current_user
-from app.config import AUTH_DISABLED
+from app.config import AUTH_DISABLED, VERSION
 
 templates_dir = Path(__file__).parent / "templates"
 static_dir = Path(__file__).parent / "static"
@@ -12,6 +12,7 @@ static_dir = Path(__file__).parent / "static"
 templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["current_user"] = current_user
 templates.env.globals["AUTH_DISABLED"] = AUTH_DISABLED
+templates.env.globals["APP_VERSION"] = VERSION
 
 # Cache-busting token for static assets, so a browser that already cached
 # style.css picks up changes after a deploy without needing a hard refresh.

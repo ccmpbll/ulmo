@@ -11,7 +11,7 @@
   {% set user = current_user(request) %}
   {% if user %}
   <header class="topbar">
-    <a class="brand" href="/">ulmo</a>
+    <a class="brand" href="/">ulmo</a><span class="version">{{ APP_VERSION }}</span>
     <nav>
       <a href="/">Playbooks</a>
       <a href="/inventory">Inventory</a>
