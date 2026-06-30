@@ -1,7 +1,6 @@
 services:
   ulmo:
-    build: .
-    image: ulmo:latest
+    image: ccmpbll/ulmo:latest
     container_name: ulmo
     restart: unless-stopped
     ports:

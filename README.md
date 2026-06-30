@@ -20,8 +20,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 ## Running
 
 ```bash
-cp docker-compose.yml docker-compose.override.yml  # optional, for local tweaks
-docker compose up -d --build
+curl -O https://raw.githubusercontent.com/ccmpbll/ulmo/main/docker-compose.yml
+docker compose up -d
 ```
 
 Open http://localhost:8000 — you'll be redirected to a setup page to create the first user.
