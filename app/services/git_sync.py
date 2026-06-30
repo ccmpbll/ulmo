@@ -1,0 +1,101 @@
+import subprocess
+from pathlib import Path
+
+from sqlmodel import Session
+
+from app.config import REPO_DIR
+from app.database import engine
+from app.models import SyncHistory
+from app.services import settings_store
+
+SKIP_DIRS = {"old", ".git"}
+EXCLUDE_FILES = {"requirements.yaml", "requirements.yml"}
+
+
+class SyncError(Exception):
+    pass
+
+
+def _run(cmd: list[str], cwd: Path | None = None) -> str:
+    result = subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, timeout=300
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0:
+        raise SyncError(output.strip() or f"command failed: {' '.join(cmd)}")
+    return output.strip()
+
+
+def sync_now(triggered_by: str = "manual") -> SyncHistory:
+    settings = settings_store.get_all()
+    repo_url = settings["git_repo_url"]
+    branch = settings["git_branch"] or "main"
+
+    with Session(engine) as session:
+        record = SyncHistory(triggered_by=triggered_by)
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+        record_id = record.id
+
+    log_lines = []
+    try:
+        if not repo_url:
+            raise SyncError("No git repo URL configured. Set one in Settings first.")
+
+        if (REPO_DIR / ".git").exists():
+            log_lines.append(_run(["git", "fetch", "origin", branch], cwd=REPO_DIR))
+            log_lines.append(_run(["git", "checkout", branch], cwd=REPO_DIR))
+            log_lines.append(_run(["git", "reset", "--hard", f"origin/{branch}"], cwd=REPO_DIR))
+        else:
+            REPO_DIR.parent.mkdir(parents=True, exist_ok=True)
+            log_lines.append(
+                _run(["git", "clone", "--branch", branch, repo_url, str(REPO_DIR)])
+            )
+
+        message = "\n".join(line for line in log_lines if line)
+        status = "success"
+    except SyncError as exc:
+        message = str(exc)
+        status = "failed"
+    except Exception as exc:  # noqa: BLE001
+        message = f"Unexpected error: {exc}"
+        status = "failed"
+
+    from app.models import utcnow
+
+    with Session(engine) as session:
+        record = session.get(SyncHistory, record_id)
+        record.status = status
+        record.message = message
+        record.finished_at = utcnow()
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+        return record
+
+
+def list_playbooks() -> list[dict]:
+    settings = settings_store.get_all()
+    subdir = settings["playbooks_subdir"].strip("/") or "."
+    base = REPO_DIR / subdir if subdir != "." else REPO_DIR
+    if not base.exists():
+        return []
+
+    playbooks = []
+    for path in sorted(base.glob("*.yaml")) + sorted(base.glob("*.yml")):
+        if path.name in EXCLUDE_FILES:
+            continue
+        if any(part in SKIP_DIRS for part in path.relative_to(REPO_DIR).parts):
+            continue
+        playbooks.append(
+            {
+                "name": path.name,
+                "rel_path": str(path.relative_to(REPO_DIR)),
+            }
+        )
+    return playbooks
+
+
+def repo_synced() -> bool:
+    return (REPO_DIR / ".git").exists()

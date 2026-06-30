@@ -1,0 +1,134 @@
+:root {
+  --bg: #0f1115;
+  --panel: #181b22;
+  --border: #2a2e38;
+  --text: #e6e8ec;
+  --muted: #8a8f9c;
+  --accent: #4f8cff;
+  --green: #3ecf8e;
+  --red: #ef5b5b;
+  --yellow: #e0b341;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.topbar nav { display: flex; gap: 16px; flex: 1; }
+.logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
+.logout-form .who { color: var(--muted); }
+
+.container { max-width: 960px; margin: 0 auto; padding: 24px; }
+
+.auth-card {
+  max-width: 360px;
+  margin: 80px auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 32px;
+}
+.auth-card h1 { font-size: 1.3rem; margin-top: 0; }
+
+form label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+form input, form select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #11141a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+button, .btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+button.secondary, .btn.secondary { background: #2a2e38; }
+button.danger, .btn.danger { background: var(--red); }
+button:hover, .btn:hover { opacity: 0.9; }
+
+.error { color: var(--red); }
+.ok { color: var(--green); }
+.muted { color: var(--muted); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge.success { background: rgba(62, 207, 142, 0.15); color: var(--green); }
+.badge.failed { background: rgba(239, 91, 91, 0.15); color: var(--red); }
+.badge.running { background: rgba(224, 179, 65, 0.15); color: var(--yellow); }
+
+pre.log {
+  background: #0a0c10;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 70vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.playbook-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.playbook-row:last-child { border-bottom: none; }
+.playbook-name { font-weight: 600; }
+.playbook-path { color: var(--muted); font-size: 0.8rem; }
+
+.settings-section { margin-bottom: 32px; }
+.settings-section h2 { font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+.user-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }

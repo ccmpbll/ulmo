@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Run History - homelab-deck{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Run History</h1></div>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Playbook</th><th>Status</th><th>Triggered by</th><th>Started</th><th>Finished</th></tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a></td>
+        <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
+        <td>{{ run.triggered_by }}</td>
+        <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        <td>{{ run.finished_at.strftime("%Y-%m-%d %H:%M:%S") if run.finished_at else "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No runs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

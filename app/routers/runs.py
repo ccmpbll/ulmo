@@ -1,0 +1,59 @@
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from sqlmodel import Session, select
+
+from app.database import engine
+from app.deps import require_login
+from app.models import RunHistory
+from app.services import runner
+from app.templating import templates
+
+router = APIRouter(dependencies=[Depends(require_login)])
+
+
+@router.get("/runs", response_class=HTMLResponse)
+def run_history(request: Request):
+    with Session(engine) as session:
+        runs = session.exec(select(RunHistory).order_by(RunHistory.started_at.desc())).all()
+    return templates.TemplateResponse(request, "runs.html", {"runs": runs})
+
+
+@router.get("/runs/{run_id}", response_class=HTMLResponse)
+def run_detail(request: Request, run_id: int):
+    with Session(engine) as session:
+        run = session.get(RunHistory, run_id)
+    if run is None:
+        return RedirectResponse("/runs", status_code=303)
+    log = runner.read_log(run_id)
+    return templates.TemplateResponse(request, "run_detail.html", {"run": run, "log": log})
+
+
+@router.get("/runs/{run_id}/stream")
+async def run_stream(run_id: int):
+    async def event_source():
+        last_size = 0
+        while True:
+            with Session(engine) as session:
+                run = session.get(RunHistory, run_id)
+            if run is None:
+                yield f"event: error\ndata: not found\n\n"
+                return
+
+            path = runner.log_path(run_id)
+            if path.exists():
+                content = path.read_text()
+                if len(content) > last_size:
+                    new_text = content[last_size:]
+                    last_size = len(content)
+                    yield f"data: {json.dumps(new_text)}\n\n"
+
+            if run.status != "running":
+                yield f"event: done\ndata: {run.status}\n\n"
+                return
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_source(), media_type="text/event-stream")

@@ -1,0 +1,14 @@
+services:
+  homelab-deck:
+    build: .
+    image: homelab-deck:latest
+    container_name: homelab-deck
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      HOMELAB_DECK_SECRET_KEY: "change-me-to-a-random-string"
+    volumes:
+      - ./data:/data
+      # Mount an SSH key for git clone/pull over SSH, and a known_hosts file if needed.
+      # - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro

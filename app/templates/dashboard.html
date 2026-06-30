@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Playbooks - homelab-deck{% endblock %}
+{% block content %}
+{% if request.query_params.get("error") %}<p class="error">{{ request.query_params.get("error") }}</p>{% endif %}
+{% if request.query_params.get("ok") %}<p class="ok">{{ request.query_params.get("ok") }}</p>{% endif %}
+
+<div class="page-header">
+  <h1>Playbooks</h1>
+  <form method="post" action="/sync">
+    <button type="submit" class="secondary">Sync from git</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if not repo_synced %}
+  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then click "Sync from git".</p>
+  {% elif not playbooks %}
+  <p class="muted">No playbooks found in the configured subdirectory.</p>
+  {% else %}
+  {% for pb in playbooks %}
+  <div class="playbook-row">
+    <div>
+      <div class="playbook-name">{{ pb.name }}</div>
+      <div class="playbook-path">{{ pb.rel_path }}</div>
+    </div>
+    <form method="post" action="/playbooks/run">
+      <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
+      <button type="submit">Run</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+
+<div class="page-header"><h2>Recent Runs</h2></div>
+<div class="card">
+  <table>
+    <thead><tr><th>Playbook</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a></td>
+        <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
+        <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No runs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

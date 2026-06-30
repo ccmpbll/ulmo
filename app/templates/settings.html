@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Settings - homelab-deck{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
+
+<div class="settings-section">
+  <h2>Git Sync</h2>
+  <div class="card">
+    <form method="post" action="/settings">
+      <label>Git repository URL
+        <input type="text" name="git_repo_url" value="{{ settings.git_repo_url }}" placeholder="https://git.example.com/Home/Ansible.git" />
+      </label>
+      <label>Branch
+        <input type="text" name="git_branch" value="{{ settings.git_branch }}" />
+      </label>
+      <label>Playbooks subdirectory
+        <input type="text" name="playbooks_subdir" value="{{ settings.playbooks_subdir }}" />
+      </label>
+      <label>Sync schedule (cron, 5-field — blank disables scheduled sync)
+        <input type="text" name="git_sync_cron" value="{{ settings.git_sync_cron }}" placeholder="*/30 * * * *" />
+      </label>
+      <label>Extra ansible-playbook args
+        <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
+      </label>
+      <button type="submit">Save settings</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Change your password</h2>
+  <div class="card">
+    <form method="post" action="/settings/users/password">
+      <label>Current password<input type="password" name="current_password" required /></label>
+      <label>New password<input type="password" name="new_password" required /></label>
+      <label>Confirm new password<input type="password" name="new_password_confirm" required /></label>
+      <button type="submit">Update password</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Users</h2>
+  <div class="card">
+    {% for u in users %}
+    <div class="user-row">
+      <span>{{ u.username }}</span>
+      <form method="post" action="/settings/users/{{ u.id }}/delete" onsubmit="return confirm('Delete user {{ u.username }}?');">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </div>
+    {% endfor %}
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <form method="post" action="/settings/users/add">
+      <label>New username<input type="text" name="username" required /></label>
+      <label>Password<input type="password" name="password" required /></label>
+      <button type="submit" class="secondary">Add user</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
