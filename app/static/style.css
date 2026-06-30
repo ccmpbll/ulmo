@@ -129,7 +129,8 @@ pre.log {
 .playbook-name { font-weight: 600; }
 .playbook-path { color: var(--muted); font-size: 0.8rem; }
 
-.playbook-run-form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
+.playbook-run-form { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; margin: 0; }
+.tag-area { min-width: 0; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-chip {
   display: inline-flex;

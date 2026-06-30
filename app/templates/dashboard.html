@@ -25,18 +25,20 @@
     </div>
     <form method="post" action="/playbooks/run" class="playbook-run-form">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      {% if pb.tags %}
-      <div class="tag-list">
-        {% for tag in pb.tags %}
-        <label class="tag-chip">
-          <input type="checkbox" name="tags" value="{{ tag }}" />
-          {{ tag }}
-        </label>
-        {% endfor %}
+      <div class="tag-area">
+        {% if pb.tags %}
+        <div class="tag-list">
+          {% for tag in pb.tags %}
+          <label class="tag-chip">
+            <input type="checkbox" name="tags" value="{{ tag }}" />
+            {{ tag }}
+          </label>
+          {% endfor %}
+        </div>
+        {% elif pb.tag_error %}
+        <span class="muted" style="font-size:0.78rem;">couldn't list tags</span>
+        {% endif %}
       </div>
-      {% elif pb.tag_error %}
-      <span class="muted" style="font-size:0.78rem;">couldn't list tags</span>
-      {% endif %}
       <button type="submit">Run</button>
     </form>
   </div>
