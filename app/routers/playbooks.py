@@ -16,6 +16,10 @@ router = APIRouter(dependencies=[Depends(require_login)])
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     playbooks = git_sync.list_playbooks()
+    for pb in playbooks:
+        result = playbook_tags.get_cached_tags(pb["rel_path"])
+        pb["tags"] = result["tags"]
+        pb["tag_error"] = result["error"]
     with Session(engine) as session:
         recent_runs = session.exec(
             select(RunHistory).order_by(RunHistory.started_at.desc()).limit(5)
@@ -38,19 +42,6 @@ def sync(request: Request):
     if record.status == "failed":
         return RedirectResponse(f"/?error={quote(record.message[:200])}", status_code=303)
     return RedirectResponse("/?ok=Sync+complete", status_code=303)
-
-
-@router.get("/playbooks/run", response_class=HTMLResponse)
-def run_options(request: Request, rel_path: str):
-    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
-    if rel_path not in valid_paths:
-        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
-    result = playbook_tags.list_tags(rel_path)
-    return templates.TemplateResponse(
-        request,
-        "run_options.html",
-        {"rel_path": rel_path, "tags": result["tags"], "tag_error": result["error"]},
-    )
 
 
 @router.post("/playbooks/run")

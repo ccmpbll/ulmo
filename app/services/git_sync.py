@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.config import COLLECTIONS_DIR, REPO_DIR
 from app.database import engine
 from app.models import SyncHistory
-from app.services import settings_store
+from app.services import playbook_tags, settings_store
 
 SKIP_DIRS = {"old", ".git"}
 EXCLUDE_FILES = {"requirements.yaml", "requirements.yml"}
@@ -86,6 +86,8 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
         collections_output = _install_collections()
         if collections_output:
             log_lines.append(collections_output)
+
+        playbook_tags.refresh_cache(list_playbooks())
 
         message = "\n".join(line for line in log_lines if line)
         status = "success"

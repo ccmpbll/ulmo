@@ -123,10 +123,30 @@ pre.log {
   line-height: 1.4;
 }
 
-.playbook-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.playbook-row { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .playbook-row:last-child { border-bottom: none; }
+.playbook-row-header { display: flex; align-items: baseline; gap: 10px; }
 .playbook-name { font-weight: 600; }
 .playbook-path { color: var(--muted); font-size: 0.8rem; }
+
+.playbook-run-form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #11141a;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 4px 10px 4px 8px;
+  font-size: 0.78rem;
+  font-weight: normal;
+  color: var(--text);
+  cursor: pointer;
+  margin: 0;
+}
+.tag-chip input[type="checkbox"] { display: inline; width: auto; margin: 0; }
+.tag-chip:has(input:checked) { border-color: var(--accent); background: rgba(79, 140, 255, 0.12); }
 
 .settings-section { margin-bottom: 32px; }
 .settings-section h2 { font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }

@@ -1,10 +1,13 @@
+import json
 import os
 import re
 import subprocess
 
-from app.config import COLLECTIONS_DIR, REPO_DIR
+from app.config import COLLECTIONS_DIR, DATA_DIR, REPO_DIR
 
 TAG_LINE_RE = re.compile(r"TASK TAGS:\s*\[(.*?)\]")
+CACHE_PATH = DATA_DIR / "playbook_tags.json"
+EMPTY_RESULT = {"tags": [], "error": None}
 
 
 def list_tags(rel_path: str) -> dict:
@@ -39,3 +42,20 @@ def list_tags(rel_path: str) -> dict:
             if tag:
                 tags.add(tag)
     return {"tags": sorted(tags), "error": None}
+
+
+def refresh_cache(playbooks: list[dict]) -> None:
+    """Recompute and persist tags for every playbook. Called after git sync —
+    keeps dashboard loads fast (no per-request subprocess calls)."""
+    cache = {pb["rel_path"]: list_tags(pb["rel_path"]) for pb in playbooks}
+    CACHE_PATH.write_text(json.dumps(cache))
+
+
+def get_cached_tags(rel_path: str) -> dict:
+    if not CACHE_PATH.exists():
+        return EMPTY_RESULT
+    try:
+        cache = json.loads(CACHE_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return EMPTY_RESULT
+    return cache.get(rel_path, EMPTY_RESULT)
