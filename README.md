@@ -22,6 +22,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Read-only inventory viewer
 - Manual "Sync from git" button — also installs any collections listed in the repo's
   `requirements.yaml`
+- Sync Logs tab — full output of every git sync (clone/pull + collection install), not just
+  pass/fail
 - Settings page: git repo URL/branch, playbooks subdirectory, inventory path, sync cron schedule,
   extra `ansible-playbook` args, number of recent runs shown on the dashboard, run timeout
 - Download/restore Settings as a YAML backup file

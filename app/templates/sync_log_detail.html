@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Sync #{{ log.id }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Sync <span class="badge {{ log.status }}">{{ log.status }}</span></h1>
+  <a class="btn secondary" href="/logs">Back to sync logs</a>
+</div>
+<p class="muted">
+  triggered by {{ log.triggered_by }} &middot; started {{ log.started_at.strftime("%Y-%m-%d %H:%M:%S") }}
+  {% if log.finished_at %}&middot; finished {{ log.finished_at.strftime("%Y-%m-%d %H:%M:%S") }}{% endif %}
+</p>
+<pre class="log">{{ log.message or "(no output)" }}</pre>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sync Logs - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Sync Logs</h1></div>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Status</th><th>Triggered by</th><th>Started</th><th>Finished</th></tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td><a href="/logs/{{ log.id }}"><span class="badge {{ log.status }}">{{ log.status }}</span></a></td>
+        <td>{{ log.triggered_by }}</td>
+        <td>{{ log.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        <td>{{ log.finished_at.strftime("%Y-%m-%d %H:%M:%S") if log.finished_at else "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No syncs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
