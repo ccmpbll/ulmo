@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      HOMELAB_DECK_SECRET_KEY: "change-me-to-a-random-string"
+      HOMELAB_DECK_SECRET_KEY: "${HOMELAB_DECK_SECRET_KEY:?set this in .env}"
     volumes:
       - ./data:/data
       # The SSH private key used by ansible-playbook to reach your managed hosts is

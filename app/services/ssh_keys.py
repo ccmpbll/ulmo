@@ -75,7 +75,9 @@ def list_keys() -> list[dict]:
 
 def save_key(filename: str, key_text: str) -> None:
     filename = _validate_filename(filename)
-    key_text = key_text.strip()
+    # Browsers normalize <textarea> form submissions to CRLF line endings,
+    # which breaks OpenSSH/PEM's base64 parser ("error in libcrypto").
+    key_text = key_text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not key_text.startswith("-----BEGIN"):
         raise ValueError("That doesn't look like a private key (expected a -----BEGIN ... block).")
     SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
