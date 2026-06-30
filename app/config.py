@@ -13,12 +13,12 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 SECRET_KEY = os.environ.get("HOMELAB_DECK_SECRET_KEY", "dev-secret-change-me")
 
-# Persistent storage for the SSH private key used by ansible-playbook runs.
-# This directory is symlinked onto SSH_KEY_LINK_TARGETS so the key is reachable
-# from whatever literal path an inventory's ansible_ssh_private_key_file expects,
-# without needing to edit the inventory itself.
+# Persistent storage for SSH private keys used by ansible-playbook runs. Each
+# uploaded key is its own file here (named to match what an inventory's
+# ansible_ssh_private_key_file expects, e.g. "ansible-ed25519"). This directory
+# is symlinked onto SSH_KEY_LINK_HOMES so the keys are reachable without
+# needing to edit the inventory itself.
 SSH_STORAGE_DIR = DATA_DIR / "ssh_home" / ".ssh"
-SSH_KEY_FILENAME = "ansible-ed25519"
 
 # Absolute paths whose ".ssh" directory should be symlinked to SSH_STORAGE_DIR.
 # Defaults match this project's existing inventory.yaml convention

@@ -1,11 +1,14 @@
 import logging
+import re
 from pathlib import Path
 
-from app.config import SSH_KEY_FILENAME, SSH_KEY_LINK_HOMES, SSH_STORAGE_DIR
+from app.config import SSH_KEY_LINK_HOMES, SSH_STORAGE_DIR
 
 logger = logging.getLogger("homelab-deck.ssh_keys")
 
-KEY_PATH = SSH_STORAGE_DIR / SSH_KEY_FILENAME
+# Files that aren't user-managed keys, even though they live alongside them.
+RESERVED_FILENAMES = {"known_hosts", "known_hosts.old", "config"}
+FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def ensure_symlinks() -> list[str]:
@@ -48,30 +51,49 @@ def ensure_symlinks() -> list[str]:
     return warnings
 
 
-def key_configured() -> bool:
-    return KEY_PATH.exists() and KEY_PATH.stat().st_size > 0
+def _validate_filename(filename: str) -> str:
+    filename = Path(filename).name.strip()
+    if not filename or not FILENAME_PATTERN.match(filename):
+        raise ValueError(
+            "Key name can only contain letters, numbers, dots, dashes and underscores."
+        )
+    if filename.startswith(".") or filename in RESERVED_FILENAMES:
+        raise ValueError(f'"{filename}" is a reserved name — choose a different one.')
+    return filename
 
 
-def save_key(key_text: str) -> None:
+def list_keys() -> list[dict]:
+    if not SSH_STORAGE_DIR.exists():
+        return []
+    keys = []
+    for path in sorted(SSH_STORAGE_DIR.iterdir()):
+        if not path.is_file() or path.name in RESERVED_FILENAMES or path.suffix == ".pub":
+            continue
+        keys.append({"filename": path.name, "hint": _fingerprint_hint(path)})
+    return keys
+
+
+def save_key(filename: str, key_text: str) -> None:
+    filename = _validate_filename(filename)
     key_text = key_text.strip()
     if not key_text.startswith("-----BEGIN"):
         raise ValueError("That doesn't look like a private key (expected a -----BEGIN ... block).")
     SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     SSH_STORAGE_DIR.chmod(0o700)
-    KEY_PATH.write_text(key_text + "\n")
-    KEY_PATH.chmod(0o600)
+    path = SSH_STORAGE_DIR / filename
+    path.write_text(key_text + "\n")
+    path.chmod(0o600)
 
 
-def delete_key() -> None:
-    KEY_PATH.unlink(missing_ok=True)
+def delete_key(filename: str) -> None:
+    filename = _validate_filename(filename)
+    (SSH_STORAGE_DIR / filename).unlink(missing_ok=True)
 
 
-def key_fingerprint_hint() -> str | None:
-    """Last line-ish bit of metadata to show without revealing the key itself."""
-    if not key_configured():
-        return None
+def _fingerprint_hint(path: Path) -> str | None:
+    """First line of the PEM/OpenSSH header, without revealing the key body."""
     try:
-        first_line = KEY_PATH.read_text().splitlines()[0]
+        first_line = path.read_text().splitlines()[0]
     except (OSError, IndexError):
         return None
     return first_line.replace("-----BEGIN ", "").replace("-----", "").strip()

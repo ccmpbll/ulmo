@@ -25,8 +25,7 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "users": users,
             "error": error,
             "ok": ok,
-            "ssh_key_configured": ssh_keys.key_configured(),
-            "ssh_key_hint": ssh_keys.key_fingerprint_hint(),
+            "ssh_keys": ssh_keys.list_keys(),
             "ssh_link_warnings": ssh_keys.ensure_symlinks(),
         },
     )
@@ -55,15 +54,18 @@ def update_settings(
 
 
 @router.post("/settings/ssh-key")
-def upload_ssh_key(request: Request, private_key: str = Form(...)):
+def upload_ssh_key(request: Request, filename: str = Form(...), private_key: str = Form(...)):
     try:
-        ssh_keys.save_key(private_key)
+        ssh_keys.save_key(filename, private_key)
     except ValueError as exc:
         return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse("/settings?ok=SSH+key+saved", status_code=303)
+    return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+saved", status_code=303)
 
 
-@router.post("/settings/ssh-key/delete")
-def remove_ssh_key(request: Request):
-    ssh_keys.delete_key()
-    return RedirectResponse("/settings?ok=SSH+key+removed", status_code=303)
+@router.post("/settings/ssh-key/{filename}/delete")
+def remove_ssh_key(request: Request, filename: str):
+    try:
+        ssh_keys.delete_key(filename)
+    except ValueError as exc:
+        return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+removed", status_code=303)

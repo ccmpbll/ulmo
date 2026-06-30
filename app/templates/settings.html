@@ -30,35 +30,47 @@
 </div>
 
 <div class="settings-section">
-  <h2>SSH Key</h2>
+  <h2>SSH Keys</h2>
   <div class="card">
     {% if ssh_link_warnings %}
     <p class="error">
-      Warning: this key won't be visible to ansible-playbook yet —
+      Warning: keys won't be visible to ansible-playbook yet —
       {% for w in ssh_link_warnings %}{{ w }}{% if not loop.last %} {% endif %}{% endfor %}
     </p>
     {% endif %}
-    {% if ssh_key_configured %}
-    <p class="ok">SSH key configured ({{ ssh_key_hint }}).</p>
-    <form method="post" action="/settings/ssh-key/delete" onsubmit="return confirm('Remove the stored SSH key?');">
-      <button type="submit" class="danger">Remove key</button>
-    </form>
-    <hr style="border-color: var(--border); margin: 16px 0;" />
-    <p class="muted">Paste a new key below to replace it.</p>
-    {% else %}
     <p class="muted">
-      No SSH key configured. Paste the private key used to connect to your managed hosts
-      (the one referenced by <code>ansible_ssh_private_key_file</code> in your inventory).
-      Use an unencrypted key — passphrase-protected keys can't be used for unattended runs.
+      Keys are saved under <code>&lt;home&gt;/.ssh/&lt;name&gt;</code> for whichever homes are
+      configured (default <code>/home/ansible</code> and <code>/root</code>), so the name you
+      pick should match what your inventory's <code>ansible_ssh_private_key_file</code> expects
+      for that host — e.g. <code>ansible-ed25519</code> as the default, or <code>chris-ed25519</code>
+      for a host that overrides it. Keys must be unencrypted — passphrase-protected keys can't be
+      used for unattended runs.
     </p>
+
+    {% if ssh_keys %}
+    {% for key in ssh_keys %}
+    <div class="user-row">
+      <span><code>{{ key.filename }}</code>{% if key.hint %} <span class="muted">({{ key.hint }})</span>{% endif %}</span>
+      <form method="post" action="/settings/ssh-key/{{ key.filename }}/delete" onsubmit="return confirm('Remove key {{ key.filename }}?');">
+        <button type="submit" class="danger">Remove</button>
+      </form>
+    </div>
+    {% endfor %}
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    {% else %}
+    <p class="muted">No keys configured yet.</p>
     {% endif %}
+
     <form method="post" action="/settings/ssh-key">
+      <label>Key name (matches the filename in <code>ansible_ssh_private_key_file</code>)
+        <input type="text" name="filename" required placeholder="ansible-ed25519" />
+      </label>
       <label>Private key (PEM / OpenSSH format)
         <textarea name="private_key" rows="10" required
           style="width:100%; margin-top:6px; padding:8px 10px; background:#11141a; border:1px solid var(--border); border-radius:6px; color:var(--text); font-family: ui-monospace, monospace; font-size:0.8rem;"
           placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
       </label>
-      <button type="submit">Save key</button>
+      <button type="submit">Add key</button>
     </form>
   </div>
 </div>
