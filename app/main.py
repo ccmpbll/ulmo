@@ -7,12 +7,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import SECRET_KEY
 from app.database import init_db
 from app.routers import auth, playbooks, runs, settings
-from app.services import scheduler
+from app.services import scheduler, ssh_keys
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ssh_keys.ensure_symlinks()
     scheduler.start()
     yield
     scheduler.scheduler.shutdown(wait=False)

@@ -30,6 +30,40 @@
 </div>
 
 <div class="settings-section">
+  <h2>SSH Key</h2>
+  <div class="card">
+    {% if ssh_link_warnings %}
+    <p class="error">
+      Warning: this key won't be visible to ansible-playbook yet —
+      {% for w in ssh_link_warnings %}{{ w }}{% if not loop.last %} {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if ssh_key_configured %}
+    <p class="ok">SSH key configured ({{ ssh_key_hint }}).</p>
+    <form method="post" action="/settings/ssh-key/delete" onsubmit="return confirm('Remove the stored SSH key?');">
+      <button type="submit" class="danger">Remove key</button>
+    </form>
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <p class="muted">Paste a new key below to replace it.</p>
+    {% else %}
+    <p class="muted">
+      No SSH key configured. Paste the private key used to connect to your managed hosts
+      (the one referenced by <code>ansible_ssh_private_key_file</code> in your inventory).
+      Use an unencrypted key — passphrase-protected keys can't be used for unattended runs.
+    </p>
+    {% endif %}
+    <form method="post" action="/settings/ssh-key">
+      <label>Private key (PEM / OpenSSH format)
+        <textarea name="private_key" rows="10" required
+          style="width:100%; margin-top:6px; padding:8px 10px; background:#11141a; border:1px solid var(--border); border-radius:6px; color:var(--text); font-family: ui-monospace, monospace; font-size:0.8rem;"
+          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+      </label>
+      <button type="submit">Save key</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
   <h2>Change your password</h2>
   <div class="card">
     <form method="post" action="/settings/users/password">

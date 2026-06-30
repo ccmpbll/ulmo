@@ -27,19 +27,30 @@ Then go to **Settings** and set:
 
 Click **Sync from git** on the dashboard to do the first clone.
 
-## SSH access to target hosts / private git repos
+## SSH access to target hosts
 
-The container needs:
-- SSH access to the hosts your playbooks manage (mount your SSH key, e.g. the `ansible` user's key)
-- Optionally, SSH access to your git remote if it's a private repo over SSH
+Go to **Settings → SSH Key** and paste the private key used to connect to the hosts your
+playbooks manage. It's written to `./data/ssh_home/.ssh/ansible-ed25519` (0600, never shown
+back in the UI) and symlinked into the container at the literal paths your inventory already
+expects:
 
-Uncomment and adjust the volume mounts in `docker-compose.yml`:
+- `/home/ansible/.ssh` — matches `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519`
+  in `inventory.yaml`'s group vars, so **no inventory changes are required**.
+- `/root/.ssh` — so `known_hosts` (auto-accepted per `ansible.cfg`'s
+  `StrictHostKeyChecking=accept-new`) persists across container restarts too.
+
+If your inventory's `ansible_ssh_private_key_file` points somewhere else, set
+`HOMELAB_DECK_SSH_LINK_HOMES` (comma-separated list of home directories whose `.ssh` should be
+linked) instead of editing the inventory. The key must be unencrypted — passphrase-protected
+keys can't be used for unattended runs.
+
+If your git remote is private and needs its own SSH key (separate from the one above), mount it
+directly in `docker-compose.yml`:
 
 ```yaml
 volumes:
   - ./data:/data
-  - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
-  - ~/.ssh/known_hosts:/root/.ssh/known_hosts:ro
+  - ~/.ssh/git_deploy_key:/root/.ssh/git_deploy_key:ro
 ```
 
 ## How playbook runs work
@@ -53,6 +64,7 @@ Everything lives under `/data` in the container (mounted to `./data` by the comp
 - `homelab-deck.db` — SQLite database (users, settings, run/sync history)
 - `repo/` — the synced git repo
 - `runs/` — per-run log files
+- `ssh_home/.ssh/` — the uploaded SSH private key + `known_hosts`
 
 ## Development
 

@@ -10,5 +10,8 @@ services:
       HOMELAB_DECK_SECRET_KEY: "change-me-to-a-random-string"
     volumes:
       - ./data:/data
-      # Mount an SSH key for git clone/pull over SSH, and a known_hosts file if needed.
-      # - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+      # The SSH private key used by ansible-playbook to reach your managed hosts is
+      # uploaded and stored from the Settings page (persisted under ./data/ssh_home),
+      # no separate key mount needed. If your git remote is private and needs its own
+      # SSH key (distinct from the ansible target-host key), mount it here instead:
+      # - ~/.ssh/git_deploy_key:/root/.ssh/git_deploy_key:ro
