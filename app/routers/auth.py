@@ -101,6 +101,8 @@ def change_password(
         return RedirectResponse("/settings?error=New+passwords+do+not+match", status_code=303)
     with Session(engine) as session:
         db_user = session.get(User, user.id)
+        if db_user is None:
+            return RedirectResponse("/settings?error=User+account+no+longer+exists", status_code=303)
         db_user.password_hash = hash_password(new_password)
         session.add(db_user)
         session.commit()

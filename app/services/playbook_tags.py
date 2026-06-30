@@ -51,11 +51,14 @@ def refresh_cache(playbooks: list[dict]) -> None:
     CACHE_PATH.write_text(json.dumps(cache))
 
 
-def get_cached_tags(rel_path: str) -> dict:
+def load_cache() -> dict:
     if not CACHE_PATH.exists():
-        return EMPTY_RESULT
+        return {}
     try:
-        cache = json.loads(CACHE_PATH.read_text())
+        return json.loads(CACHE_PATH.read_text())
     except (json.JSONDecodeError, OSError):
-        return EMPTY_RESULT
-    return cache.get(rel_path, EMPTY_RESULT)
+        return {}
+
+
+def get_cached_tags(rel_path: str) -> dict:
+    return load_cache().get(rel_path, EMPTY_RESULT)

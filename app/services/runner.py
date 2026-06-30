@@ -61,11 +61,32 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "") -> None:
                 text=True,
                 bufsize=1,
             )
-            for line in process.stdout:
-                log_file.write(line)
-                log_file.flush()
-            return_code = process.wait()
-            status = "success" if return_code == 0 else "failed"
+            timed_out = False
+
+            def _kill():
+                nonlocal timed_out
+                timed_out = True
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+
+            killer = threading.Timer(3600, _kill)
+            killer.daemon = True
+            killer.start()
+            try:
+                for line in process.stdout:
+                    log_file.write(line)
+                    log_file.flush()
+                return_code = process.wait()
+            finally:
+                killer.cancel()
+
+            if timed_out:
+                log_file.write("\n[ulmo] killed after 1h timeout\n")
+                status = "failed"
+            else:
+                status = "success" if return_code == 0 else "failed"
         except Exception as exc:  # noqa: BLE001
             log_file.write(f"\n[ulmo] failed to launch ansible-playbook: {exc}\n")
             return_code = -1

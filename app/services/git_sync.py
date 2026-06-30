@@ -114,7 +114,10 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
 def list_playbooks() -> list[dict]:
     settings = settings_store.get_all()
     subdir = settings["playbooks_subdir"].strip("/") or "."
-    base = REPO_DIR / subdir if subdir != "." else REPO_DIR
+    repo_resolved = REPO_DIR.resolve()
+    base = (REPO_DIR / subdir).resolve() if subdir != "." else repo_resolved
+    if base != repo_resolved and repo_resolved not in base.parents:
+        return []
     if not base.exists():
         return []
 
@@ -122,12 +125,12 @@ def list_playbooks() -> list[dict]:
     for path in sorted(base.glob("*.yaml")) + sorted(base.glob("*.yml")):
         if path.name in EXCLUDE_FILES:
             continue
-        if any(part in SKIP_DIRS for part in path.relative_to(REPO_DIR).parts):
+        if any(part in SKIP_DIRS for part in path.relative_to(repo_resolved).parts):
             continue
         playbooks.append(
             {
                 "name": path.name,
-                "rel_path": str(path.relative_to(REPO_DIR)),
+                "rel_path": str(path.relative_to(repo_resolved)),
             }
         )
     return playbooks

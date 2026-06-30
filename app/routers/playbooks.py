@@ -16,8 +16,9 @@ router = APIRouter(dependencies=[Depends(require_login)])
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     playbooks = git_sync.list_playbooks()
+    tag_cache = playbook_tags.load_cache()
     for pb in playbooks:
-        result = playbook_tags.get_cached_tags(pb["rel_path"])
+        result = tag_cache.get(pb["rel_path"], playbook_tags.EMPTY_RESULT)
         pb["tags"] = result["tags"]
         pb["tag_error"] = result["error"]
     try:
@@ -41,8 +42,7 @@ def dashboard(request: Request):
 
 
 @router.post("/sync")
-def sync(request: Request):
-    user = require_login(request)
+def sync(request: Request, user=Depends(require_login)):
     record = git_sync.sync_now(triggered_by=user.username)
     if record.status == "failed":
         return RedirectResponse(f"/?error={quote(record.message[:200])}", status_code=303)
@@ -50,8 +50,12 @@ def sync(request: Request):
 
 
 @router.post("/playbooks/run")
-def run_playbook(request: Request, rel_path: str = Form(...), tags: list[str] = Form([])):
-    user = require_login(request)
+def run_playbook(
+    request: Request,
+    user=Depends(require_login),
+    rel_path: str = Form(...),
+    tags: list[str] = Form([]),
+):
     valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
     if rel_path not in valid_paths:
         return RedirectResponse("/?error=Unknown+playbook", status_code=303)
