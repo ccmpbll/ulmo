@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}homelab-deck{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v={{ STATIC_VERSION }}" />
 </head>
 <body>
   {% set user = current_user(request) %}
