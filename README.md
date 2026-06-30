@@ -46,6 +46,29 @@ Then go to **Settings** and set:
 
 Click **Sync from git** on the dashboard to do the first clone.
 
+## Repo layout
+
+ulmo expects a few specific files at the **root** of your synced repo:
+
+| File | Why it's expected at root |
+|---|---|
+| `ansible.cfg` | Every `ansible-playbook`/`ansible-galaxy` call runs with the repo root as its working directory, and Ansible only auto-discovers `ansible.cfg` from the current directory — there's no Settings field for this, it must be at root. |
+| `inventory.yaml` | Default value of the **Inventory path** setting (Settings → Git Sync). Drives the read-only Inventory tab and the `--limit` host checkboxes on each playbook. Change the setting if yours lives elsewhere or is named differently. |
+| `requirements.yaml` | Collections to install on every "Sync from git" — see [How playbook runs work](#how-playbook-runs-work). Looked for at the repo root. |
+
+Playbooks themselves live in a subdirectory — `playbooks/` by default, configurable via the
+**Playbooks subdirectory** setting — so a typical repo looks like:
+
+```
+.
+├── ansible.cfg
+├── inventory.yaml
+├── requirements.yaml
+└── playbooks/
+    ├── site.yaml
+    └── ...
+```
+
 ## Session secret key
 
 `ULMO_SECRET_KEY` signs login session cookies. You don't need to set it — if it's unset,
@@ -141,9 +164,11 @@ Two environment variables are set for every run (and for the collection install 
   default, which doesn't survive container restarts.
 
 Each "Sync from git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
-repo has one (checked in the playbooks subdirectory first, then the repo root) — this is what
-provides things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable;
-those moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions.
+repo has one — see [Repo layout](#repo-layout) for where it's expected. This is what provides
+things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable; those
+moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions. (For
+backward compatibility the lookup also checks inside the playbooks subdirectory before falling
+back to root, but root is the documented location.)
 
 ## Per-playbook schedules
 
