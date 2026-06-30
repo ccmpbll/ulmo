@@ -3,7 +3,7 @@ from pathlib import Path
 
 from sqlmodel import Session
 
-from app.config import REPO_DIR
+from app.config import COLLECTIONS_DIR, REPO_DIR
 from app.database import engine
 from app.models import SyncHistory
 from app.services import settings_store
@@ -24,6 +24,36 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
     if result.returncode != 0:
         raise SyncError(output.strip() or f"command failed: {' '.join(cmd)}")
     return output.strip()
+
+
+def _find_requirements_file() -> Path | None:
+    subdir = settings_store.get("playbooks_subdir").strip("/") or "."
+    candidates = [
+        REPO_DIR / subdir / "requirements.yaml",
+        REPO_DIR / subdir / "requirements.yml",
+        REPO_DIR / "requirements.yaml",
+        REPO_DIR / "requirements.yml",
+    ]
+    return next((p for p in candidates if p.exists()), None)
+
+
+def _install_collections() -> str | None:
+    """Install collections from the repo's requirements.yaml, if any.
+
+    Best-effort: failures here are appended as a warning rather than failing
+    the whole sync, since the git sync itself already succeeded.
+    """
+    req_file = _find_requirements_file()
+    if req_file is None:
+        return None
+    COLLECTIONS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        return _run(
+            ["ansible-galaxy", "collection", "install", "-r", str(req_file), "-p", str(COLLECTIONS_DIR)],
+            cwd=REPO_DIR,
+        )
+    except SyncError as exc:
+        return f"WARNING: collection install from {req_file.name} failed:\n{exc}"
 
 
 def sync_now(triggered_by: str = "manual") -> SyncHistory:
@@ -52,6 +82,10 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
             log_lines.append(
                 _run(["git", "clone", "--branch", branch, repo_url, str(REPO_DIR)])
             )
+
+        collections_output = _install_collections()
+        if collections_output:
+            log_lines.append(collections_output)
 
         message = "\n".join(line for line in log_lines if line)
         status = "success"

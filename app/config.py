@@ -8,6 +8,11 @@ REPO_DIR = DATA_DIR / "repo"
 RUNS_DIR = DATA_DIR / "runs"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Persistent install location for collections pulled from a repo's
+# requirements.yaml, so they survive container restarts/rebuilds without
+# needing to be reinstalled from Galaxy every time.
+COLLECTIONS_DIR = DATA_DIR / "collections"
+
 DB_PATH = DATA_DIR / "homelab-deck.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 

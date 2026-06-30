@@ -1,10 +1,11 @@
+import os
 import shlex
 import subprocess
 import threading
 
 from sqlmodel import Session
 
-from app.config import REPO_DIR, RUNS_DIR
+from app.config import COLLECTIONS_DIR, REPO_DIR, RUNS_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
 from app.services import settings_store
@@ -34,6 +35,13 @@ def _execute(run_id: int, playbook_rel_path: str) -> None:
     extra_args = shlex.split(settings.get("extra_args", "") or "")
     cmd = ["ansible-playbook", playbook_rel_path, *extra_args]
 
+    env = os.environ.copy()
+    env["ANSIBLE_FORCE_COLOR"] = "true"
+    # Ansible only auto-detects collections under ~/.ansible/collections (not
+    # persisted across container restarts); point it at the volume-backed
+    # location collections get installed into during git sync.
+    env["ANSIBLE_COLLECTIONS_PATH"] = str(COLLECTIONS_DIR)
+
     out_path = log_path(run_id)
     with open(out_path, "w") as log_file:
         log_file.write(f"$ {' '.join(cmd)}\n(cwd: {REPO_DIR})\n\n")
@@ -42,6 +50,7 @@ def _execute(run_id: int, playbook_rel_path: str) -> None:
             process = subprocess.Popen(
                 cmd,
                 cwd=REPO_DIR,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

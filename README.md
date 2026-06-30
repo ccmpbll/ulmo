@@ -5,9 +5,13 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 ## Features
 
 - Lists playbooks found in a synced git repo (`playbooks/` subdirectory by default)
-- Click a playbook to run it; live log streaming in the browser
-- Manual "Sync from git" button
-- Settings page: git repo URL/branch, playbooks subdirectory, sync cron schedule, extra `ansible-playbook` args
+- Click a playbook to run it; live, colorized log streaming in the browser
+- Read-only inventory viewer
+- Manual "Sync from git" button — also installs any collections listed in the repo's
+  `requirements.yaml`
+- Settings page: git repo URL/branch, playbooks subdirectory, inventory path, sync cron schedule,
+  extra `ansible-playbook` args
+- Upload one or more named SSH keys (file or paste) for connecting to managed hosts
 - Simple login with SQLite-backed users (first run prompts you to create an admin account)
 
 ## Running
@@ -57,6 +61,20 @@ volumes:
 
 Runs invoke `ansible-playbook <playbook> [extra args]` with the synced repo root as the working directory, so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings, etc.) is respected as-is — no special configuration needed in homelab-deck itself.
 
+Two environment variables are set for every run (and for the collection install during sync):
+
+- `ANSIBLE_FORCE_COLOR=true` — ansible-playbook disables color by default when stdout isn't a
+  TTY (which it never is, running as a subprocess); this forces it back on so the log viewer can
+  render real colors via [ansi_up](https://github.com/drudru/ansi_up).
+- `ANSIBLE_COLLECTIONS_PATH=/data/collections` — points at the persistent location collections get
+  installed into during sync, since Ansible only auto-discovers `~/.ansible/collections` by
+  default, which doesn't survive container restarts.
+
+Each "Sync from git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
+repo has one (checked in the playbooks subdirectory first, then the repo root) — this is what
+provides things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable;
+those moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions.
+
 ## Data persistence
 
 Everything lives under `/data` in the container (mounted to `./data` by the compose file):
@@ -64,7 +82,8 @@ Everything lives under `/data` in the container (mounted to `./data` by the comp
 - `homelab-deck.db` — SQLite database (users, settings, run/sync history)
 - `repo/` — the synced git repo
 - `runs/` — per-run log files
-- `ssh_home/.ssh/` — the uploaded SSH private key + `known_hosts`
+- `ssh_home/.ssh/` — uploaded SSH private keys + `known_hosts`
+- `collections/` — collections installed from the repo's `requirements.yaml`
 
 ## Development
 
