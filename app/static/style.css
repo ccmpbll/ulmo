@@ -126,7 +126,7 @@ pre.log {
 .playbook-row { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .playbook-row:last-child { border-bottom: none; }
 .playbook-row-header { display: flex; align-items: baseline; gap: 10px; }
-.playbook-name { font-weight: 600; }
+.playbook-name { font-weight: 700; font-size: 1.05rem; }
 .playbook-path { color: var(--muted); font-size: 0.8rem; }
 
 .playbook-run-form { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; margin: 0; }
