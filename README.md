@@ -32,6 +32,14 @@ Then go to **Settings** and set:
 
 Click **Sync from git** on the dashboard to do the first clone.
 
+## Session secret key
+
+`HOMELAB_DECK_SECRET_KEY` signs login session cookies. You don't need to set it — if it's unset,
+a random key is generated on first startup and persisted to `./data/secret_key`, reused on every
+restart. Only set it explicitly if you want a stable key independent of `./data` (e.g. you wipe
+`./data` but want existing sessions to survive, or you run multiple replicas that need to share
+one key).
+
 ## Disabling login
 
 If homelab-deck already sits behind your own access control (a reverse proxy with auth, a
@@ -94,6 +102,8 @@ Everything lives under `/data` in the container (mounted to `./data` by the comp
 - `runs/` — per-run log files
 - `ssh_home/.ssh/` — uploaded SSH private keys + `known_hosts`
 - `collections/` — collections installed from the repo's `requirements.yaml`
+- `secret_key` — auto-generated session signing key (only created if `HOMELAB_DECK_SECRET_KEY`
+  isn't set)
 
 ## Development
 

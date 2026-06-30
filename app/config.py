@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 DATA_DIR = Path(os.environ.get("HOMELAB_DECK_DATA_DIR", "/data"))
@@ -16,7 +17,24 @@ COLLECTIONS_DIR = DATA_DIR / "collections"
 DB_PATH = DATA_DIR / "homelab-deck.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
-SECRET_KEY = os.environ.get("HOMELAB_DECK_SECRET_KEY", "dev-secret-change-me")
+def _resolve_secret_key() -> str:
+    env_value = os.environ.get("HOMELAB_DECK_SECRET_KEY", "").strip()
+    if env_value:
+        return env_value
+    # No key provided — generate one and persist it so sessions survive restarts
+    # instead of silently falling back to a shared, predictable default.
+    key_path = DATA_DIR / "secret_key"
+    if key_path.exists():
+        existing = key_path.read_text().strip()
+        if existing:
+            return existing
+    generated = secrets.token_hex(32)
+    key_path.write_text(generated)
+    key_path.chmod(0o600)
+    return generated
+
+
+SECRET_KEY = _resolve_secret_key()
 
 # When set, login is skipped entirely and every request is treated as a fixed
 # anonymous user. Off by default — only enable this if homelab-deck sits
