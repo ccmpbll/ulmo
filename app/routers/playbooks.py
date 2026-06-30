@@ -42,6 +42,17 @@ def dashboard(request: Request):
     )
 
 
+@router.get("/playbooks/view", response_class=HTMLResponse)
+def view_playbook(request: Request, rel_path: str, _user=Depends(require_login)):
+    try:
+        content = git_sync.read_playbook(rel_path)
+    except ValueError:
+        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+    return templates.TemplateResponse(
+        request, "playbook_view.html", {"rel_path": rel_path, "content": content}
+    )
+
+
 @router.post("/sync")
 def sync(request: Request, user=Depends(require_login)):
     record = git_sync.sync_now(triggered_by=user.username)

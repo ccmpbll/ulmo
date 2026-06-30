@@ -9,6 +9,7 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Lists playbooks found in a synced git repo (`playbooks/` subdirectory by default), each with its
   tags shown inline — check any to run only matching tasks (`--tags`), or leave unchecked to run
   in full; live, colorized log streaming in the browser
+- Click a playbook's name to view its YAML with syntax highlighting (read-only)
 - `--limit` host selection per run — check which host(s) a playbook should target, sourced from
   your inventory, without editing it
 - Live per-task progress while a run is active (current task name, a status chip per host), plus

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ rel_path }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ rel_path }} <span class="muted" style="font-size:0.8rem;font-weight:normal;">— read-only</span></h1>
+  <a class="btn secondary" href="/">Back to playbooks</a>
+</div>
+
+<div class="card" style="padding:0; overflow:hidden;">
+  <pre style="margin:0;"><code class="language-yaml" id="playbook-code">{{ content }}</code></pre>
+</div>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  hljs.highlightElement(document.getElementById("playbook-code"));
+</script>
+{% endblock %}

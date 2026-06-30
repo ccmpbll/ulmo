@@ -136,5 +136,16 @@ def list_playbooks() -> list[dict]:
     return playbooks
 
 
+def read_playbook(rel_path: str) -> str:
+    """Raw content of a playbook, for read-only display. Only allows paths
+    that list_playbooks() itself would surface — same allowlist used to
+    validate a run request, so this can't be used to read arbitrary repo
+    files via path traversal."""
+    valid_paths = {p["rel_path"] for p in list_playbooks()}
+    if rel_path not in valid_paths:
+        raise ValueError("Unknown playbook.")
+    return (REPO_DIR / rel_path).read_text(errors="replace")
+
+
 def repo_synced() -> bool:
     return (REPO_DIR / ".git").exists()

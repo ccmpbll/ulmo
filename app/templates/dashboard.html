@@ -20,8 +20,8 @@
   {% for pb in playbooks %}
   <div class="playbook-row">
     <div class="playbook-row-header">
-      <div class="playbook-name">{{ pb.name }}</div>
-      <div class="playbook-path">{{ pb.rel_path }}</div>
+      <a class="playbook-name" href="/playbooks/view?rel_path={{ pb.rel_path | urlencode }}">{{ pb.name }}</a>
+      <a class="playbook-path" href="/playbooks/view?rel_path={{ pb.rel_path | urlencode }}">{{ pb.rel_path }}</a>
     </div>
     <form method="post" action="/playbooks/run" class="playbook-run-form">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
