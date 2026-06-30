@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
-from app.services import git_sync, runner
+from app.services import git_sync, playbook_tags, runner
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -40,11 +40,24 @@ def sync(request: Request):
     return RedirectResponse("/?ok=Sync+complete", status_code=303)
 
 
+@router.get("/playbooks/run", response_class=HTMLResponse)
+def run_options(request: Request, rel_path: str):
+    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
+    if rel_path not in valid_paths:
+        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+    result = playbook_tags.list_tags(rel_path)
+    return templates.TemplateResponse(
+        request,
+        "run_options.html",
+        {"rel_path": rel_path, "tags": result["tags"], "tag_error": result["error"]},
+    )
+
+
 @router.post("/playbooks/run")
-def run_playbook(request: Request, rel_path: str = Form(...)):
+def run_playbook(request: Request, rel_path: str = Form(...), tags: list[str] = Form([])):
     user = require_login(request)
     valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
     if rel_path not in valid_paths:
         return RedirectResponse("/?error=Unknown+playbook", status_code=303)
-    record = runner.start_run(rel_path, triggered_by=user.username)
+    record = runner.start_run(rel_path, triggered_by=user.username, tags=",".join(tags))
     return RedirectResponse(f"/runs/{record.id}", status_code=303)

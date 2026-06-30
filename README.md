@@ -5,7 +5,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 ## Features
 
 - Lists playbooks found in a synced git repo (`playbooks/` subdirectory by default)
-- Click a playbook to run it; live, colorized log streaming in the browser
+- Click a playbook to see its tags and optionally run only specific ones (`--tags`), or run it in
+  full; live, colorized log streaming in the browser
 - Read-only inventory viewer
 - Manual "Sync from git" button — also installs any collections listed in the repo's
   `requirements.yaml`
@@ -77,7 +78,12 @@ volumes:
 
 ## How playbook runs work
 
-Runs invoke `ansible-playbook <playbook> [extra args]` with the synced repo root as the working directory, so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings, etc.) is respected as-is — no special configuration needed in homelab-deck itself.
+Clicking a playbook opens a run-options page listing its tags, discovered by running
+`ansible-playbook <playbook> --list-tags` — this only parses the playbook (and any roles/includes
+it pulls in) locally, it never connects to a host. Check any tags you want and only matching tasks
+run (`--tags a,b`); leave everything unchecked to run the whole playbook.
+
+Runs invoke `ansible-playbook <playbook> [extra args] [--tags ...]` with the synced repo root as the working directory, so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings, etc.) is respected as-is — no special configuration needed in homelab-deck itself.
 
 Two environment variables are set for every run (and for the collection install during sync):
 

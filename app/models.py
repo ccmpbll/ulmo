@@ -26,6 +26,7 @@ class RunHistory(SQLModel, table=True):
     status: str = "running"  # running | success | failed
     triggered_by: str = "manual"  # manual | schedule | username
     return_code: Optional[int] = None
+    tags: Optional[str] = None  # comma-separated --tags used for this run, if any
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: Optional[datetime] = None
 

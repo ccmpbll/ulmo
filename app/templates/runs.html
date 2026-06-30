@@ -10,7 +10,7 @@
     <tbody>
       {% for run in runs %}
       <tr>
-        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a></td>
+        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a>{% if run.tags %} <span class="muted">({{ run.tags }})</span>{% endif %}</td>
         <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
         <td>{{ run.triggered_by }}</td>
         <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>

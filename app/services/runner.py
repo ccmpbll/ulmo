@@ -15,25 +15,30 @@ def log_path(run_id: int):
     return RUNS_DIR / f"{run_id}.log"
 
 
-def start_run(playbook_rel_path: str, triggered_by: str = "manual") -> RunHistory:
+def start_run(playbook_rel_path: str, triggered_by: str = "manual", tags: str = "") -> RunHistory:
+    tags = tags.strip()
     with Session(engine) as session:
-        record = RunHistory(playbook=playbook_rel_path, triggered_by=triggered_by)
+        record = RunHistory(playbook=playbook_rel_path, triggered_by=triggered_by, tags=tags or None)
         session.add(record)
         session.commit()
         session.refresh(record)
         run_id = record.id
 
-    thread = threading.Thread(target=_execute, args=(run_id, playbook_rel_path), daemon=True)
+    thread = threading.Thread(
+        target=_execute, args=(run_id, playbook_rel_path, tags), daemon=True
+    )
     thread.start()
 
     with Session(engine) as session:
         return session.get(RunHistory, run_id)
 
 
-def _execute(run_id: int, playbook_rel_path: str) -> None:
+def _execute(run_id: int, playbook_rel_path: str, tags: str = "") -> None:
     settings = settings_store.get_all()
     extra_args = shlex.split(settings.get("extra_args", "") or "")
     cmd = ["ansible-playbook", playbook_rel_path, *extra_args]
+    if tags:
+        cmd += ["--tags", tags]
 
     env = os.environ.copy()
     env["ANSIBLE_FORCE_COLOR"] = "true"

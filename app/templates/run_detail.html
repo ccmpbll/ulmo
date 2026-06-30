@@ -5,6 +5,7 @@
   <h1>{{ run.playbook }} <span class="badge {{ run.status }}" id="status-badge">{{ run.status }}</span></h1>
   <a class="btn secondary" href="/runs">Back to history</a>
 </div>
+{% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 <pre class="log" id="log"></pre>
 
 <script src="https://unpkg.com/ansi_up@5.2.1/ansi_up.js"></script>

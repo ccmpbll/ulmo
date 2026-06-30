@@ -23,10 +23,7 @@
       <div class="playbook-name">{{ pb.name }}</div>
       <div class="playbook-path">{{ pb.rel_path }}</div>
     </div>
-    <form method="post" action="/playbooks/run">
-      <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      <button type="submit">Run</button>
-    </form>
+    <a class="btn" href="/playbooks/run?rel_path={{ pb.rel_path | urlencode }}">Run</a>
   </div>
   {% endfor %}
   {% endif %}
@@ -39,7 +36,7 @@
     <tbody>
       {% for run in recent_runs %}
       <tr>
-        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a></td>
+        <td><a href="/runs/{{ run.id }}">{{ run.playbook }}</a>{% if run.tags %} <span class="muted">({{ run.tags }})</span>{% endif %}</td>
         <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
         <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
       </tr>
