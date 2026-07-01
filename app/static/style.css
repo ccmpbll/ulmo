@@ -30,8 +30,7 @@ a:hover { text-decoration: underline; }
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); display: flex; align-items: center; gap: 8px; }
-.brand-logo { height: 24px; width: 24px; }
+.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
 .topbar .version { font-size: 0.7rem; color: var(--muted); margin-left: 6px; }
 .topbar nav { display: flex; gap: 16px; flex: 1; }
 .logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
@@ -40,15 +39,15 @@ a:hover { text-decoration: underline; }
 .container { max-width: 960px; margin: 0 auto; padding: 24px; }
 
 .auth-card {
-  max-width: 360px;
-  margin: 80px auto;
+  max-width: 520px;
+  margin: 60px auto;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 32px;
 }
 .auth-card h1 { font-size: 1.3rem; margin-top: 0; }
-.auth-card .logo { display: block; height: 72px; width: auto; margin: 0 auto 16px; }
+.auth-card .logo { display: block; width: auto; height: auto; max-width: 100%; max-height: 480px; margin: 0 auto 16px; }
 
 form label {
   display: block;

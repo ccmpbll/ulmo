@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}ulmo{% endblock %}</title>
+  <link rel="icon" href="/static/logo.png?v={{ STATIC_VERSION }}" />
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <link rel="stylesheet" href="/static/style.css?v={{ STATIC_VERSION }}" />
 </head>
@@ -11,7 +12,7 @@
   {% set user = current_user(request) %}
   {% if user %}
   <header class="topbar">
-    <a class="brand" href="/"><img class="brand-logo" src="/static/logo.png?v={{ STATIC_VERSION }}" alt="" />ulmo</a><span class="version">{{ APP_VERSION }}</span>
+    <a class="brand" href="/">ulmo</a><span class="version">{{ APP_VERSION }}</span>
     <nav>
       <a href="/">Playbooks</a>
       <a href="/inventory">Inventory</a>
