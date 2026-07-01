@@ -2,6 +2,7 @@
 {% block title %}Initial setup - ulmo{% endblock %}
 {% block content %}
 <div class="auth-card">
+  <img class="logo" src="/static/logo.png?v={{ STATIC_VERSION }}" alt="ulmo" />
   <h1>Welcome to ulmo</h1>
   <p class="muted">Create the first admin account to get started.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}

@@ -30,7 +30,8 @@ a:hover { text-decoration: underline; }
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.brand-logo { height: 24px; width: 24px; }
 .topbar .version { font-size: 0.7rem; color: var(--muted); margin-left: 6px; }
 .topbar nav { display: flex; gap: 16px; flex: 1; }
 .logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
@@ -47,6 +48,7 @@ a:hover { text-decoration: underline; }
   padding: 32px;
 }
 .auth-card h1 { font-size: 1.3rem; margin-top: 0; }
+.auth-card .logo { display: block; height: 72px; width: auto; margin: 0 auto 16px; }
 
 form label {
   display: block;
