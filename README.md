@@ -1,5 +1,7 @@
 # ulmo
 
+![ulmo logo](app/static/logo.png)
+
 ![Build Status](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/docker.yml) ![Docker Image Size](https://img.shields.io/docker/image-size/ccmpbll/ulmo/latest) ![Docker Pulls](https://img.shields.io/docker/pulls/ccmpbll/ulmo.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
 A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync.
