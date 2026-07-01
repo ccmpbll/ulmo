@@ -26,11 +26,29 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
     return output.strip()
 
 
-def _find_requirements_file() -> Path | None:
+def _resolve_within_repo(rel: str) -> Path | None:
+    """Resolve a repo-relative path, rejecting anything that escapes REPO_DIR
+    (e.g. via '../'). Returns None if the path isn't a descendant of the repo
+    root."""
+    repo_resolved = REPO_DIR.resolve()
+    resolved = (REPO_DIR / rel).resolve() if rel != "." else repo_resolved
+    if resolved != repo_resolved and repo_resolved not in resolved.parents:
+        return None
+    return resolved
+
+
+def _find_requirements_file() -> Path | str | None:
+    """Locate requirements.yaml. Returns a Path if found, a warning string if
+    the configured requirements_path is invalid, or None if unconfigured and
+    nothing was found by auto-discovery."""
     configured = settings_store.get("requirements_path").strip("/")
     if configured:
-        path = REPO_DIR / configured
-        return path if path.exists() else None
+        path = _resolve_within_repo(configured)
+        if path is None:
+            return f"WARNING: requirements_path '{configured}' resolves outside the repo; skipping collection install."
+        if not path.is_file():
+            return f"WARNING: requirements_path '{configured}' does not exist or is not a file; skipping collection install."
+        return path
 
     subdir = settings_store.get("playbooks_subdir").strip("/") or "."
     candidates = [
@@ -39,7 +57,7 @@ def _find_requirements_file() -> Path | None:
         REPO_DIR / subdir / "requirements.yaml",
         REPO_DIR / subdir / "requirements.yml",
     ]
-    return next((p for p in candidates if p.exists()), None)
+    return next((p for p in candidates if p.is_file()), None)
 
 
 def _install_collections() -> str | None:
@@ -51,6 +69,8 @@ def _install_collections() -> str | None:
     req_file = _find_requirements_file()
     if req_file is None:
         return None
+    if isinstance(req_file, str):
+        return req_file
     COLLECTIONS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         return _run(
@@ -119,12 +139,10 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
 def list_playbooks() -> list[dict]:
     settings = settings_store.get_all()
     subdir = settings["playbooks_subdir"].strip("/") or "."
+    base = _resolve_within_repo(subdir)
+    if base is None or not base.exists():
+        return []
     repo_resolved = REPO_DIR.resolve()
-    base = (REPO_DIR / subdir).resolve() if subdir != "." else repo_resolved
-    if base != repo_resolved and repo_resolved not in base.parents:
-        return []
-    if not base.exists():
-        return []
 
     playbooks = []
     for path in sorted(base.glob("*.yaml")) + sorted(base.glob("*.yml")):
