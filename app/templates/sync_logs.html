@@ -12,8 +12,8 @@
       <tr>
         <td><span class="badge {{ log.status }}">{{ log.status }}</span></td>
         <td>{{ log.triggered_by }}</td>
-        <td>{{ log.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-        <td>{{ log.finished_at.strftime("%Y-%m-%d %H:%M:%S") if log.finished_at else "-" }}</td>
+        <td>{{ log.started_at | local_time }}</td>
+        <td>{{ log.finished_at | local_time }}</td>
         <td><a class="btn secondary" href="/logs/{{ log.id }}">View</a></td>
       </tr>
       {% else %}

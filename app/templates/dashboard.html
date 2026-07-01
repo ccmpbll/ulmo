@@ -75,7 +75,7 @@
           {% if run.limit %}<span class="muted"> [{{ run.limit }}]</span>{% endif %}
         </td>
         <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
-        <td>{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+        <td>{{ run.started_at | local_time }}</td>
       </tr>
       {% else %}
       <tr><td colspan="3" class="muted">No runs yet.</td></tr>
