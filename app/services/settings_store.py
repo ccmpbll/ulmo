@@ -11,6 +11,7 @@ DEFAULTS = {
     "git_sync_cron": "",  # empty = scheduled sync disabled
     "extra_args": "",  # extra ansible-playbook CLI args, e.g. --tags foo
     "inventory_path": "inventory.yaml",  # relative to repo root; file or directory
+    "requirements_path": "",  # relative to repo root; empty = auto-discover
     "recent_runs_count": "5",  # how many rows to show in the dashboard's Recent Runs table
     "run_timeout_minutes": "60",  # kill a run after this long; 0 = no timeout
     "notify_on": "",  # "" | "all" | "failure"

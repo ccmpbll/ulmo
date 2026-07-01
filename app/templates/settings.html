@@ -21,6 +21,9 @@
       <label>Inventory path (file or directory, relative to repo root)
         <input type="text" name="inventory_path" value="{{ settings.inventory_path }}" placeholder="inventory.yaml" />
       </label>
+      <label>Requirements path (relative to repo root — blank auto-discovers requirements.yaml at repo root, then playbooks subdirectory)
+        <input type="text" name="requirements_path" value="{{ settings.requirements_path }}" placeholder="requirements.yaml" />
+      </label>
       <label>Sync schedule (cron, 5-field — blank disables scheduled sync)
         <input type="text" name="git_sync_cron" value="{{ settings.git_sync_cron }}" placeholder="*/30 * * * *" />
       </label>

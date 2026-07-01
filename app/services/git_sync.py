@@ -27,6 +27,11 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
 
 
 def _find_requirements_file() -> Path | None:
+    configured = settings_store.get("requirements_path").strip("/")
+    if configured:
+        path = REPO_DIR / configured
+        return path if path.exists() else None
+
     subdir = settings_store.get("playbooks_subdir").strip("/") or "."
     candidates = [
         REPO_DIR / "requirements.yaml",
