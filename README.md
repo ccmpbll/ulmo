@@ -6,31 +6,22 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 
 ## Features
 
-- Lists playbooks found in a synced git repo (`playbooks/` subdirectory by default), each with its
-  tags shown inline — check any to run only matching tasks (`--tags`), or leave unchecked to run
-  in full; live, colorized log streaming in the browser
-- Click a playbook's name to view its YAML with syntax highlighting (read-only)
-- `--limit` host selection per run — check which host(s) a playbook should target, sourced from
-  your inventory, without editing it
-- Live per-task progress while a run is active (current task name, a status chip per host), plus
-  a structured Play Recap table (ok/changed/unreachable/failed/skipped per host) once it finishes
-- Cancel a running playbook from its run detail page; runs are also auto-killed after a
-  configurable timeout (default 60 minutes) so a hung playbook can't run forever
-- Per-playbook cron schedules (independent of the git sync schedule) — set in Settings, run
-  unattended
-- Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — on every run or failures only
-- Read-only inventory viewer
-- Manual "Sync from Git" button — also installs any collections listed in the repo's
-  `requirements.yaml`
-- Sync Logs tab — full output of every git sync (clone/pull + collection install), not just
-  pass/fail
-- Settings page: git repo URL/branch, playbooks subdirectory, inventory path, requirements path,
-  sync cron schedule, extra `ansible-playbook` args, number of recent runs shown on the dashboard,
-  run timeout
-- Download/restore Settings as a YAML backup file
+- Lists playbooks from the synced repo with inline tag checkboxes (`--tags`); live colorized log
+  streaming
+- View a playbook's or the inventory's raw YAML, syntax highlighted (read-only)
+- `--limit` host selection per run, sourced from your inventory
+- Live per-task progress (current task, per-host status chip) and a structured Play Recap on
+  completion
+- Cancel a running playbook; runs auto-killed after a configurable timeout (default 60 min)
+- Per-playbook cron schedules, independent of the git sync schedule
+- Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
+- Manual "Sync from Git" — also installs collections from the repo's `requirements.yaml`
+- Sync Logs tab — full output of every git sync
+- Settings: git repo URL/branch, playbooks subdirectory, inventory path, requirements path, sync
+  cron, extra `ansible-playbook` args, recent-runs count, run timeout
+- Settings backup/restore as YAML
 - Upload one or more named SSH keys (file or paste) for connecting to managed hosts
-- Simple login with SQLite-backed users (first run prompts you to create an admin account), or
-  disable login entirely with `ULMO_DISABLE_AUTH=true`
+- SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
 
@@ -41,73 +32,53 @@ docker compose up -d
 
 Open http://localhost:8000 — you'll be redirected to a setup page to create the first user.
 
-Then go to **Settings** and set:
-- **Git repository URL** — e.g. `https://git.example.com/Home/Ansible.git` or an `ssh://` URL
-- **Branch** — defaults to `main`
-- **Playbooks subdirectory** — defaults to `playbooks` (relative to the repo root)
-- **Sync schedule** — a standard 5-field cron expression (e.g. `*/30 * * * *`), or leave blank to only sync manually
-
-Click **Sync from Git** on the dashboard to do the first clone.
+Then in **Settings**, set the git repository URL, branch, and (optionally) sync schedule, then
+click **Sync from Git** on the dashboard to do the first clone.
 
 ## Repo layout
 
-ulmo expects a few specific files at the **root** of your synced repo:
+Expected at the **root** of your synced repo:
 
-| File | Why it's expected at root |
+| File | Notes |
 |---|---|
-| `ansible.cfg` | Every `ansible-playbook`/`ansible-galaxy` call runs with the repo root as its working directory, and Ansible only auto-discovers `ansible.cfg` from the current directory — there's no Settings field for this, it must be at root. |
-| `inventory.yaml` | Default value of the **Inventory path** setting (Settings → Git Sync). Drives the read-only Inventory tab and the `--limit` host checkboxes on each playbook. Change the setting if yours lives elsewhere or is named differently. |
-| `requirements.yaml` | Collections to install on every "Sync from Git" — see [How playbook runs work](#how-playbook-runs-work). Looked for at the repo root by default (falls back to inside the playbooks subdirectory); override with the **Requirements path** setting if yours lives elsewhere. |
-
-Playbooks themselves live in a subdirectory — `playbooks/` by default, configurable via the
-**Playbooks subdirectory** setting — so a typical repo looks like:
+| `ansible.cfg` | Required at root — every `ansible`/`ansible-galaxy` call runs with the repo root as cwd; no Settings override. |
+| `inventory.yaml` | Default for the **Inventory path** setting; change it if yours lives elsewhere or is named differently. |
+| `requirements.yaml` | Collections to install on every sync. Auto-discovered at root, then inside the playbooks subdir; override with **Requirements path**. |
 
 ```
 .
 ├── ansible.cfg
 ├── inventory.yaml
 ├── requirements.yaml
-└── playbooks/
-    ├── site.yaml
-    └── ...
+└── playbooks/       # configurable via "Playbooks subdirectory"
+    └── site.yaml
 ```
 
 ## Session secret key
 
-`ULMO_SECRET_KEY` signs login session cookies. You don't need to set it — if it's unset,
-a random key is generated on first startup and persisted to `./data/secret_key`, reused on every
-restart. Only set it explicitly if you want a stable key independent of `./data` (e.g. you wipe
-`./data` but want existing sessions to survive, or you run multiple replicas that need to share
-one key).
+`ULMO_SECRET_KEY` signs session cookies. Unset by default — a random key is generated and
+persisted to `./data/secret_key` on first run. Set it explicitly only if you need a stable key
+independent of `./data` (wiping data but keeping sessions, or multiple replicas sharing one key).
 
 ## Disabling login
 
-If ulmo already sits behind your own access control (a reverse proxy with auth, a
-VPN-only network, etc.) you can skip the login screen entirely by setting
-`ULMO_DISABLE_AUTH=true` (uncomment the line in `docker-compose.yml`) and restarting the
-container. Every request is then treated as a single anonymous user — `/login` and `/setup`
-redirect to the dashboard, and password/user management is hidden from Settings. This is off by
-default; only enable it if you trust everything that can reach the container's port.
+Set `ULMO_DISABLE_AUTH=true` (uncomment in `docker-compose.yml`) to skip the login screen if ulmo
+already sits behind your own access control (reverse proxy auth, VPN-only network). Every request
+becomes a single anonymous user; only enable if you trust everything that can reach the port.
 
 ## SSH access to target hosts
 
-Go to **Settings → SSH Key** and paste the private key used to connect to the hosts your
-playbooks manage. It's written to `./data/ssh_home/.ssh/ansible-ed25519` (0600, never shown
-back in the UI) and symlinked into the container at the literal paths your inventory already
-expects:
+**Settings → SSH Key** — paste the private key used to connect to managed hosts. Written to
+`./data/ssh_home/.ssh/<name>` (0600) and symlinked into the container at:
 
-- `/home/ansible/.ssh` — matches `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519`
-  in `inventory.yaml`'s group vars, so **no inventory changes are required**.
-- `/root/.ssh` — so `known_hosts` (auto-accepted per `ansible.cfg`'s
-  `StrictHostKeyChecking=accept-new`) persists across container restarts too.
+- `/home/ansible/.ssh` — matches the common `ansible_ssh_private_key_file:
+  /home/ansible/.ssh/ansible-ed25519` inventory convention, so no inventory changes needed
+- `/root/.ssh` — persists `known_hosts` across restarts
 
-If your inventory's `ansible_ssh_private_key_file` points somewhere else, set
-`ULMO_SSH_LINK_HOMES` (comma-separated list of home directories whose `.ssh` should be
-linked) instead of editing the inventory. The key must be unencrypted — passphrase-protected
-keys can't be used for unattended runs.
+If your inventory points elsewhere, set `ULMO_SSH_LINK_HOMES` (comma-separated home dirs) instead
+of editing the inventory. Keys must be unencrypted (no passphrase) for unattended runs.
 
-If your git remote is private and needs its own SSH key (separate from the one above), mount it
-directly in `docker-compose.yml`:
+For a private git remote needing its own key, mount it directly:
 
 ```yaml
 volumes:
@@ -117,91 +88,54 @@ volumes:
 
 ## Settings backup & restore
 
-**Settings → Backup & Restore** lets you download every setting on the Settings page (git repo,
-branch, playbooks subdirectory, inventory path, requirements path, sync schedule, extra args,
-recent-runs count, run timeout, notification config including Pushover/ntfy secrets) as a YAML
-file, and restore from one later. Restoring only applies known setting keys — anything else in
-the file is reported back as ignored rather than silently applied, so a backup edited by hand
-(or from a future version with different keys) fails safe.
-
-SSH keys and user accounts are **not** included in this backup. Back up `./data/ssh_home/` and
-your user list separately if you need them.
+**Settings → Backup & Restore** — download/restore every Settings-page value as YAML, including
+notification secrets (Pushover token, ntfy URL). Restore only applies known keys; anything else
+is reported as ignored. SSH keys and user accounts are **not** included — back those up
+separately (`./data/ssh_home/`, user list).
 
 ## How playbook runs work
 
-Each playbook's tags are discovered by running `ansible-playbook <playbook> --list-tags` — this
-only parses the playbook (and any roles/includes it pulls in) locally, it never connects to a
-host. Tags are computed once per **sync**, not on every dashboard load, and cached to
-`./data/playbook_tags.json` — edit a playbook's tags in git, then click "Sync from Git" to see
-the change reflected. Check any tags on a playbook's row and only matching tasks run
-(`--tags a,b`); leave everything unchecked to run the whole playbook.
+Tags come from `ansible-playbook --list-tags` (no host connection), computed once per sync and
+cached to `./data/playbook_tags.json` — re-sync after changing a playbook's tags in git. Checked
+tags run via `--tags`; none checked runs the whole playbook. Host limiting works the same way via
+`ansible-inventory --list` and `--limit`.
 
-Hosts to limit a run to are listed from `ansible-inventory --list` against your configured
-inventory — check any host under "Limit hosts" on a playbook's row to pass `--limit a,b`; leave
-unchecked to target the whole inventory.
+Runs go through [`ansible-runner`](https://ansible-runner.readthedocs.io/) with the synced repo as
+`project_dir`, so the repo's own `ansible.cfg` is used as-is. Cancel (Run detail → Cancel) and the
+configurable **Run timeout** (default 60 min, 0 disables) both stop the run mid-flight.
 
-Runs are executed via [`ansible-runner`](https://ansible-runner.readthedocs.io/), with the synced
-repo as `project_dir` so a repo's own `ansible.cfg` (inventory path, roles path, SSH settings,
-etc.) is respected as-is — no special configuration needed in ulmo itself. ansible-runner gives
-the run a cancel button (Run detail → Cancel) that stops `ansible-playbook` mid-run, rather than
-ulmo needing to manage the subprocess itself. It's also auto-killed if it runs longer than the
-**Run timeout** configured in Settings (default 60 minutes; 0 disables it).
+While running, ansible-runner's structured per-task events drive a live progress panel (current
+task, per-host status chip). A host that hits `failed`/`unreachable` keeps that status even if a
+later `rescue`/`always` block succeeds — the panel flags trouble, it doesn't paper over it. On
+completion the same data renders as a **Play Recap** table, read back from `job_events/` artifacts
+on disk (works for old runs too, survives restarts).
 
-While a run is active, ansible-runner's structured per-task events (not just raw stdout) drive a
-small live progress panel above the log — current task name, and a status chip per host
-(`running` / `ok` / `changed` / `skipped` / `failed` / `unreachable`). Once a host hits
-`failed`/`unreachable` its chip stays that way even if a later task on it reports something
-better (e.g. a `rescue`/`always` block continuing) — the point is to flag trouble, not paper over
-it. When the playbook finishes, the same structured data renders as a **Play Recap** table
-(ok/changed/unreachable/failed/skipped per host) — the exact PLAY RECAP you'd see at a terminal,
-just structured instead of parsed from colored text. Revisiting an old run later shows the same
-table, read back from ansible-runner's `job_events/` artifacts on disk (no separate database
-record needed, and it survives a container restart).
-
-Two environment variables are set for every run (and for the collection install during sync):
-
-- `ANSIBLE_FORCE_COLOR=true` — ansible-playbook disables color by default when stdout isn't a
-  TTY (which it never is, running under ansible-runner); this forces it back on so the log viewer
-  can render real colors via [ansi_up](https://github.com/drudru/ansi_up).
-- `ANSIBLE_COLLECTIONS_PATH=/data/collections` — points at the persistent location collections get
-  installed into during sync, since Ansible only auto-discovers `~/.ansible/collections` by
-  default, which doesn't survive container restarts.
-
-Each "Sync from Git" also runs `ansible-galaxy collection install -r <requirements.yaml>` if the
-repo has one — see [Repo layout](#repo-layout) for where it's expected. This is what provides
-things like the `timer`/`profile_tasks` callback plugins your `ansible.cfg` may enable; those
-moved out of `ansible-core` into `ansible.posix`/`community.general` in recent versions. (The
-lookup checks the repo root first, then falls back to inside the playbooks subdirectory, for
-repos that predate this convention.)
+`ANSIBLE_FORCE_COLOR=true` and `ANSIBLE_COLLECTIONS_PATH=/data/collections` are set for every run
+and sync, so colored log output renders correctly and installed collections persist across
+restarts.
 
 ## Per-playbook schedules
 
-**Settings → Playbook Schedules** lists every playbook found in the synced repo with a cron-
-expression field next to it. Set a 5-field cron expression and save to run that playbook
-unattended on its own schedule, independent of the git sync schedule — useful for things like a
-nightly `os-update.yaml`. Leave the field blank and save to disable a playbook's schedule.
-Scheduled runs show up in Run History with `triggered_by: schedule`, same as scheduled git syncs.
+**Settings → Playbook Schedules** — a cron field per playbook, independent of the git sync
+schedule. Blank disables it. Scheduled runs show `triggered_by: schedule` in Run History.
 
 ## Notifications
 
-**Settings → Notifications** can ping [Pushover](https://pushover.net) and/or
-[ntfy](https://ntfy.sh) when a run finishes — choose "Every run" or "Failures only", or leave
-disabled (the default). Both can be configured at once; either fires independently if its
-fields are filled in. Pushover needs an app token + user key; ntfy needs the full topic URL
-(e.g. `https://ntfy.sh/my-topic`).
+**Settings → Notifications** — ping [Pushover](https://pushover.net) and/or
+[ntfy](https://ntfy.sh) on run completion ("Every run" or "Failures only"). Both can be
+configured independently. Pushover needs an app token + user key; ntfy needs the full topic URL.
 
 ## Data persistence
 
-Everything lives under `/data` in the container (mounted to `./data` by the compose file):
+Everything lives under `/data` (mounted to `./data`):
 
-- `ulmo.db` — SQLite database (users, settings, run/sync history, playbook schedules)
+- `ulmo.db` — SQLite database
 - `repo/` — the synced git repo
-- `runner/` — ansible-runner's private data dir; `runner/artifacts/<run_id>/stdout` is each run's
-  live log
-- `ssh_home/.ssh/` — uploaded SSH private keys + `known_hosts`
-- `collections/` — collections installed from the repo's `requirements.yaml`
-- `playbook_tags.json` — cached per-playbook tags, refreshed on each sync
-- `secret_key` — auto-generated session signing key (only created if `ULMO_SECRET_KEY` isn't set)
+- `runner/` — ansible-runner's data dir (`runner/artifacts/<run_id>/stdout` per run's live log)
+- `ssh_home/.ssh/` — uploaded SSH keys + `known_hosts`
+- `collections/` — installed collections
+- `playbook_tags.json` — cached tags, refreshed on each sync
+- `secret_key` — auto-generated session key (only if `ULMO_SECRET_KEY` isn't set)
 
 ## Development
 
