@@ -174,21 +174,31 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
     if timeout_seconds:
         run_kwargs["timeout"] = timeout_seconds
 
-    ar_thread, runner = ansible_runner.run_async(**run_kwargs)
+    start_error = None
+    try:
+        ar_thread, runner = ansible_runner.run_async(**run_kwargs)
+        ar_thread.join()
+    except Exception as exc:  # noqa: BLE001
+        start_error = str(exc)
+        runner = None
+    finally:
+        with _lock:
+            _cancel_events.pop(run_id, None)
+            _progress.pop(run_id, None)
 
-    ar_thread.join()
-
-    with _lock:
-        _cancel_events.pop(run_id, None)
-        _progress.pop(run_id, None)
-
-    if cancel_event.is_set():
+    if start_error is not None:
         status = "failed"
-    elif runner.status == "successful":
-        status = "success"
+        return_code = -1
+        log_path(run_id).parent.mkdir(parents=True, exist_ok=True)
+        log_path(run_id).write_text(f"ulmo: failed to start run: {start_error}\n")
     else:
-        status = "failed"
-    return_code = runner.rc if runner.rc is not None else -1
+        return_code = runner.rc if runner.rc is not None else -1
+        if cancel_event.is_set():
+            status = "failed"
+        elif runner.status == "successful":
+            status = "success"
+        else:
+            status = "failed"
 
     with Session(engine) as session:
         record = session.get(RunHistory, run_id)
