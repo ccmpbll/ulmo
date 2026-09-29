@@ -117,7 +117,9 @@ th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: u
 }
 .badge.success { background: rgba(62, 207, 142, 0.15); color: var(--green); }
 .badge.failed { background: rgba(239, 91, 91, 0.15); color: var(--red); }
+.badge.timeout { background: rgba(239, 91, 91, 0.15); color: var(--red); }
 .badge.running { background: rgba(224, 179, 65, 0.15); color: var(--yellow); }
+.badge.cancelled { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
 
 #progress-panel { display: flex; flex-direction: column; gap: 10px; }
 #progress-hosts { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -8,8 +8,6 @@ DATA_DIR = Path(os.environ.get("ULMO_DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 REPO_DIR = DATA_DIR / "repo"
-RUNS_DIR = DATA_DIR / "runs"
-RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ansible-runner private_data_dir; artifacts/{run_id}/stdout is the live log.
 RUNNER_DATA_DIR = DATA_DIR / "runner"

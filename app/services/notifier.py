@@ -10,10 +10,17 @@ def notify_run_complete(run: RunHistory) -> None:
     notify_on = settings.get("notify_on", "")
     if not notify_on:
         return
-    if notify_on == "failure" and run.status != "failed":
+    # A cancel is a deliberate user action, not a failure — never let it fire
+    # a "failure" alert. It still notifies under notify_on="all".
+    if notify_on == "failure" and run.status in ("success", "cancelled"):
         return
 
-    status_word = "succeeded" if run.status == "success" else "FAILED"
+    status_words = {
+        "success": "succeeded",
+        "cancelled": "cancelled",
+        "timeout": "TIMED OUT",
+    }
+    status_word = status_words.get(run.status, "FAILED")
     title = f"ulmo: {run.playbook} {status_word}"
     parts = []
     if run.tags:

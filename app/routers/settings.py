@@ -74,6 +74,16 @@ def update_settings(
             "/settings?error=Run+timeout+must+be+0+or+a+positive+number", status_code=303
         )
 
+    git_sync_cron = git_sync_cron.strip()
+    if git_sync_cron:
+        from apscheduler.triggers.cron import CronTrigger
+        try:
+            CronTrigger.from_crontab(git_sync_cron)
+        except ValueError:
+            return RedirectResponse(
+                "/settings?error=Invalid+git+sync+cron+expression", status_code=303
+            )
+
     settings_store.set_many(
         {
             "git_repo_url": git_repo_url.strip(),
