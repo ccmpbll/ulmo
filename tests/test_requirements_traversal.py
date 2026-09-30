@@ -9,12 +9,15 @@ Run directly: python3 tests/test_requirements_traversal.py
 """
 import os
 import shutil
+import sys
 import tempfile
 
 DATA_DIR = tempfile.mkdtemp(prefix="ulmo-test-")
 os.environ["ULMO_DATA_DIR"] = DATA_DIR
 
 from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import REPO_DIR  # noqa: E402
 from app.database import init_db  # noqa: E402

@@ -11,11 +11,13 @@ Run directly: python3 tests/test_log_tail.py
 """
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
 DATA_DIR = tempfile.mkdtemp(prefix="ulmo-test-")
 os.environ["ULMO_DATA_DIR"] = DATA_DIR
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.log_tail import LogTailer  # noqa: E402
 

@@ -9,3 +9,7 @@ python-multipart==0.0.12
 ansible-core==2.17.6
 ansible-runner==2.4.0
 PyYAML==6.0.3
+# Test-only: backs fastapi.testclient.TestClient, which tests/test_stream_resume.py
+# uses to drive the SSE route over a real ASGI stack. Kept here (rather than in a
+# separate dev-requirements file) so the container can run its own self-checks.
+httpx==0.28.1

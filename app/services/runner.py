@@ -235,8 +235,20 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
     notifier.notify_run_complete(record)
 
 
-def read_log(run_id: int) -> str:
+def read_log(run_id: int) -> tuple[str, int]:
+    """The run's log as text, plus the byte offset in the file that text
+    represents — i.e. the point the run-detail page should hand the stream to
+    resume from.
+
+    The offset is measured on disk rather than derived in the browser, because
+    this decode uses errors="replace": a multi-byte character split by an
+    in-flight write becomes U+FFFD, and re-encoding that in JS produces three
+    bytes where the file holds one or two. A client computing the offset itself
+    would resume past the real end of file and silently drop a character at
+    the seam.
+    """
     path = log_path(run_id)
     if not path.exists():
-        return ""
-    return path.read_text(errors="replace")
+        return "", 0
+    raw = path.read_bytes()
+    return raw.decode("utf-8", errors="replace"), len(raw)
