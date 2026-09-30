@@ -1,4 +1,4 @@
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine
 
 from app.config import DATABASE_URL
 
@@ -29,8 +29,3 @@ def _apply_column_migrations() -> None:
                     # reserved SQL keyword and breaks unquoted ALTER TABLE syntax.
                     conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN "{name}" {sql_type}')
         conn.commit()
-
-
-def get_session():
-    with Session(engine) as session:
-        yield session

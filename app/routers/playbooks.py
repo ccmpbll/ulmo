@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
-from app.services import git_sync, inventory, playbook_tags, runner, settings_store
+from app.services import git_sync, inventory, playbook_tags, runner, scheduler, settings_store
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -58,6 +58,7 @@ def sync(request: Request, user=Depends(require_login)):
     record = git_sync.sync_now(triggered_by=user.username)
     if record.status == "failed":
         return RedirectResponse(f"/?error={quote(record.message[:200])}", status_code=303)
+    scheduler.reap_orphaned_schedules()
     return RedirectResponse("/?ok=Sync+complete", status_code=303)
 
 
@@ -69,13 +70,13 @@ def run_playbook(
     tags: list[str] = Form([]),
     limit: list[str] = Form([]),
 ):
-    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
-    if rel_path not in valid_paths:
+    try:
+        record = runner.start_run(
+            rel_path,
+            triggered_by=user.username,
+            tags=",".join(tags),
+            limit=",".join(limit),
+        )
+    except ValueError:
         return RedirectResponse("/?error=Unknown+playbook", status_code=303)
-    record = runner.start_run(
-        rel_path,
-        triggered_by=user.username,
-        tags=",".join(tags),
-        limit=",".join(limit),
-    )
     return RedirectResponse(f"/runs/{record.id}", status_code=303)

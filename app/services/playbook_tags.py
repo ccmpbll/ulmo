@@ -44,11 +44,20 @@ def list_tags(rel_path: str) -> dict:
     return {"tags": sorted(tags), "error": None}
 
 
-def refresh_cache(playbooks: list[dict]) -> None:
+def refresh_cache(playbooks: list[dict]) -> str | None:
     """Recompute and persist tags for every playbook. Called after git sync —
-    keeps dashboard loads fast (no per-request subprocess calls)."""
+    keeps dashboard loads fast (no per-request subprocess calls).
+
+    Best-effort: a failure writing the cache file doesn't mean the sync
+    failed (the clone already succeeded) — return a warning string instead
+    of raising, same pattern as git_sync._install_collections.
+    """
     cache = {pb["rel_path"]: list_tags(pb["rel_path"]) for pb in playbooks}
-    CACHE_PATH.write_text(json.dumps(cache))
+    try:
+        CACHE_PATH.write_text(json.dumps(cache))
+    except OSError as exc:
+        return f"WARNING: could not write playbook tag cache: {exc}"
+    return None
 
 
 def load_cache() -> dict:
@@ -58,7 +67,3 @@ def load_cache() -> dict:
         return json.loads(CACHE_PATH.read_text())
     except (json.JSONDecodeError, OSError):
         return {}
-
-
-def get_cached_tags(rel_path: str) -> dict:
-    return load_cache().get(rel_path, EMPTY_RESULT)

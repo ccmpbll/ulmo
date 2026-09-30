@@ -1,11 +1,12 @@
+import shutil
 import subprocess
 from pathlib import Path
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.config import COLLECTIONS_DIR, REPO_DIR
 from app.database import engine
-from app.models import SyncHistory
+from app.models import SyncHistory, utcnow
 from app.services import playbook_tags, settings_store
 
 SKIP_DIRS = {"old", ".git"}
@@ -103,6 +104,12 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
             log_lines.append(_run(["git", "checkout", branch], cwd=REPO_DIR))
             log_lines.append(_run(["git", "reset", "--hard", f"origin/{branch}"], cwd=REPO_DIR))
         else:
+            if REPO_DIR.exists():
+                # A dir here without .git means a previous clone was killed
+                # mid-way (container restart, OOM). `git clone` refuses to
+                # write into a non-empty directory, which would brick every
+                # future sync — wipe it and start clean.
+                shutil.rmtree(REPO_DIR)
             REPO_DIR.parent.mkdir(parents=True, exist_ok=True)
             log_lines.append(
                 _run(["git", "clone", "--branch", branch, repo_url, str(REPO_DIR)])
@@ -112,7 +119,11 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
         if collections_output:
             log_lines.append(collections_output)
 
-        playbook_tags.refresh_cache(list_playbooks())
+        # Best-effort: a tag-cache write failure shouldn't mark a successful
+        # clone as a failed sync.
+        cache_warning = playbook_tags.refresh_cache(list_playbooks())
+        if cache_warning:
+            log_lines.append(cache_warning)
 
         message = "\n".join(line for line in log_lines if line)
         status = "success"
@@ -122,8 +133,6 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
     except Exception as exc:  # noqa: BLE001
         message = f"Unexpected error: {exc}"
         status = "failed"
-
-    from app.models import utcnow
 
     with Session(engine) as session:
         record = session.get(SyncHistory, record_id)
@@ -172,3 +181,17 @@ def read_playbook(rel_path: str) -> str:
 
 def repo_synced() -> bool:
     return (REPO_DIR / ".git").exists()
+
+
+def reconcile_orphaned_syncs() -> None:
+    """Mark any SyncHistory row stuck at status='running' as failed. Only
+    reachable if the process died mid-sync (container restart) — call once
+    at startup before anything else touches SyncHistory."""
+    with Session(engine) as session:
+        orphaned = session.exec(select(SyncHistory).where(SyncHistory.status == "running")).all()
+        for record in orphaned:
+            record.status = "failed"
+            record.message = "Sync did not finish — the app restarted while it was running."
+            record.finished_at = utcnow()
+            session.add(record)
+        session.commit()

@@ -22,7 +22,10 @@
 
 <pre class="log" id="log"></pre>
 <p id="run-complete-msg" class="{{ 'ok' if run.status == 'success' else 'error' }}" style="{% if run.status == 'running' %}display:none;{% endif %}">
-  {% if run.status == "success" %}Playbook completed successfully.{% elif run.status == "failed" %}Playbook failed.{% endif %}
+  {% if run.status == "success" %}Playbook completed successfully.
+  {% elif run.status == "cancelled" %}Playbook run was cancelled.
+  {% elif run.status == "timeout" %}Playbook run timed out.
+  {% elif run.status == "failed" %}Playbook failed.{% endif %}
 </p>
 
 <div class="card" id="recap-panel" style="{% if not recap %}display:none;{% endif %} margin-top:16px;">
@@ -93,16 +96,29 @@
   const cancelBtn = document.getElementById("cancel-btn");
   const completeMsg = document.getElementById("run-complete-msg");
   const phaseEl = document.getElementById("progress-phase");
-  let receivedAny = false;
+  // The server always restarts each stream connection from byte 0 of the
+  // log. A plain EventSource silently reconnects after any blip (proxy
+  // timeout, brief server restart) using the same handler, so a per-page
+  // "have I gotten anything yet" flag doesn't catch it — clear the log on
+  // the first message of every connection, not just the first ever.
+  let freshConnection = true;
   const source = new EventSource("/runs/{{ run.id }}/stream");
   source.onmessage = (event) => {
-    if (!receivedAny) {
-      receivedAny = true;
+    if (freshConnection) {
+      freshConnection = false;
       logEl.innerHTML = "";
     }
     logEl.insertAdjacentHTML("beforeend", ansiUp.ansi_to_html(JSON.parse(event.data)));
     logEl.scrollTop = logEl.scrollHeight;
   };
+  source.onerror = () => {
+    if (phaseEl) phaseEl.textContent = "connection lost — retrying…";
+  };
+  // Fires on every successful (re)connect, including auto-reconnects after
+  // the error above — this is the actual signal a fresh stream started.
+  source.addEventListener("open", () => {
+    freshConnection = true;
+  });
   source.addEventListener("progress", (event) => {
     const data = JSON.parse(event.data);
     if (phaseEl) {
@@ -115,10 +131,15 @@
   });
   source.addEventListener("done", (event) => {
     const status = event.data;
+    const messages = {
+      success: "Playbook completed successfully.",
+      cancelled: "Playbook run was cancelled.",
+      timeout: "Playbook run timed out.",
+    };
     badgeEl.textContent = status;
     badgeEl.className = "badge " + status;
     cancelBtn.disabled = true;
-    completeMsg.textContent = status === "success" ? "Playbook completed successfully." : "Playbook failed.";
+    completeMsg.textContent = messages[status] || "Playbook failed.";
     completeMsg.className = status === "success" ? "ok" : "error";
     completeMsg.style.display = "";
     const progressPanel = document.getElementById("progress-panel");

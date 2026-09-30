@@ -23,7 +23,7 @@ class Settings(SQLModel, table=True):
 class RunHistory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     playbook: str
-    status: str = "running"  # running | success | failed
+    status: str = "running"  # running | success | failed | timeout | cancelled
     triggered_by: str = "manual"  # manual | schedule | username
     return_code: Optional[int] = None
     tags: Optional[str] = None  # comma-separated --tags used for this run, if any

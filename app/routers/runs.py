@@ -49,12 +49,18 @@ async def run_stream(run_id: int):
             path = runner.log_path(run_id)
             if path.exists():
                 try:
-                    with open(path, errors="replace") as f:
+                    # Binary mode + a real byte offset, not TextIOWrapper's
+                    # tell()/seek() — that cookie is only meaningful for the
+                    # file object that produced it, and reopening the file
+                    # every tick (as this loop does) breaks it, silently
+                    # mis-decoding multi-byte chars that straddle the seek
+                    # point.
+                    with open(path, "rb") as f:
                         f.seek(last_pos)
-                        new_text = f.read()
+                        new_bytes = f.read()
                         last_pos = f.tell()
-                    if new_text:
-                        yield f"data: {json.dumps(new_text)}\n\n"
+                    if new_bytes:
+                        yield f"data: {json.dumps(new_bytes.decode('utf-8', errors='replace'))}\n\n"
                 except OSError:
                     pass
 

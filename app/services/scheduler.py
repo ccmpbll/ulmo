@@ -15,7 +15,9 @@ PLAYBOOK_JOB_PREFIX = "playbook:"
 
 def _run_scheduled_sync() -> None:
     logger.info("Running scheduled git sync")
-    git_sync.sync_now(triggered_by="schedule")
+    record = git_sync.sync_now(triggered_by="schedule")
+    if record.status == "success":
+        reap_orphaned_schedules()
 
 
 def reschedule(cron_expression: str | None = None) -> None:
@@ -59,7 +61,13 @@ def reschedule_playbook(rel_path: str, cron: str) -> None:
     path_copy = rel_path
 
     def _run():
-        runner.start_run(path_copy, triggered_by="schedule")
+        try:
+            runner.start_run(path_copy, triggered_by="schedule")
+        except ValueError:
+            # Playbook was removed/renamed since this job was scheduled.
+            # reap_orphaned_schedules() clears the job itself after the next
+            # sync; until then, skip quietly instead of crashing the job.
+            logger.warning("Scheduled run skipped: playbook %r no longer exists", path_copy)
 
     scheduler.add_job(_run, trigger, id=job_id, replace_existing=True)
 
@@ -72,6 +80,27 @@ def reschedule_all_playbooks() -> None:
         schedules = session.exec(select(PlaybookSchedule)).all()
     for s in schedules:
         reschedule_playbook(s.rel_path, s.cron)
+
+
+def reap_orphaned_schedules() -> None:
+    """Remove PlaybookSchedule rows (and their APScheduler jobs) for
+    playbooks no longer in the synced repo. Call after a successful sync,
+    when the playbook list is authoritative — never at startup, since the
+    repo may not be synced yet and every schedule would look orphaned."""
+    from app.database import engine
+    from app.models import PlaybookSchedule
+
+    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
+    with Session(engine) as session:
+        schedules = session.exec(select(PlaybookSchedule)).all()
+        for s in schedules:
+            if s.rel_path in valid_paths:
+                continue
+            job_id = PLAYBOOK_JOB_PREFIX + s.rel_path
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+            session.delete(s)
+        session.commit()
 
 
 def start() -> None:

@@ -3,12 +3,12 @@ import threading
 from pathlib import Path
 
 import ansible_runner
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.config import COLLECTIONS_DIR, REPO_DIR, RUNNER_DATA_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
-from app.services import settings_store
+from app.services import git_sync, settings_store
 
 _cancel_events: dict[int, threading.Event] = {}
 _progress: dict[int, dict] = {}
@@ -65,6 +65,21 @@ def _set_host_status(prog: dict, host: str, status: str) -> None:
     prog["hosts"][host] = status
 
 
+def reconcile_orphaned_runs() -> None:
+    """Mark any RunHistory row stuck at status='running' as failed. A row can
+    only be in that state if the process managing it (this one) died before
+    finishing — call once at startup before the scheduler starts firing new
+    runs."""
+    with Session(engine) as session:
+        orphaned = session.exec(select(RunHistory).where(RunHistory.status == "running")).all()
+        for record in orphaned:
+            record.status = "failed"
+            record.return_code = -1
+            record.finished_at = utcnow()
+            session.add(record)
+        session.commit()
+
+
 def start_run(
     playbook_rel_path: str,
     triggered_by: str = "manual",
@@ -73,6 +88,11 @@ def start_run(
 ) -> RunHistory:
     tags = tags.strip()
     limit = limit.strip()
+
+    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
+    if playbook_rel_path not in valid_paths:
+        raise ValueError(f"Unknown playbook: {playbook_rel_path}")
+
     with Session(engine) as session:
         record = RunHistory(
             playbook=playbook_rel_path,
@@ -105,20 +125,6 @@ def cancel_run(run_id: int) -> bool:
 
 def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "") -> None:
     from app.services import notifier
-
-    settings = settings_store.get_all()
-    extra_args = settings.get("extra_args", "").strip() or None
-
-    try:
-        timeout_minutes = int(settings.get("run_timeout_minutes", "60") or "0")
-    except ValueError:
-        timeout_minutes = 60
-    timeout_seconds = timeout_minutes * 60 if timeout_minutes > 0 else None
-
-    envvars = {
-        "ANSIBLE_FORCE_COLOR": "true",
-        "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_DIR),
-    }
 
     cancel_event = threading.Event()
     with _lock:
@@ -157,48 +163,65 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
             if prog is not None:
                 prog["phase"] = status_data.get("status", prog["phase"])
 
-    run_kwargs = dict(
-        private_data_dir=str(RUNNER_DATA_DIR),
-        project_dir=str(REPO_DIR),
-        playbook=playbook_rel_path,
-        tags=tags or None,
-        limit=limit or None,
-        envvars=envvars,
-        cmdline=extra_args,
-        ident=str(run_id),
-        quiet=True,
-        cancel_callback=cancel_event.is_set,
-        event_handler=event_handler,
-        status_handler=status_handler,
-    )
-    if timeout_seconds:
-        run_kwargs["timeout"] = timeout_seconds
-
-    start_error = None
+    # Everything from here down — including reading settings — is inside the
+    # try. A row is created as status="running" in start_run() before this
+    # thread ever runs; if anything here raises uncaught, the thread dies
+    # silently and the row is stuck at "running" forever (only the final
+    # `with Session` block below would clear it, but it'd never be reached).
+    return_code = -1
+    run_status = None
     try:
-        ar_thread, runner = ansible_runner.run_async(**run_kwargs)
+        settings = settings_store.get_all()
+        extra_args = settings.get("extra_args", "").strip() or None
+        try:
+            timeout_minutes = int(settings.get("run_timeout_minutes", "60") or "0")
+        except ValueError:
+            timeout_minutes = 60
+        timeout_seconds = timeout_minutes * 60 if timeout_minutes > 0 else None
+
+        envvars = {
+            "ANSIBLE_FORCE_COLOR": "true",
+            "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_DIR),
+        }
+
+        run_kwargs = dict(
+            private_data_dir=str(RUNNER_DATA_DIR),
+            project_dir=str(REPO_DIR),
+            playbook=playbook_rel_path,
+            tags=tags or None,
+            limit=limit or None,
+            envvars=envvars,
+            cmdline=extra_args,
+            ident=str(run_id),
+            quiet=True,
+            cancel_callback=cancel_event.is_set,
+            event_handler=event_handler,
+            status_handler=status_handler,
+        )
+        if timeout_seconds:
+            run_kwargs["timeout"] = timeout_seconds
+
+        ar_thread, run_result = ansible_runner.run_async(**run_kwargs)
         ar_thread.join()
+        return_code = run_result.rc if run_result.rc is not None else -1
+        run_status = run_result.status
     except Exception as exc:  # noqa: BLE001
-        start_error = str(exc)
-        runner = None
+        log_path(run_id).parent.mkdir(parents=True, exist_ok=True)
+        log_path(run_id).write_text(f"ulmo: failed to start run: {exc}\n")
+        status = "failed"
+    else:
+        if cancel_event.is_set():
+            status = "cancelled"
+        elif run_status == "timeout":
+            status = "timeout"
+        elif run_status == "successful":
+            status = "success"
+        else:
+            status = "failed"
     finally:
         with _lock:
             _cancel_events.pop(run_id, None)
             _progress.pop(run_id, None)
-
-    if start_error is not None:
-        status = "failed"
-        return_code = -1
-        log_path(run_id).parent.mkdir(parents=True, exist_ok=True)
-        log_path(run_id).write_text(f"ulmo: failed to start run: {start_error}\n")
-    else:
-        return_code = runner.rc if runner.rc is not None else -1
-        if cancel_event.is_set():
-            status = "failed"
-        elif runner.status == "successful":
-            status = "success"
-        else:
-            status = "failed"
 
     with Session(engine) as session:
         record = session.get(RunHistory, run_id)
