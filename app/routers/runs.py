@@ -9,6 +9,7 @@ from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
 from app.services import runner
+from app.services.log_tail import LogTailer
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -35,9 +36,19 @@ def run_detail(request: Request, run_id: int):
 
 
 @router.get("/runs/{run_id}/stream")
-async def run_stream(run_id: int):
+async def run_stream(request: Request, run_id: int, offset: int = 0):
     async def event_source():
-        last_pos = 0
+        # Resume point: the client's manually-reopened connections pass the
+        # byte offset it last consumed (?offset=...); a native EventSource
+        # auto-reconnect sends it as Last-Event-ID instead. Prefer the header,
+        # fall back to the query param, else start at 0. The log is
+        # append-only and durable on disk, so resuming is always correct.
+        start = max(0, offset)
+        last_event_id = (request.headers.get("last-event-id") or "").strip()
+        if last_event_id.isdigit():
+            start = int(last_event_id)
+
+        tailer = LogTailer(runner.log_path(run_id), offset=start)
         last_progress_json = None
         while True:
             with Session(engine) as session:
@@ -46,23 +57,13 @@ async def run_stream(run_id: int):
                 yield "event: error\ndata: not found\n\n"
                 return
 
-            path = runner.log_path(run_id)
-            if path.exists():
-                try:
-                    # Binary mode + a real byte offset, not TextIOWrapper's
-                    # tell()/seek() — that cookie is only meaningful for the
-                    # file object that produced it, and reopening the file
-                    # every tick (as this loop does) breaks it, silently
-                    # mis-decoding multi-byte chars that straddle the seek
-                    # point.
-                    with open(path, "rb") as f:
-                        f.seek(last_pos)
-                        new_bytes = f.read()
-                        last_pos = f.tell()
-                    if new_bytes:
-                        yield f"data: {json.dumps(new_bytes.decode('utf-8', errors='replace'))}\n\n"
-                except OSError:
-                    pass
+            chunk = tailer.read()
+            if chunk:
+                # Embed the byte offset we've now consumed so the client can
+                # resume from exactly this point on reconnect, and use it as
+                # the SSE id so even the browser's native reconnect (which
+                # echoes Last-Event-ID) lands at the right place.
+                yield f"id: {tailer.pos}\ndata: {json.dumps({'pos': tailer.pos, 'text': chunk})}\n\n"
 
             progress = runner.get_progress(run_id)
             if progress is not None:
@@ -80,7 +81,17 @@ async def run_stream(run_id: int):
 
             await asyncio.sleep(1)
 
-    return StreamingResponse(event_source(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Reverse proxies (nginx, etc.) otherwise buffer the response
+            # instead of relaying each chunk as it's written, which silently
+            # defeats the live log view.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/runs/{run_id}/cancel")

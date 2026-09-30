@@ -10,6 +10,11 @@ logger = logging.getLogger("ulmo.ssh_keys")
 RESERVED_FILENAMES = {"known_hosts", "known_hosts.old", "config"}
 FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
+# Warnings from the most recent ensure_symlinks() run. Populated at startup
+# (see main.lifespan); the Settings page reads these instead of redoing the
+# mkdir/chmod/symlink work on every render.
+_last_link_warnings: list[str] = []
+
 
 def ensure_symlinks() -> list[str]:
     """Make SSH_STORAGE_DIR reachable as "<home>/.ssh" for each configured home.
@@ -48,7 +53,16 @@ def ensure_symlinks() -> list[str]:
     if warnings:
         for w in warnings:
             logger.warning(w)
+
+    global _last_link_warnings
+    _last_link_warnings = warnings
     return warnings
+
+
+def link_warnings() -> list[str]:
+    """Warnings from the most recent ensure_symlinks() call (run at startup),
+    for the Settings page — reading this isn't a filesystem operation."""
+    return _last_link_warnings
 
 
 def _validate_filename(filename: str) -> str:

@@ -1,8 +1,11 @@
+import logging
 import urllib.parse
 import urllib.request
 
 from app.models import RunHistory
 from app.services import settings_store
+
+logger = logging.getLogger("ulmo.notifier")
 
 
 def notify_run_complete(run: RunHistory) -> None:
@@ -48,7 +51,7 @@ def _send_pushover(token: str, user: str, title: str, message: str) -> None:
         with urllib.request.urlopen(req, timeout=10):
             pass
     except Exception:
-        pass
+        logger.exception("Pushover notification failed")
 
 
 def _send_ntfy(url: str, title: str, message: str) -> None:
@@ -58,4 +61,4 @@ def _send_ntfy(url: str, title: str, message: str) -> None:
         with urllib.request.urlopen(req, timeout=10):
             pass
     except Exception:
-        pass
+        logger.exception("ntfy notification failed")

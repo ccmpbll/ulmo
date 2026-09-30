@@ -1,13 +1,22 @@
 import json
 import subprocess
+import time
 from pathlib import Path
 
-from app.config import REPO_DIR
+from app.config import DATA_DIR, REPO_DIR
 from app.services import settings_store
 
 INVENTORY_EXTENSIONS = {".yaml", ".yml", ".ini", ".cfg"}
 SKIP_DIRS = {".git", "old"}
 MAX_DISPLAY_BYTES = 512 * 1024  # cap what we load into the browser
+
+# Running `ansible-inventory --list` is a subprocess + full parse of the
+# inventory — too expensive to do on every dashboard load. Cache the host
+# list and refresh it after each successful git sync; the TTL is a safety
+# net so the list also refreshes without a sync (e.g. a hand-edited
+# inventory), trading one subprocess call per minute for dozens per minute.
+HOSTS_CACHE_PATH = DATA_DIR / "inventory_hosts.json"
+HOSTS_CACHE_TTL_SECONDS = 60
 
 
 def _inventory_root() -> Path | None:
@@ -41,6 +50,33 @@ def list_files() -> list[dict]:
 
 
 def list_hosts() -> list[str]:
+    cached = _read_hosts_cache()
+    if cached is not None and time.time() - cached["ts"] < HOSTS_CACHE_TTL_SECONDS:
+        return cached["hosts"]
+    return refresh_hosts_cache()
+
+
+def refresh_hosts_cache() -> list[str]:
+    """Recompute the host list and persist it. Returns the host list even if
+    the write fails (that's a cache problem, not a data problem)."""
+    hosts = _run_ansible_inventory()
+    try:
+        HOSTS_CACHE_PATH.write_text(json.dumps({"ts": time.time(), "hosts": hosts}))
+    except OSError:
+        pass
+    return hosts
+
+
+def _read_hosts_cache() -> dict | None:
+    if not HOSTS_CACHE_PATH.exists():
+        return None
+    try:
+        return json.loads(HOSTS_CACHE_PATH.read_text())
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def _run_ansible_inventory() -> list[str]:
     root = _inventory_root()
     if root is None or not root.exists():
         return []

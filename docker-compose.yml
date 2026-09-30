@@ -14,6 +14,9 @@ services:
       # Uncomment to skip the login screen entirely (e.g. behind your own reverse
       # proxy or VPN-only network). Off by default.
       # ULMO_DISABLE_AUTH: "true"
+      # Uncomment only when served over TLS (your reverse proxy terminates it):
+      # marks the session cookie Secure so it's never sent over plain HTTP.
+      # ULMO_SECURE_COOKIES: "true"
     volumes:
       - ./data:/data
       # The SSH private key used by ansible-playbook to reach your managed hosts is
