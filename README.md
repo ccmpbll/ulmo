@@ -2,7 +2,7 @@
 
 # ulmo
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/docker.yml) ![Docker Image Size](https://img.shields.io/docker/image-size/ccmpbll/ulmo/latest) ![Docker Pulls](https://img.shields.io/docker/pulls/ccmpbll/ulmo.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Build Status](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/docker.yml) ![Tests](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/tests.yml) ![Docker Image Size](https://img.shields.io/docker/image-size/ccmpbll/ulmo/latest) ![Docker Pulls](https://img.shields.io/docker/pulls/ccmpbll/ulmo.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
 A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync.
 
@@ -77,3 +77,25 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ULMO_DATA_DIR=./data uvicorn app.main:app --reload
 ```
+
+### Tests
+
+Self-checks, no pytest — each file in `tests/` is a standalone script. They run in CI on every
+push to `main` and pull request.
+
+```bash
+./tests/run_all.sh              # all of them, one pass/fail summary
+PYTHON=/path/to/python3.12 ./tests/run_all.sh   # pick an interpreter
+```
+
+Python 3.10+ is required (the app uses `X | None` annotations). `run_all.sh` also works inside the
+container, since the image ships `tests/` and the dependencies:
+
+```bash
+docker exec ulmo /app/tests/run_all.sh
+```
+
+Coverage is deliberately narrow — these guard specific regressions, not the whole feature surface.
+Anything client-side still needs a real browser to verify; `test_stream_resume.py` only checks that
+the run-detail page's inline script parses.
+

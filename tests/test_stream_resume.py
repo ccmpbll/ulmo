@@ -13,6 +13,10 @@ tested without a browser:
      still drain the tail, or the log silently stops mid-run forever.
   4. `Last-Event-ID` (the browser's native auto-reconnect) is honored as well
      as the `?offset=` query param the page actually uses.
+  5. The offset the page starts from is the file's byte length as reported by
+     the server, not a length re-derived in the browser from decoded text.
+  6. The page's inline <script> still parses (node --check, skipped if node is
+     absent) — a syntax-level guard on the most JS-heavy template.
 
 Multi-byte characters are included in the fixture on purpose: the whole point
 of LogTailer's incremental decoder is that a character straddling a read
@@ -22,7 +26,9 @@ Run directly: python3 tests/test_stream_resume.py
 """
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -202,6 +208,93 @@ def test_offset_beyond_eof_yields_nothing():
     assert [e["event"] for e in events] == ["recap", "done"]
 
 
+def test_read_log_reports_the_files_byte_length():
+    """The resume offset must be the file's byte length, NOT the length of the
+    decoded text re-encoded.
+
+    A live log can end mid-character (the write is in flight). The decode
+    turns that partial character into U+FFFD, which re-encodes to three bytes
+    where the file holds one — so a browser computing the offset itself would
+    resume past the real end of file and silently drop a character. This is the
+    exact case that made the server send the offset instead.
+    """
+    init_db()
+    run_id = _make_finished_run()
+
+    # "ok: [web1]\n" plus the first 2 bytes of a 3-byte em-dash — a character
+    # caught in the middle of being written.
+    partial = "ok: [web1]\n".encode("utf-8") + b"\xe2\x80"
+    path = runner.log_path(run_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(partial)
+
+    text, pos = runner.read_log(run_id)
+    assert pos == len(partial), f"offset must be the file size {len(partial)}, got {pos}"
+    reencoded = len(text.encode("utf-8"))
+    assert reencoded != pos, (
+        "precondition: the decoded text should NOT round-trip to the same byte "
+        f"length here ({reencoded} vs {pos}), otherwise this test proves nothing"
+    )
+    assert "�" in text, "precondition: the partial character should decode to U+FFFD"
+
+
+def test_run_detail_page_seeds_logpos_from_the_server():
+    """The page must take the offset from the server rather than deriving it
+    from the rendered text with TextEncoder."""
+    init_db()
+    run_id = _make_finished_run(status="success")
+    _write_log(run_id, LOG_TEXT)
+    _write_recap(run_id)
+
+    expected = runner.log_path(run_id).stat().st_size
+    client = TestClient(app)
+    response = client.get(f"/runs/{run_id}")
+    assert response.status_code == 200, response.status_code
+    assert f"let logPos = {expected};" in response.text, (
+        "run_detail.html should seed logPos with the server-reported offset"
+    )
+    assert "TextEncoder" not in response.text, (
+        "logPos must not be derived in the browser"
+    )
+
+
+def test_rendered_inline_js_parses():
+    """Syntax-check the run-detail page's inline <script>.
+
+    Not a substitute for a browser (node only parses, it doesn't execute, so
+    this cannot catch htmx/EventSource behavior) but it does catch the
+    cheapest possible failure of a JS-heavy change: a template edit that leaves
+    the page unparseable. Rendering is done through the real route so the
+    Jinja substitutions are exercised too. Skipped when node isn't installed.
+    """
+    init_db()
+    run_id = _make_finished_run(status="running")
+    _write_log(run_id, LOG_TEXT)
+    _write_recap(run_id)
+
+    client = TestClient(app)
+    html = client.get(f"/runs/{run_id}").text
+    blocks = re.findall(r"<script>\n(.*?)\n</script>", html, re.S)
+    assert len(blocks) == 1, f"expected exactly one inline script, found {len(blocks)}"
+    inline_js = blocks[0]
+    assert "openStream" in inline_js, "inline script should contain the stream logic"
+
+    if shutil.which("node") is None:
+        print("  (skipped: node not installed)")
+        return
+
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+        fh.write(inline_js)
+        tmp = fh.name
+    try:
+        result = subprocess.run(
+            ["node", "--check", tmp], capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, f"inline JS failed to parse:\n{result.stderr}"
+    finally:
+        os.unlink(tmp)
+
+
 def main():
     init_db()
     test_full_read_from_zero()
@@ -209,6 +302,9 @@ def main():
     test_last_event_id_header_is_honored()
     test_log_precedes_recap_and_done()
     test_offset_beyond_eof_yields_nothing()
+    test_read_log_reports_the_files_byte_length()
+    test_run_detail_page_seeds_logpos_from_the_server()
+    test_rendered_inline_js_parses()
     print("OK: log stream resumes at a byte offset, drains before done, honors Last-Event-ID.")
 
 

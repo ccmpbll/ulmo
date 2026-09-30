@@ -28,10 +28,10 @@ def run_detail(request: Request, run_id: int):
         run = session.get(RunHistory, run_id)
     if run is None:
         return RedirectResponse("/runs", status_code=303)
-    log = runner.read_log(run_id)
+    log, log_pos = runner.read_log(run_id)
     recap = runner.get_recap(run_id)
     return templates.TemplateResponse(
-        request, "run_detail.html", {"run": run, "log": log, "recap": recap}
+        request, "run_detail.html", {"run": run, "log": log, "log_pos": log_pos, "recap": recap}
     )
 
 

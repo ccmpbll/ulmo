@@ -57,11 +57,15 @@
   const isRunning = {{ "true" if run.status == "running" else "false" }};
   logEl.innerHTML = ansiUp.ansi_to_html(initialLog || (isRunning ? "Starting run...\n" : ""));
   logEl.scrollTop = logEl.scrollHeight;
-  // Byte offset into the log file that's already rendered (initialLog). The
-  // server sends each chunk with the byte position it consumed, so reconnecting
-  // clients can tell the server where to resume — instead of re-receiving (and
-  // re-rendering) the whole log after every proxy blip.
-  let logPos = new TextEncoder().encode(initialLog).length;
+  // Byte offset into the log file that's already rendered (initialLog). Sent by
+  // the server rather than computed here: the server decodes the log with
+  // errors="replace", so a multi-byte character split by an in-flight write
+  // arrives as U+FFFD, and re-encoding that in JS would give three bytes where
+  // the file has one or two — resuming from that overshoots the real end of
+  // file and drops a character. Each streamed chunk carries the position it
+  // consumed, so a reconnecting client can pick up exactly where it left off
+  // instead of re-receiving (and re-rendering) the whole log.
+  let logPos = {{ log_pos }};
 
   function renderHostChips(hosts) {
     const container = document.getElementById("progress-hosts");
@@ -101,8 +105,20 @@
   const cancelBtn = document.getElementById("cancel-btn");
   const completeMsg = document.getElementById("run-complete-msg");
   const phaseEl = document.getElementById("progress-phase");
+  const RETRY_MIN_MS = 2000;
+  const RETRY_MAX_MS = 30000;
+  let retryDelay = RETRY_MIN_MS;
   let streamClosed = false;
   let reconnectTimer = null;
+  function scheduleReconnect() {
+    if (streamClosed) return;
+    const wait = retryDelay;
+    retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+    if (phaseEl) {
+      phaseEl.textContent = "connection lost — retrying in " + Math.round(wait / 1000) + "s…";
+    }
+    reconnectTimer = setTimeout(openStream, wait);
+  }
   function openStream() {
     const source = new EventSource("/runs/{{ run.id }}/stream?offset=" + logPos);
     source.onmessage = (event) => {
@@ -114,17 +130,27 @@
         logPos = msg.pos;
         logEl.insertAdjacentHTML("beforeend", ansiUp.ansi_to_html(msg.text));
         logEl.scrollTop = logEl.scrollHeight;
+        retryDelay = RETRY_MIN_MS; // connection is healthy again
       }
     };
-    source.onerror = () => {
-      // EventSource would auto-reconnect to the original URL — i.e. offset 0 —
-      // and re-send the whole log. Close it and re-open manually at the offset
-      // we've actually consumed so a blip resumes rather than duplicates.
+    source.onerror = (event) => {
       source.close();
-      if (phaseEl) phaseEl.textContent = "connection lost — retrying…";
-      if (!streamClosed) {
-        reconnectTimer = setTimeout(openStream, 2000);
+      // The stream sends `event: error` (data: "not found") for a run that no
+      // longer exists. EventSource dispatches named events by type, so that
+      // lands here too — but as a MessageEvent carrying a payload, whereas a
+      // genuine connection failure is a bare Event. Retrying the former would
+      // reopen forever against a run that isn't there.
+      if (event && event.data) {
+        streamClosed = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        if (phaseEl) phaseEl.textContent = "run not found";
+        return;
       }
+      // EventSource would otherwise auto-reconnect to the original URL — i.e.
+      // offset 0 — and re-send the whole log. Reopen manually at the offset
+      // we've actually consumed, with backoff so a tab left open through an
+      // outage doesn't hammer the server every two seconds.
+      scheduleReconnect();
     };
     source.addEventListener("progress", (event) => {
       const data = JSON.parse(event.data);
