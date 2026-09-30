@@ -57,6 +57,8 @@ unencrypted. A private git remote needing its own key can mount one directly in
 
 - `ULMO_DISABLE_AUTH=true` — skip login entirely; only if ulmo already sits behind your own
   access control (reverse proxy, VPN)
+- `ULMO_SECURE_COOKIES=true` — mark the session cookie Secure (HTTPS-only). Set it when ulmo is
+  served over TLS; leave off for plain-HTTP/localhost deployments
 - `ULMO_SECRET_KEY` — pin the session-signing key; otherwise one is generated and persisted to
   `./data/secret_key` automatically
 - `ULMO_SSH_LINK_HOMES` — comma-separated home dirs to symlink SSH keys into, if not

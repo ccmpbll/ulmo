@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.config import COLLECTIONS_DIR, REPO_DIR
 from app.database import engine
 from app.models import SyncHistory, utcnow
-from app.services import playbook_tags, settings_store
+from app.services import inventory, playbook_tags, settings_store
 
 SKIP_DIRS = {"old", ".git"}
 EXCLUDE_FILES = {"requirements.yaml", "requirements.yml"}
@@ -52,11 +52,14 @@ def _find_requirements_file() -> Path | str | None:
         return path
 
     subdir = settings_store.get("playbooks_subdir").strip("/") or "."
+    subdir_path = _resolve_within_repo(subdir)
+    if subdir_path is None:
+        return "WARNING: playbooks_subdir resolves outside the repo; skipping collection install at that path."
     candidates = [
         REPO_DIR / "requirements.yaml",
         REPO_DIR / "requirements.yml",
-        REPO_DIR / subdir / "requirements.yaml",
-        REPO_DIR / subdir / "requirements.yml",
+        subdir_path / "requirements.yaml",
+        subdir_path / "requirements.yml",
     ]
     return next((p for p in candidates if p.is_file()), None)
 
@@ -124,6 +127,10 @@ def sync_now(triggered_by: str = "manual") -> SyncHistory:
         cache_warning = playbook_tags.refresh_cache(list_playbooks())
         if cache_warning:
             log_lines.append(cache_warning)
+
+        # Best-effort, same reasoning: refresh the host listing so the
+        # dashboard doesn't serve stale hosts until the first cache expiry.
+        inventory.refresh_hosts_cache()
 
         message = "\n".join(line for line in log_lines if line)
         status = "success"

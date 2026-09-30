@@ -49,6 +49,16 @@ AUTH_DISABLED = os.environ.get("ULMO_DISABLE_AUTH", "").strip().lower() in (
     "yes",
 )
 
+# When set, the session cookie is marked Secure (HTTPS-only). Off by default so
+# plain-HTTP deployments (localhost, internal) keep working — enable it when
+# ulmo is served over TLS behind a reverse proxy, where the cookie would
+# otherwise be sent (and sniffable) over plain HTTP too.
+SECURE_COOKIES = os.environ.get("ULMO_SECURE_COOKIES", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Persistent storage for SSH private keys used by ansible-playbook runs. Each
 # uploaded key is its own file here (named to match what an inventory's
 # ansible_ssh_private_key_file expects, e.g. "ansible-ed25519"). This directory

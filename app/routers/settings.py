@@ -36,7 +36,7 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "error": error,
             "ok": ok,
             "ssh_keys": ssh_keys.list_keys(),
-            "ssh_link_warnings": ssh_keys.ensure_symlinks(),
+            "ssh_link_warnings": ssh_keys.link_warnings(),
             "auth_disabled": AUTH_DISABLED,
             "playbooks": playbooks,
         },

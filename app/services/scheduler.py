@@ -68,6 +68,11 @@ def reschedule_playbook(rel_path: str, cron: str) -> None:
             # reap_orphaned_schedules() clears the job itself after the next
             # sync; until then, skip quietly instead of crashing the job.
             logger.warning("Scheduled run skipped: playbook %r no longer exists", path_copy)
+        except Exception:
+            # e.g. a transient DB lock while reading settings or the playbook
+            # list — log it and let the next scheduled fire retry, instead of
+            # letting the exception kill this APScheduler job thread.
+            logger.exception("Scheduled run for %r failed unexpectedly", path_copy)
 
     scheduler.add_job(_run, trigger, id=job_id, replace_existing=True)
 
