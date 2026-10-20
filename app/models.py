@@ -41,10 +41,28 @@ class Agent(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     token_hash: str = Field(unique=True, index=True)
     enabled: bool = True
+    role_id: Optional[int] = Field(default=None, index=True)  # None = may read, may not run anything
     expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
     last_used_at: Optional[datetime] = None
 
+
+class Role(SQLModel, table=True):
+    """A named set of grants that agents can be assigned to."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+
+
+class Grant(SQLModel, table=True):
+    """Lets a role run one playbook against a fixed set of hosts. An agent's
+    --limit must be a subset of `hosts`; there is no wildcard or group syntax,
+    so a request can never widen what the grant names."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    role_id: int = Field(index=True)
+    playbook: str  # rel_path, as listed by git_sync.list_playbooks()
+    hosts: str  # comma-separated inventory host names
 
 class AgentAudit(SQLModel, table=True):
     """One row per /api/v1 request, allowed or denied."""
@@ -55,7 +73,7 @@ class AgentAudit(SQLModel, table=True):
     method: str = ""
     path: str = ""
     status_code: int = 0  # HTTP status returned; 401 = rejected before reaching a handler
-    detail: str = ""  # why a 401 happened (never sent to the caller)
+    detail: str = ""  # why a 401/403/503 happened, or what a run request started
 
 
 class PlaybookSchedule(SQLModel, table=True):

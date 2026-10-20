@@ -18,6 +18,7 @@ DEFAULTS = {
     "notify_pushover_token": "",
     "notify_pushover_user": "",
     "notify_ntfy_url": "",
+    "agent_runs_disabled": "",  # "1" = kill switch: agents cannot start runs
 }
 
 

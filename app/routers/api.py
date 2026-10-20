@@ -1,16 +1,18 @@
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_agent
-from app.models import RunHistory
-from app.services import git_sync, inventory, playbook_tags, runner
+from app.models import Agent, RunHistory
+from app.services import agents, git_sync, inventory, playbook_tags, runner
 
-# JSON API for agents (n8n, scripts). Read-only for now: it can look at
-# playbooks, hosts and runs but cannot start or change anything.
+# JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
+# and start playbooks its role has a grant for (see agents.check_run). Runs go
+# through runner.start_run exactly as the UI's Run button does.
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_agent)])
 
 LOG_TAIL_CHARS = 64 * 1024
@@ -89,3 +91,51 @@ def run_detail(run_id: int):
     if run is None:
         raise HTTPException(404, "Run not found")
     return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}
+
+
+class RunRequest(BaseModel):
+    playbook: str
+    limit: list[str] = Field(min_length=1, max_length=50)  # host names, matched exactly against the grant
+
+
+def _deny(request: Request, agent: Agent, status: int, reason: str):
+    request.state.audit = (agent.name, reason)  # picked up by the audit middleware
+    raise HTTPException(status, reason)
+
+
+@router.get("/catalog")
+def catalog(agent: Agent = Depends(require_agent)):
+    """What this agent may run, so it can discover it instead of guessing."""
+    return {
+        "runs_enabled": agents.runs_enabled(),
+        "playbooks": [{"playbook": g.playbook, "hosts": g.hosts.split(",")} for g in agents.grants_for(agent)],
+    }
+
+
+@router.post("/runs", status_code=202)
+def start_run(body: RunRequest, request: Request, agent: Agent = Depends(require_agent)):
+    if not agents.runs_enabled():
+        _deny(request, agent, 503, "agent runs are switched off")
+    reason = agents.check_run(agent, body.playbook, body.limit)
+    if reason:
+        _deny(request, agent, 403, reason)
+    try:
+        record = runner.start_run(
+            body.playbook, triggered_by=f"agent:{agent.name}", limit=",".join(body.limit)
+        )
+    except ValueError:  # granted, but the playbook has since left the repo
+        _deny(request, agent, 404, "playbook no longer exists")
+    request.state.audit = (agent.name, f"started run {record.id}: {body.playbook} on {record.limit}")
+    return _run_json(record)
+
+
+@router.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: int, request: Request, agent: Agent = Depends(require_agent)):
+    """An agent can cancel only its own runs. Works even with the kill switch on."""
+    with Session(engine) as session:
+        run = session.get(RunHistory, run_id)
+    if run is None or run.triggered_by != f"agent:{agent.name}":
+        _deny(request, agent, 404, "Run not found")
+    if not runner.cancel_run(run_id):
+        _deny(request, agent, 409, "run is not running")
+    return {"id": run_id, "cancelling": True}

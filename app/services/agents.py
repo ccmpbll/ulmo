@@ -6,7 +6,8 @@ from datetime import timedelta
 from sqlmodel import Session, delete, select
 
 from app.database import engine
-from app.models import Agent, AgentAudit, utcnow
+from app.models import Agent, AgentAudit, Grant, Role, utcnow
+from app.services import git_sync, inventory, settings_store
 
 TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -100,3 +101,98 @@ def delete_agent(agent_id: int) -> None:
         if agent is not None:
             session.delete(agent)
             session.commit()
+
+
+# --- roles and grants ---------------------------------------------------------
+
+
+def runs_enabled() -> bool:
+    return not settings_store.get("agent_runs_disabled")
+
+
+def set_runs_enabled(enabled: bool) -> None:
+    settings_store.set_many({"agent_runs_disabled": "" if enabled else "1"})
+
+
+def create_role(name: str) -> Role:
+    name = name.strip()
+    if not NAME_RE.match(name):
+        raise ValueError("Name must be 1-40 characters: letters, digits, '.', '_' or '-'.")
+    with Session(engine) as session:
+        if session.exec(select(Role).where(Role.name == name)).first():
+            raise ValueError(f"A role named {name!r} already exists.")
+        role = Role(name=name)
+        session.add(role)
+        session.commit()
+        session.refresh(role)
+        return role
+
+
+def delete_role(role_id: int) -> None:
+    """Agents on the role lose it (and with it the ability to run anything)."""
+    with Session(engine) as session:
+        for agent in session.exec(select(Agent).where(Agent.role_id == role_id)).all():
+            agent.role_id = None
+            session.add(agent)
+        session.exec(delete(Grant).where(Grant.role_id == role_id))
+        session.exec(delete(Role).where(Role.id == role_id))
+        session.commit()
+
+
+def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
+    hosts = sorted({h.strip() for h in hosts if h.strip()})
+    if not hosts:
+        raise ValueError("Pick at least one host.")
+    if playbook not in {p["rel_path"] for p in git_sync.list_playbooks()}:
+        raise ValueError("Unknown playbook.")
+    known = set(inventory.list_hosts())
+    unknown = [h for h in hosts if h not in known]
+    if unknown:
+        raise ValueError(f"Not in the inventory: {', '.join(unknown)}")
+    with Session(engine) as session:
+        if session.get(Role, role_id) is None:
+            raise ValueError("Unknown role.")
+        grant = Grant(role_id=role_id, playbook=playbook, hosts=",".join(hosts))
+        session.add(grant)
+        session.commit()
+        session.refresh(grant)
+        return grant
+
+
+def delete_grant(grant_id: int) -> None:
+    with Session(engine) as session:
+        session.exec(delete(Grant).where(Grant.id == grant_id))
+        session.commit()
+
+
+def assign_role(agent_id: int, role_id: int | None) -> None:
+    with Session(engine) as session:
+        agent = session.get(Agent, agent_id)
+        if agent is None or (role_id is not None and session.get(Role, role_id) is None):
+            return
+        agent.role_id = role_id
+        session.add(agent)
+        session.commit()
+
+
+def grants_for(agent: Agent) -> list[Grant]:
+    if agent.role_id is None:
+        return []
+    with Session(engine) as session:
+        return list(session.exec(select(Grant).where(Grant.role_id == agent.role_id)).all())
+
+
+def check_run(agent: Agent, playbook: str, hosts: list[str]) -> str:
+    """Why this agent may not run `playbook` on `hosts`, or "" if it may.
+    Default deny: needs a grant for the playbook whose hosts include every
+    requested host, matched exactly."""
+    if not hosts:
+        return "limit is required"
+    mine = [g for g in grants_for(agent) if g.playbook == playbook]
+    if not mine:
+        return f"no grant for playbook {playbook!r}"
+    for g in mine:
+        if set(hosts) <= set(g.hosts.split(",")):
+            return ""
+    allowed = sorted({h for g in mine for h in g.hosts.split(",")})
+    return f"hosts not granted: {', '.join(sorted(set(hosts) - set(allowed)))}"
