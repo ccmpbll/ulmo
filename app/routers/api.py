@@ -1,3 +1,4 @@
+import json
 import re
 import threading
 import time
@@ -10,8 +11,8 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_agent
-from app.models import Agent, RunHistory
-from app.services import agents, git_sync, inventory, playbook_tags, runner
+from app.models import Agent, CommandRun, RunHistory
+from app.services import agents, command_templates, commands, git_sync, inventory, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -96,7 +97,9 @@ def run_detail(run_id: int):
     return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}
 
 
-MAX_AGENT_RUNS = 5  # agent runs going at once, across all agents
+MAX_AGENT_RUNS = 5  # agent playbook runs going at once, across all agents
+MAX_COMMAND_RUNS = 5  # command runs going at once, across all agents
+MAX_COMMANDS_PER_HOST = 2
 _start_lock = threading.Lock()  # makes "any conflicting run?" and "start it" one step
 
 
@@ -114,9 +117,15 @@ def _deny(request: Request, agent: Agent, status: int, reason: str):
 @router.get("/catalog")
 def catalog(agent: Agent = Depends(require_agent)):
     """What this agent may run, so it can discover it instead of guessing."""
+    templates, _ = command_templates.load()
     return {
         "runs_enabled": agents.runs_enabled(),
         "playbooks": [{"playbook": g.playbook, "hosts": g.hosts.split(",")} for g in agents.grants_for(agent)],
+        "commands": [
+            {**templates[g.template].schema(), "hosts": g.hosts.split(",")}
+            for g in agents.command_grants_for(agent)
+            if g.template in templates
+        ],
     }
 
 
@@ -159,3 +168,68 @@ def cancel_run(run_id: int, request: Request, agent: Agent = Depends(require_age
                 break
         time.sleep(0.05)
     _deny(request, agent, 409, "run is not running")
+
+
+class CommandRequest(BaseModel):
+    template: str = Field(max_length=60)
+    host: str = Field(max_length=100)
+    params: dict = Field(default_factory=dict, max_length=20)
+
+
+def _command_json(run: CommandRun, with_output: bool = False) -> dict:
+    out = {
+        "id": run.id,
+        "template": run.template,
+        "host": run.host,
+        "params": json.loads(run.params),
+        "command": run.command,
+        "status": run.status,
+        "return_code": run.return_code,
+        "started_at": _iso(run.started_at),
+        "finished_at": _iso(run.finished_at),
+    }
+    if with_output:
+        out["output"] = run.output
+    return out
+
+
+@router.post("/commands", status_code=202)
+def start_command(body: CommandRequest, request: Request, agent: Agent = Depends(require_agent)):
+    """Run a command template on one host over SSH. Poll GET /commands/{id}."""
+    if not agents.runs_enabled():
+        _deny(request, agent, 503, "agent runs are switched off")
+    reason = agents.check_command(agent, body.template, body.host)
+    if reason:
+        _deny(request, agent, 403, reason)
+    template = command_templates.load()[0][body.template]
+    try:
+        values = command_templates.validate_params(template, body.params)
+    except ValueError as exc:
+        _deny(request, agent, 400, str(exc))
+    with _start_lock:
+        if commands.running() >= MAX_COMMAND_RUNS or commands.running(body.host) >= MAX_COMMANDS_PER_HOST:
+            _deny(request, agent, 429, "too many commands are already running")
+        try:
+            run = commands.start(template, body.host, values, f"agent:{agent.name}", agent.id)
+        except commands.CommandError as exc:
+            _deny(request, agent, 502, str(exc))
+    request.state.audit = (agent.name, f"started command {run.id}: {template.id} on {body.host}")
+    return _command_json(run)
+
+
+@router.get("/commands")
+def list_commands(limit: int = Query(20, ge=1, le=100), agent: Agent = Depends(require_agent)):
+    """This agent's own recent command runs (output is only on the single-run view)."""
+    query = select(CommandRun).where(CommandRun.agent_id == agent.id).order_by(CommandRun.id.desc()).limit(limit)
+    with Session(engine) as session:
+        return {"commands": [_command_json(r) for r in session.exec(query).all()]}
+
+
+@router.get("/commands/{run_id}")
+def command_detail(run_id: int, request: Request, agent: Agent = Depends(require_agent)):
+    """A command's output can hold anything the host printed, so an agent sees only its own."""
+    with Session(engine) as session:
+        run = session.get(CommandRun, run_id)
+    if run is None or run.agent_id != agent.id:
+        _deny(request, agent, 404, "Command run not found")
+    return _command_json(run, with_output=True)

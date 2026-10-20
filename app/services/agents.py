@@ -6,8 +6,19 @@ from datetime import timedelta
 from sqlmodel import Session, delete, select, update
 
 from app.database import engine
-from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, RunHistory, utcnow
-from app.services import git_sync, inventory, settings_store
+from app.models import (
+    AdminAudit,
+    Agent,
+    AgentAudit,
+    AgentRun,
+    CommandGrant,
+    CommandRun,
+    Grant,
+    Role,
+    RunHistory,
+    utcnow,
+)
+from app.services import command_templates, git_sync, inventory, settings_store
 
 TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -105,6 +116,7 @@ def delete_agent(agent_id: int) -> None:
         if agent is not None:
             # SQLite reuses the id of a deleted last row; a new agent must not inherit old runs.
             session.exec(delete(AgentRun).where(AgentRun.agent_id == agent_id))
+            session.exec(update(CommandRun).where(CommandRun.agent_id == agent_id).values(agent_id=None))
             session.delete(agent)
             session.commit()
 
@@ -139,6 +151,7 @@ def delete_role(role_id: int) -> None:
     with Session(engine) as session:
         session.exec(update(Agent).where(Agent.role_id == role_id).values(role_id=None))
         session.exec(delete(Grant).where(Grant.role_id == role_id))
+        session.exec(delete(CommandGrant).where(CommandGrant.role_id == role_id))
         session.exec(delete(Role).where(Role.id == role_id))
         session.commit()
 
@@ -167,6 +180,52 @@ def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
         session.commit()
         session.refresh(grant)
         return grant
+
+
+def add_command_grant(role_id: int, template: str, hosts: list[str]) -> CommandGrant:
+    hosts = sorted({h.strip() for h in hosts if h.strip()})
+    if not hosts:
+        raise ValueError("Pick at least one host.")
+    if template not in command_templates.load()[0]:
+        raise ValueError("Unknown command template.")
+    unknown = [h for h in hosts if h not in set(inventory.list_hosts())]
+    if unknown:
+        raise ValueError(f"Not in the inventory: {', '.join(unknown)}")
+    with Session(engine) as session:
+        if session.get(Role, role_id) is None:
+            raise ValueError("Unknown role.")
+        grant = CommandGrant(role_id=role_id, template=template, hosts=",".join(hosts))
+        session.add(grant)
+        session.commit()
+        session.refresh(grant)
+        return grant
+
+
+def delete_command_grant(grant_id: int) -> None:
+    with Session(engine) as session:
+        session.exec(delete(CommandGrant).where(CommandGrant.id == grant_id))
+        session.commit()
+
+
+def command_grants_for(agent: Agent) -> list[CommandGrant]:
+    if agent.role_id is None:
+        return []
+    with Session(engine) as session:
+        return list(session.exec(select(CommandGrant).where(CommandGrant.role_id == agent.role_id)).all())
+
+
+def check_command(agent: Agent, template: str, host: str) -> str:
+    """Why this agent may not run `template` on `host`, or "" if it may."""
+    mine = [g for g in command_grants_for(agent) if g.template == template]
+    if not mine:
+        return f"no grant for command {template!r}"
+    if host not in {h for g in mine for h in g.hosts.split(",")}:
+        return f"host not granted: {host}"
+    if template not in command_templates.load()[0]:
+        return "that command template is not loaded"
+    if host not in set(inventory.list_hosts()):
+        return "not an inventory host"
+    return ""
 
 
 def delete_grant(grant_id: int) -> None:

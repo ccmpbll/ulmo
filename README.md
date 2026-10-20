@@ -77,6 +77,38 @@ once (429). **Agent runs** on the page is a kill switch: when off, no agent can 
 (reading and cancelling still work); it is deliberately not part of Settings backup/restore.
 Every change made on the Agents page is listed under **Recent changes**.
 
+**Running commands over SSH.** A *command template* is a fixed command with typed blanks, kept as
+a YAML file in the synced repo (`ulmo/templates/<id>.yml`, edit it there and Sync):
+
+```yaml
+description: Show container logs
+argv: [docker, logs, "--tail={n}", "{container}"]
+params:
+  n: {type: int, min: 1, max: 500}
+  container: {type: regex, pattern: "[a-z0-9_-]+", max_length: 40}
+timeout: 30          # seconds, 1-300
+sudo: false          # run as `sudo -n ...`
+risk: low            # label shown to humans: low | medium | high
+ssh_user: ansible    # optional; default is the host's ansible user from the inventory
+ssh_key: my-key      # optional; a key uploaded under Settings -> SSH Key
+```
+
+Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
+(must match in full; may not start with `-` unless `allow_leading_dash: true`). The agent names
+a template, a host and values; ulmo checks every value, builds the argument list itself, and
+sends it to the host as one shell-quoted string, so a value is always a single literal argument
+and never shell syntax. Host address, port, user and key come from the inventory. A role gets a
+*command grant* (template plus hosts) next to its playbook grants.
+
+```
+POST /api/v1/commands          {"template": "logs", "host": "frodo", "params": {"n": 100, "container": "sonarr"}}
+GET  /api/v1/commands/{id}     status, return code, output (capped at 64 KB); only the agent's own runs
+GET  /api/v1/commands          the agent's recent command runs
+```
+
+At most 5 commands run at once and 2 per host. The kill switch covers commands too. A template
+file that fails to parse is listed on the Agents page and keeps its last good version.
+
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create
 agents or widen what they may do (anyone reaching the page could), though it will still switch
