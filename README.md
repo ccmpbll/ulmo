@@ -64,11 +64,18 @@ POST /api/v1/runs/{id}/cancel  cancel a run this agent started
 
 **Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
 create a **role**, add a **grant** (one playbook plus the hosts it may target), and assign the
-role to the agent. `limit` is required and every host must be named in a grant; matching is
-exact, so wildcards, groups and `a:b` patterns are refused. Runs go through the same code as
-the Run button (same `ansible-runner` call, no extra variables or check mode) and show up in
-Run History as `agent:<name>`. **Agent runs** on the same page is a kill switch: when off, no
-agent can start a run (reading and cancelling still work).
+role to the agent. `limit` is required and every host must be named in the role's grants for
+that playbook; matching is exact, so wildcards, groups and `a:b` patterns are refused. ansible
+reads a name as a host *or* a group, so a host that shares its name with a group cannot be
+granted or used, and everything is refused while the inventory cannot be read. Runs go through
+the same code as the Run button (same `ansible-runner` call, no extra variables or check mode)
+and show up in Run History as `agent:<name>`.
+
+Guard rails: a run is refused (409) while another run of the same playbook is going on any of
+the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at
+once (429). **Agent runs** on the page is a kill switch: when off, no agent can start a run
+(reading and cancelling still work); it is deliberately not part of Settings backup/restore.
+Every change made on the Agents page is listed under **Recent changes**.
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create

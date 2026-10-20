@@ -49,22 +49,39 @@ def list_files() -> list[dict]:
     return files
 
 
-def list_hosts() -> list[str]:
+def _fresh_cache() -> dict | None:
     cached = _read_hosts_cache()
-    if cached is not None and time.time() - cached["ts"] < HOSTS_CACHE_TTL_SECONDS:
-        return cached["hosts"]
-    return refresh_hosts_cache()
+    if cached is not None and "groups" in cached and time.time() - cached["ts"] < HOSTS_CACHE_TTL_SECONDS:
+        return cached
+    return None
+
+
+def list_hosts() -> list[str]:
+    cached = _fresh_cache()
+    return cached["hosts"] if cached else _refresh()[0]
+
+
+def list_groups() -> list[str]:
+    """Group names, including the implicit `all` and `ungrouped`. ansible's
+    --limit treats a name as a host OR a group, so callers that need a name to
+    mean one host only must refuse names that are also groups."""
+    cached = _fresh_cache()
+    return cached["groups"] if cached else _refresh()[1]
 
 
 def refresh_hosts_cache() -> list[str]:
-    """Recompute the host list and persist it. Returns the host list even if
-    the write fails (that's a cache problem, not a data problem)."""
-    hosts = _run_ansible_inventory()
+    return _refresh()[0]
+
+
+def _refresh() -> tuple[list[str], list[str]]:
+    """Recompute hosts and groups and persist them. Returns them even if the
+    write fails (that's a cache problem, not a data problem)."""
+    hosts, groups = _run_ansible_inventory()
     try:
-        HOSTS_CACHE_PATH.write_text(json.dumps({"ts": time.time(), "hosts": hosts}))
+        HOSTS_CACHE_PATH.write_text(json.dumps({"ts": time.time(), "hosts": hosts, "groups": groups}))
     except OSError:
         pass
-    return hosts
+    return hosts, groups
 
 
 def _read_hosts_cache() -> dict | None:
@@ -76,10 +93,10 @@ def _read_hosts_cache() -> dict | None:
         return None
 
 
-def _run_ansible_inventory() -> list[str]:
+def _run_ansible_inventory() -> tuple[list[str], list[str]]:
     root = _inventory_root()
     if root is None or not root.exists():
-        return []
+        return [], []
     try:
         result = subprocess.run(
             ["ansible-inventory", "-i", str(root), "--list"],
@@ -89,11 +106,12 @@ def _run_ansible_inventory() -> list[str]:
             timeout=30,
         )
         if result.returncode != 0:
-            return []
+            return [], []
         data = json.loads(result.stdout)
-        return sorted(data.get("_meta", {}).get("hostvars", {}).keys())
+        hosts = sorted(data.get("_meta", {}).get("hostvars", {}).keys())
+        return hosts, sorted(k for k in data if k != "_meta")
     except Exception:
-        return []
+        return [], []
 
 
 def read_file(rel_path: str) -> dict:

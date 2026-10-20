@@ -13,6 +13,12 @@
   7. The admin side: roles, grants and role assignment need a login and are
      locked while ULMO_DISABLE_AUTH is set (switching runs OFF stays allowed).
   8. The role_id column is added to an existing agent table.
+  9. A name that is also an inventory group (or no longer a host, or an
+     unreadable inventory) cannot be used to widen a grant.
+ 10. Agent-supplied text is bounded; overlapping and excess runs are refused;
+     cancel ownership comes from AgentRun, not a username string; cancel
+     right after start waits for the run to register; admin changes are
+     audited; the kill switch is not part of settings backup/restore.
 
 Run directly: python3 tests/test_agent_runs.py
 """
@@ -38,8 +44,10 @@ import app.auth as auth_module  # noqa: E402
 from app import database  # noqa: E402
 from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Agent, AgentAudit, Grant, Role, RunHistory  # noqa: E402
+from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, RunHistory  # noqa: E402
 from app.routers import agents as agents_router  # noqa: E402
+from app.routers import api as api_module  # noqa: E402
+from app.services import settings_store  # noqa: E402
 from app.services import agents, git_sync, inventory  # noqa: E402
 
 PLAYBOOKS = [
@@ -47,8 +55,10 @@ PLAYBOOKS = [
     {"name": "other.yml", "rel_path": "playbooks/other.yml"},
 ]
 HOSTS = ["web1", "web2", "db1"]
+GROUPS = ["all", "ungrouped", "webservers"]  # ansible --limit reads a name as host OR group
 git_sync.list_playbooks = lambda: PLAYBOOKS
 inventory.list_hosts = lambda: HOSTS
+inventory.list_groups = lambda: GROUPS
 
 calls: list[dict] = []  # kwargs of every ansible_runner.run_async call
 hold = {"on": False}  # when on, a run stays "running" until it is cancelled
@@ -236,6 +246,11 @@ def test_cancel_only_your_own_running_runs():
         session.commit()
         session.refresh(ui_run)
     assert client.post(f"/api/v1/runs/{ui_run.id}/cancel", headers=_h(mine)).status_code == 404, "UI runs are not the agent's"
+    with Session(engine) as session:  # a lingering "running" UI run would now block agent runs of that playbook
+        done = session.get(RunHistory, ui_run.id)
+        done.status = "success"
+        session.add(done)
+        session.commit()
 
 
 def test_deleting_a_role_removes_the_ability():
@@ -357,6 +372,233 @@ def test_role_id_column_is_added_to_an_existing_table():
     assert "role_id" in cols
 
 
+def test_group_names_cannot_widen_a_grant():
+    role = agents.create_role("groups")
+    # A grant cannot be written for a name that is also a group...
+    GROUPS.append("web2")  # a group called web2 exists as well as the host web2
+    try:
+        try:
+            agents.add_grant(role.id, "playbooks/restart.yml", ["web2"])
+        except ValueError as exc:
+            assert "group" in str(exc)
+        else:
+            raise AssertionError("grant accepted for a host that is also a group")
+
+        # ...and a grant written before the group appeared stops working.
+        GROUPS.remove("web2")
+        agent, token = agents.create_agent("shadowed")
+        agents.assign_role(agent.id, role.id)
+        agents.add_grant(role.id, "playbooks/restart.yml", ["web1", "web2"])
+        assert _run(token, "playbooks/restart.yml", ["web2"]).status_code == 202
+        _wait_all_done()
+        GROUPS.append("web2")
+        r = _run(token, "playbooks/restart.yml", ["web2"])
+        assert r.status_code == 403 and "plain inventory host" in r.json()["detail"], r.text
+    finally:
+        if "web2" in GROUPS:
+            GROUPS.remove("web2")
+
+    # A host that left the inventory, or an unreadable inventory, fails closed.
+    _, token, _ = _agent_with_grant("gone")
+    HOSTS.remove("web1")
+    try:
+        assert _run(token, "playbooks/restart.yml", ["web1"]).status_code == 403
+        saved = HOSTS[:]
+        HOSTS.clear()
+        assert "unavailable" in _run(token, "playbooks/restart.yml", ["web2"]).json()["detail"]
+        HOSTS.extend(saved)
+    finally:
+        if "web1" not in HOSTS:
+            HOSTS.insert(0, "web1")
+
+
+def _wait_all_done():
+    for _ in range(250):
+        with Session(engine) as session:
+            if not session.exec(select(RunHistory).where(RunHistory.status == "running")).first():
+                return
+        time.sleep(0.02)
+    raise AssertionError("runs still going")
+
+
+def test_grants_for_one_playbook_are_unioned():
+    role = agents.create_role("union")
+    agents.add_grant(role.id, "playbooks/restart.yml", ["web1"])
+    agents.add_grant(role.id, "playbooks/restart.yml", ["web2"])
+    agent, token = agents.create_agent("unioned")
+    agents.assign_role(agent.id, role.id)
+    r = _run(token, "playbooks/restart.yml", ["web1", "web2"])
+    assert r.status_code == 202, r.text
+    _wait_all_done()
+    assert _run(token, "playbooks/restart.yml", ["web1", "db1"]).status_code == 403
+
+
+def test_agent_text_is_bounded():
+    _, token, _ = _agent_with_grant("verbose")
+    assert _run(token, "p" * 201, ["web1"]).status_code == 422
+    assert _run(token, "playbooks/restart.yml", ["h" * 101]).status_code == 422
+    assert _run(token, "playbooks/restart.yml", ["web1"] * 51).status_code == 422
+    agents.audit("x", "POST", "/api/v1/runs", 403, "d" * 5000)
+    assert len(_last_audit().detail) == agents.AUDIT_DETAIL_MAX
+    r = _run(token, "playbooks/restart.yml", ["h" * 100] * 50)
+    assert r.status_code == 403 and len(_last_audit().detail) <= agents.AUDIT_DETAIL_MAX
+
+
+def test_overlapping_and_excess_runs_are_refused():
+    role = agents.create_role("busy")
+    agents.add_grant(role.id, "playbooks/restart.yml", ["web1", "web2", "db1"])
+    agents.add_grant(role.id, "playbooks/other.yml", ["web1"])
+    agent, token = agents.create_agent("busybee")
+    agents.assign_role(agent.id, role.id)
+    before = len(calls)
+    cap = api_module.MAX_AGENT_RUNS
+    api_module.MAX_AGENT_RUNS = 2
+    hold["on"] = True
+    try:
+        first = _run(token, "playbooks/restart.yml", ["web1"])
+        assert first.status_code == 202
+        _wait_running(first.json()["id"])
+
+        r = _run(token, "playbooks/restart.yml", ["web1", "web2"])
+        assert r.status_code == 409 and str(first.json()["id"]) in r.json()["detail"], r.text
+        assert _run(token, "playbooks/restart.yml", ["web1"]).status_code == 409, "identical request"
+
+        second = _run(token, "playbooks/restart.yml", ["web2"])  # same playbook, other host: fine
+        assert second.status_code == 202, second.text
+        _wait_running(second.json()["id"])
+        assert len(calls) == before + 2
+
+        r = _run(token, "playbooks/other.yml", ["web1"])  # different playbook, but the cap is 2
+        assert r.status_code == 429, r.text
+        assert len(calls) == before + 2
+
+        for rid in (first.json()["id"], second.json()["id"]):
+            client.post(f"/api/v1/runs/{rid}/cancel", headers=_h(token))
+        _wait_done(first.json()["id"])
+        _wait_done(second.json()["id"])
+        # A UI run with no --limit covers every host, so it blocks the agent too.
+        with Session(engine) as session:
+            ui = RunHistory(playbook="playbooks/restart.yml", status="running", triggered_by="alice")
+            session.add(ui)
+            session.commit()
+            session.refresh(ui)
+        r = _run(token, "playbooks/restart.yml", ["db1"])
+        assert r.status_code == 409, r.text
+        with Session(engine) as session:
+            ui = session.get(RunHistory, ui.id)
+            ui.status = "success"
+            session.add(ui)
+            session.commit()
+    finally:
+        hold["on"] = False
+        api_module.MAX_AGENT_RUNS = cap
+    _wait_all_done()
+
+
+def test_cancel_ownership_and_startup_race():
+    agent, mine, _ = _agent_with_grant("owner")
+    hold["on"] = True
+    try:
+        run_id = _run(mine, "playbooks/restart.yml", ["web1"]).json()["id"]
+        _wait_running(run_id)
+        with Session(engine) as session:
+            assert session.get(AgentRun, run_id).agent_id == agent.id
+
+        # A user whose name looks like the agent's does not make a UI run the agent's.
+        with Session(engine) as session:
+            ui = RunHistory(playbook="playbooks/restart.yml", status="running", triggered_by="agent:owner")
+            session.add(ui)
+            session.commit()
+            session.refresh(ui)
+        assert client.post(f"/api/v1/runs/{ui.id}/cancel", headers=_h(mine)).status_code == 404
+
+        # Deleting an agent and creating another with the same name (or reused id) inherits nothing.
+        agents.delete_agent(agent.id)
+        _, again = agents.create_agent("owner")
+        assert client.post(f"/api/v1/runs/{run_id}/cancel", headers=_h(again)).status_code == 404
+        with Session(engine) as session:
+            assert session.get(AgentRun, run_id) is None
+            ui = session.get(RunHistory, ui.id)
+            ui.status = "failed"
+            session.add(ui)
+            session.commit()
+        from app.services import runner
+        runner.cancel_run(run_id)
+        _wait_done(run_id)
+    finally:
+        hold["on"] = False
+
+    # A run is 'running' in the database a moment before its thread registers a cancel handle.
+    from app.services import runner
+
+    agent2, token2, _ = _agent_with_grant("racer")
+    with Session(engine) as session:
+        run = RunHistory(playbook="playbooks/restart.yml", status="running", triggered_by="agent:racer")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+    agents.record_agent_run(run.id, agent2.id)
+    event = threading.Event()
+    threading.Timer(0.3, lambda: runner._cancel_events.__setitem__(run.id, event)).start()
+    r = client.post(f"/api/v1/runs/{run.id}/cancel", headers=_h(token2))
+    assert r.status_code == 200 and event.is_set(), r.text
+    runner._cancel_events.pop(run.id, None)
+    with Session(engine) as session:
+        row = session.get(RunHistory, run.id)
+        row.status = "cancelled"
+        session.add(row)
+        session.commit()
+    assert client.post(f"/api/v1/runs/{run.id}/cancel", headers=_h(token2)).status_code == 409
+
+
+def test_create_agent_validates_the_role_first():
+    with Session(engine) as session:
+        n_agents = len(session.exec(select(Agent)).all())
+    for bad_role in ("abc", "999999"):
+        r = admin.post("/agents", data={"name": "norole-yet", "role_id": bad_role})
+        assert r.status_code == 400, f"role_id={bad_role!r}: {r.status_code}"
+        assert "ulmo_" not in r.text
+    with Session(engine) as session:
+        assert len(session.exec(select(Agent)).all()) == n_agents, "an agent was created with a bad role"
+        agent = session.exec(select(Agent).where(Agent.name == "ui-agent")).first()
+    r = admin.post(f"/agents/{agent.id}/role", data={"role_id": "999999"})
+    assert r.status_code == 400 and "Unknown role" in r.text
+    r = admin.post("/agents/999999/role", data={"role_id": ""})
+    assert r.status_code == 400 and "Unknown agent" in r.text
+
+
+def test_admin_changes_are_audited():
+    with Session(engine) as session:
+        actions = [c.action for c in session.exec(select(AdminAudit).order_by(AdminAudit.id)).all()]
+        who = {c.admin for c in session.exec(select(AdminAudit)).all()}
+    for expected in ("create role", "add grant", "create agent", "set agent role", "agent runs off", "agent runs on"):
+        assert expected in actions, f"{expected!r} not audited: {actions}"
+    assert who == {"admin"}
+    assert "set agent role" in admin.get("/agents").text
+
+    # An API flood prunes AgentAudit but never the admin trail.
+    keep = agents.AUDIT_KEEP
+    agents.AUDIT_KEEP = 5
+    try:
+        for _ in range(20):
+            client.get("/api/v1/hosts")
+    finally:
+        agents.AUDIT_KEEP = keep
+    with Session(engine) as session:
+        assert len(session.exec(select(AdminAudit)).all()) >= len(actions)
+
+
+def test_kill_switch_is_not_a_restorable_setting():
+    agents.set_runs_enabled(False)
+    try:
+        assert "agent_runs_disabled" not in settings_store.export_yaml()
+        applied, ignored = settings_store.import_yaml("agent_runs_disabled: ''\nrun_timeout_minutes: '61'\n")
+        assert "agent_runs_disabled" in ignored and not agents.runs_enabled(), "restore flipped the kill switch"
+        settings_store.set_many({"run_timeout_minutes": "60"})
+    finally:
+        agents.set_runs_enabled(True)
+
+
 def main():
     init_db()
     auth_module.create_user("admin", "pw-for-tests")
@@ -371,6 +613,14 @@ def main():
     test_admin_side()
     test_admin_locked_without_login()
     test_role_id_column_is_added_to_an_existing_table()
+    test_group_names_cannot_widen_a_grant()
+    test_grants_for_one_playbook_are_unioned()
+    test_agent_text_is_bounded()
+    test_overlapping_and_excess_runs_are_refused()
+    test_cancel_ownership_and_startup_race()
+    test_create_agent_validates_the_role_first()
+    test_admin_changes_are_audited()
+    test_kill_switch_is_not_a_restorable_setting()
     print("OK: agent playbook runs are default-deny, go through the unchanged runner, and are admin-controlled.")
 
 

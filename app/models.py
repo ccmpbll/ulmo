@@ -76,6 +76,26 @@ class AgentAudit(SQLModel, table=True):
     detail: str = ""  # why a 401/403/503 happened, or what a run request started
 
 
+class AgentRun(SQLModel, table=True):
+    """Which agent started which run. Cancel ownership is decided here, not by
+    parsing RunHistory.triggered_by (a username can look like "agent:x")."""
+
+    run_id: int = Field(primary_key=True)
+    agent_id: int = Field(index=True)
+
+
+class AdminAudit(SQLModel, table=True):
+    """Changes made on the Agents page (agents, roles, grants, kill switch).
+    Kept apart from AgentAudit so an API flood, which prunes that table, can
+    never push the record of who widened access out."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    at: datetime = Field(default_factory=utcnow)
+    admin: str = ""
+    action: str = ""
+    detail: str = ""
+
+
 class PlaybookSchedule(SQLModel, table=True):
     rel_path: str = Field(primary_key=True)
     cron: str = ""  # empty = disabled

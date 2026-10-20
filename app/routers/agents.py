@@ -5,12 +5,13 @@ from sqlmodel import Session, select
 from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
-from app.models import Agent, AgentAudit, Grant, Role
+from app.models import AdminAudit, Agent, AgentAudit, Grant, Role
 from app.services import agents, git_sync, inventory
 from app.templating import templates
 
 # Admin side of the agent API: cookie-session login only. Tokens, roles and
-# grants are created and changed here and nowhere else.
+# grants are created and changed here and nowhere else, and every change is
+# recorded in AdminAudit.
 router = APIRouter(dependencies=[Depends(require_login)])
 
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could widen what agents may do."
@@ -22,6 +23,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         roles = session.exec(select(Role).order_by(Role.name)).all()
         grants = session.exec(select(Grant).order_by(Grant.playbook)).all()
         audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
+        changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(20)).all()
     return templates.TemplateResponse(
         request,
         "agents.html",
@@ -33,6 +35,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "hosts": inventory.list_hosts(),
             "runs_enabled": agents.runs_enabled(),
             "audit": audit,
+            "changes": changes,
             "error": error,
             "new_token": new_token,
         },
@@ -46,6 +49,10 @@ def _back():
     return RedirectResponse("/agents", status_code=303)
 
 
+def _role_id(value: str) -> int | None:
+    return int(value) if value.strip() else None
+
+
 @router.get("/agents", response_class=HTMLResponse)
 def agents_page(request: Request):
     return _page(request)
@@ -57,65 +64,74 @@ def create_agent(
     name: str = Form(...),
     expires_days: str = Form(""),
     role_id: str = Form(""),
+    user=Depends(require_login),
 ):
     if AUTH_DISABLED:
         # Without a login anyone who can reach this page could mint a token.
         return _page(request, error=LOGIN_REQUIRED)
     try:
         days = int(expires_days) if expires_days.strip() else None
-        agent, token = agents.create_agent(name, days)
-        if role_id.strip():
-            agents.assign_role(agent.id, int(role_id))
+        agent, token = agents.create_agent(name, days, _role_id(role_id))
     except ValueError as exc:
         return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
     # Rendered directly (not redirected) so the token is shown exactly once and
     # never ends up in a URL, history entry or log line.
     return _page(request, new_token=(agent.name, token))
 
 
 @router.post("/agents/{agent_id}/toggle")
-def toggle_agent(request: Request, agent_id: int):
+def toggle_agent(request: Request, agent_id: int, user=Depends(require_login)):
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     agents.toggle_enabled(agent_id)
+    agents.admin_audit(user.username, "toggle agent", f"agent id {agent_id}")
     return _back()
 
 
 @router.post("/agents/{agent_id}/delete")
-def delete_agent(agent_id: int):
+def delete_agent(agent_id: int, user=Depends(require_login)):
     agents.delete_agent(agent_id)
+    agents.admin_audit(user.username, "delete agent", f"agent id {agent_id}")
     return _back()
 
 
 @router.post("/agents/{agent_id}/role")
-def set_agent_role(request: Request, agent_id: int, role_id: str = Form("")):
+def set_agent_role(request: Request, agent_id: int, role_id: str = Form(""), user=Depends(require_login)):
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
-    agents.assign_role(agent_id, int(role_id) if role_id.strip() else None)
+    try:
+        agents.assign_role(agent_id, _role_id(role_id))
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "set agent role", f"agent id {agent_id} -> role id {role_id or 'none'}")
     return _back()
 
 
 @router.post("/agent-runs/toggle")
-def toggle_agent_runs(enable: str = Form("")):
+def toggle_agent_runs(enable: str = Form(""), user=Depends(require_login)):
     # Kill switch. Switching OFF is always allowed; switching back ON needs a login like any widening.
     if enable and AUTH_DISABLED:
-        return RedirectResponse("/agents", status_code=303)
+        return _back()
     agents.set_runs_enabled(bool(enable))
+    agents.admin_audit(user.username, "agent runs " + ("on" if enable else "off"))
     return _back()
 
 
 @router.post("/roles", response_class=HTMLResponse)
-def create_role(request: Request, name: str = Form(...)):
+def create_role(request: Request, name: str = Form(...), user=Depends(require_login)):
     try:
-        agents.create_role(name)
+        role = agents.create_role(name)
     except ValueError as exc:
         return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "create role", role.name)
     return _back()
 
 
 @router.post("/roles/{role_id}/delete")
-def delete_role(role_id: int):
+def delete_role(role_id: int, user=Depends(require_login)):
     agents.delete_role(role_id)
+    agents.admin_audit(user.username, "delete role", f"role id {role_id}")
     return _back()
 
 
@@ -125,17 +141,20 @@ def add_grant(
     role_id: int,
     playbook: str = Form(...),
     hosts: list[str] = Form([]),
+    user=Depends(require_login),
 ):
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        agents.add_grant(role_id, playbook, hosts)
+        grant = agents.add_grant(role_id, playbook, hosts)
     except ValueError as exc:
         return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "add grant", f"role id {role_id}: {grant.playbook} on {grant.hosts}")
     return _back()
 
 
 @router.post("/grants/{grant_id}/delete")
-def delete_grant(grant_id: int):
+def delete_grant(grant_id: int, user=Depends(require_login)):
     agents.delete_grant(grant_id)
+    agents.admin_audit(user.username, "delete grant", f"grant id {grant_id}")
     return _back()

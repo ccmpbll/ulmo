@@ -139,6 +139,22 @@
 </div>
 
 <div class="settings-section">
+  <h2>Recent changes</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
+      <tbody>
+        {% for c in changes %}
+        <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
+        {% else %}
+        <tr><td colspan="3" class="muted">No changes yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="settings-section">
   <h2>Recent API requests</h2>
   <div class="card">
     <table>
