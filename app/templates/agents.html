@@ -28,7 +28,6 @@
           <td>{{ a.last_used_at | local_time }}</td>
           <td>
             <form method="post" action="/agents/{{ a.id }}/toggle" style="display:inline">
-              <input type="hidden" name="enabled" value="{{ '' if a.enabled else '1' }}" />
               <button type="submit" class="secondary">{{ 'Disable' if a.enabled else 'Enable' }}</button>
             </form>
             <form method="post" action="/agents/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete agent {{ a.name }}? Its token stops working immediately.');">

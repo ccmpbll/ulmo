@@ -94,13 +94,13 @@ def test_disabled_expired_and_deleted_agents_are_rejected():
     agent, token = agents.create_agent("lifecycle")
     assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
 
-    agents.set_enabled(agent.id, False)
+    agents.toggle_enabled(agent.id)
     r = client.get("/api/v1/hosts", headers=_bearer(token))
     assert r.status_code == 401 and r.json() == {"detail": "Unauthorized"}
     row = _last_audit()
     assert (row.agent_name, row.status_code, row.detail) == ("lifecycle", 401, "agent disabled")
 
-    agents.set_enabled(agent.id, True)
+    agents.toggle_enabled(agent.id)
     assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
 
     with Session(engine) as session:
@@ -255,6 +255,14 @@ def test_admin_form():
     token = next(w for w in r.text.replace("<", " ").replace(">", " ").split() if w.startswith("ulmo_"))
     assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
     assert token not in admin.get("/agents").text, "token must not be shown again"
+
+    # The Disable/Enable button flips the agent, and the token follows it.
+    with Session(engine) as session:
+        agent_id = session.exec(select(Agent).where(Agent.name == "formed")).one().id
+    admin.post(f"/agents/{agent_id}/toggle", follow_redirects=False)
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 401
+    admin.post(f"/agents/{agent_id}/toggle", follow_redirects=False)
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
 
     for bad in ("", "has space", "x" * 41, "semi;colon"):
         r = admin.post("/agents", data={"name": bad})

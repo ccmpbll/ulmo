@@ -49,8 +49,8 @@ def create_agent(request: Request, name: str = Form(...), expires_days: str = Fo
 
 
 @router.post("/agents/{agent_id}/toggle")
-def toggle_agent(agent_id: int, enabled: str = Form("")):
-    agents.set_enabled(agent_id, enabled == "1")
+def toggle_agent(agent_id: int):
+    agents.toggle_enabled(agent_id)
     return RedirectResponse("/agents", status_code=303)
 
 

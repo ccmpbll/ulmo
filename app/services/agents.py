@@ -1,7 +1,7 @@
 import hashlib
 import re
 import secrets
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 from sqlmodel import Session, delete, select
 
@@ -57,18 +57,12 @@ def authenticate(token: str) -> tuple[Agent | None, str]:
             return None, "unknown token"
         if not agent.enabled:
             return agent, "agent disabled"
-        if agent.expires_at is not None:
-            expires = agent.expires_at
-            if expires.tzinfo is None:  # SQLite hands datetimes back naive; they are UTC
-                expires = expires.replace(tzinfo=timezone.utc)
-            if expires <= utcnow():
-                return agent, "token expired"
+        now = utcnow().replace(tzinfo=None)  # SQLite hands datetimes back naive; they are UTC
+        if agent.expires_at is not None and agent.expires_at <= now:
+            return agent, "token expired"
         # Not on every request: that would be a second write per call.
-        last = agent.last_used_at
-        if last is not None and last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        if last is None or utcnow() - last > LAST_USED_REFRESH:
-            agent.last_used_at = utcnow()
+        if agent.last_used_at is None or now - agent.last_used_at > LAST_USED_REFRESH:
+            agent.last_used_at = now
             session.add(agent)
             session.commit()
             session.refresh(agent)
@@ -91,11 +85,11 @@ def audit(agent_name: str | None, method: str, path: str, status_code: int, deta
         session.commit()
 
 
-def set_enabled(agent_id: int, enabled: bool) -> None:
+def toggle_enabled(agent_id: int) -> None:
     with Session(engine) as session:
         agent = session.get(Agent, agent_id)
         if agent is not None:
-            agent.enabled = enabled
+            agent.enabled = not agent.enabled
             session.add(agent)
             session.commit()
 
