@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlmodel import Session, select
 
+from app.database import engine
 from app.deps import require_login
+from app.models import Agent, AgentAudit
 from app.services import agents
 from app.templating import templates
 
@@ -11,15 +14,13 @@ router = APIRouter(dependencies=[Depends(require_login)])
 
 
 def _page(request: Request, error: str | None = None, new_token: tuple[str, str] | None = None):
+    with Session(engine) as session:
+        rows = session.exec(select(Agent).order_by(Agent.name)).all()
+        audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
     return templates.TemplateResponse(
         request,
         "agents.html",
-        {
-            "agents": agents.list_agents(),
-            "audit": agents.recent_audit(),
-            "error": error,
-            "new_token": new_token,
-        },
+        {"agents": rows, "audit": audit, "error": error, "new_token": new_token},
         status_code=400 if error else 200,
     )
 

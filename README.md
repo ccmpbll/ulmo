@@ -53,10 +53,9 @@ Send it as `Authorization: Bearer <token>`. Tokens can be disabled, given an exp
 any time, and every request (allowed or denied, with the reason) is listed on the same page.
 
 ```
-GET /api/v1/me                 who the token belongs to
 GET /api/v1/playbooks          playbooks and their tags
 GET /api/v1/hosts              inventory hosts
-GET /api/v1/runs?limit=&status=  recent runs
+GET /api/v1/runs?limit=        recent runs
 GET /api/v1/runs/{id}          one run: status, recap, log tail (ANSI stripped, last 64 KB)
 ```
 

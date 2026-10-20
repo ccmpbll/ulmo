@@ -35,7 +35,6 @@ def create_agent(name: str, expires_days: int | None = None) -> tuple[Agent, str
         agent = Agent(
             name=name,
             token_hash=hash_token(token),
-            token_hint=token[-4:],
             expires_at=utcnow() + timedelta(days=expires_days) if expires_days else None,
         )
         session.add(agent)
@@ -75,16 +74,6 @@ def audit(agent_name: str | None, method: str, path: str, outcome: str, detail: 
             )
         )
         session.commit()
-
-
-def list_agents() -> list[Agent]:
-    with Session(engine) as session:
-        return list(session.exec(select(Agent).order_by(Agent.name)).all())
-
-
-def recent_audit(limit: int = 50) -> list[AgentAudit]:
-    with Session(engine) as session:
-        return list(session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(limit)).all())
 
 
 def set_enabled(agent_id: int, enabled: bool) -> None:

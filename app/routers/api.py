@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_agent
-from app.models import Agent, RunHistory
+from app.models import RunHistory
 from app.services import git_sync, inventory, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). Read-only for now: it can look at
@@ -36,11 +36,6 @@ def _run_json(run: RunHistory) -> dict:
     }
 
 
-@router.get("/me")
-def me(agent: Agent = Depends(require_agent)):
-    return {"name": agent.name, "expires_at": _iso(agent.expires_at)}
-
-
 @router.get("/playbooks")
 def playbooks():
     cache = playbook_tags.load_cache()
@@ -62,10 +57,8 @@ def hosts():
 
 
 @router.get("/runs")
-def runs(limit: int = Query(20, ge=1, le=100), status: str | None = None):
+def runs(limit: int = Query(20, ge=1, le=100)):
     query = select(RunHistory).order_by(RunHistory.started_at.desc()).limit(limit)
-    if status:
-        query = query.where(RunHistory.status == status)
     with Session(engine) as session:
         return {"runs": [_run_json(r) for r in session.exec(query).all()]}
 
@@ -82,5 +75,4 @@ def run_detail(run_id: int):
         **_run_json(run),
         "recap": runner.get_recap(run_id),
         "log": log[-LOG_TAIL_CHARS:],
-        "log_truncated": len(log) > LOG_TAIL_CHARS,
     }

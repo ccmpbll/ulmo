@@ -63,7 +63,6 @@ def test_token_is_stored_hashed():
         row = session.get(Agent, agent.id)
     assert row.token_hash == agents.hash_token(token)
     assert token not in row.token_hash and token not in str(row.model_dump())
-    assert row.token_hint == token[-4:]
 
 
 def test_rejections_are_generic_and_audited():
@@ -75,7 +74,7 @@ def test_rejections_are_generic_and_audited():
         ("unknown token", _bearer("ulmo_nope"), "unknown token"),
     ]
     for label, headers, reason in cases:
-        r = client.get("/api/v1/me", headers=headers)
+        r = client.get("/api/v1/hosts", headers=headers)
         assert r.status_code == 401, f"{label}: expected 401, got {r.status_code}"
         assert r.json() == {"detail": "Unauthorized"}, f"{label}: leaked detail {r.json()}"
         assert r.headers["www-authenticate"] == "Bearer"
@@ -84,50 +83,49 @@ def test_rejections_are_generic_and_audited():
         assert row.agent_name is None
 
     # The good token still works afterwards (rejections change nothing).
-    assert client.get("/api/v1/me", headers=_bearer(good)).status_code == 200
+    assert client.get("/api/v1/hosts", headers=_bearer(good)).status_code == 200
 
 
 def test_disabled_expired_and_deleted_agents_are_rejected():
     agent, token = agents.create_agent("lifecycle")
-    assert client.get("/api/v1/me", headers=_bearer(token)).status_code == 200
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
 
     agents.set_enabled(agent.id, False)
-    r = client.get("/api/v1/me", headers=_bearer(token))
+    r = client.get("/api/v1/hosts", headers=_bearer(token))
     assert r.status_code == 401 and r.json() == {"detail": "Unauthorized"}
     row = _last_audit()
     assert (row.agent_name, row.outcome, row.detail) == ("lifecycle", "denied", "agent disabled")
 
     agents.set_enabled(agent.id, True)
-    assert client.get("/api/v1/me", headers=_bearer(token)).status_code == 200
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
 
     with Session(engine) as session:
         a = session.get(Agent, agent.id)
         a.expires_at = utcnow() - timedelta(seconds=1)
         session.add(a)
         session.commit()
-    r = client.get("/api/v1/me", headers=_bearer(token))
+    r = client.get("/api/v1/hosts", headers=_bearer(token))
     assert r.status_code == 401
     assert _last_audit().detail == "token expired"
 
     agents.delete_agent(agent.id)
-    assert client.get("/api/v1/me", headers=_bearer(token)).status_code == 401
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 401
 
 
 def test_valid_token_updates_last_used_and_audits_ok():
     agent, token = agents.create_agent("happy", expires_days=30)
     assert agent.last_used_at is None
-    r = client.get("/api/v1/me", headers=_bearer(token))
-    assert r.status_code == 200 and r.json()["name"] == "happy"
-    assert r.json()["expires_at"] is not None
+    r = client.get("/api/v1/hosts", headers=_bearer(token))
+    assert r.status_code == 200
     row = _last_audit()
-    assert (row.agent_name, row.method, row.path, row.outcome) == ("happy", "GET", "/api/v1/me", "ok")
+    assert (row.agent_name, row.method, row.path, row.outcome) == ("happy", "GET", "/api/v1/hosts", "ok")
     with Session(engine) as session:
         assert session.get(Agent, agent.id).last_used_at is not None
 
 
 def test_api_ignores_the_cookie_plane():
     # ULMO_DISABLE_AUTH is on for this whole process, and still gives the API nothing.
-    assert client.get("/api/v1/me").status_code == 401
+    assert client.get("/api/v1/hosts").status_code == 401
     assert client.get("/api/v1/runs").status_code == 401
 
     # With login enforced, an agent token does not open an admin page either.
@@ -148,8 +146,8 @@ def test_api_ignores_the_cookie_plane():
 
 def test_tokens_never_reach_the_audit_log():
     _, token = agents.create_agent("secretive")
-    client.get("/api/v1/me", headers=_bearer(token))
-    client.get("/api/v1/me", headers=_bearer(token + "x"))
+    client.get("/api/v1/hosts", headers=_bearer(token))
+    client.get("/api/v1/hosts", headers=_bearer(token + "x"))
     for row in _audit_rows():
         assert token not in f"{row.path}{row.detail}{row.agent_name}"
 
@@ -173,8 +171,6 @@ def test_read_endpoints():
 
     listed = client.get("/api/v1/runs", headers=h).json()["runs"]
     assert {r["playbook"] for r in listed} >= {"a.yml", "b.yml"}
-    failed = client.get("/api/v1/runs?status=failed", headers=h).json()["runs"]
-    assert failed and all(r["status"] == "failed" for r in failed)
     assert client.get("/api/v1/runs?limit=0", headers=h).status_code == 422
     assert client.get("/api/v1/runs?limit=101", headers=h).status_code == 422
     assert len(client.get("/api/v1/runs?limit=1", headers=h).json()["runs"]) == 1
@@ -186,12 +182,12 @@ def test_read_endpoints():
     detail = client.get(f"/api/v1/runs/{ok_run.id}", headers=h).json()
     assert detail["id"] == ok_run.id and detail["triggered_by"] == "alice"
     assert "\x1b" not in detail["log"]
-    assert len(detail["log"]) == api_module.LOG_TAIL_CHARS and detail["log_truncated"] is True
+    assert len(detail["log"]) == api_module.LOG_TAIL_CHARS
     assert detail["started_at"].endswith("+00:00")
     assert detail["recap"] is None
 
     small = client.get(f"/api/v1/runs/{bad_run.id}", headers=h).json()
-    assert small["log"] == "" and small["log_truncated"] is False and small["limit"] == "web1"
+    assert small["log"] == "" and small["limit"] == "web1"
 
     assert client.get("/api/v1/runs/999999", headers=h).status_code == 404
 
@@ -201,7 +197,7 @@ def test_admin_form():
     assert r.status_code == 200
     assert "ulmo_" in r.text, "new token should be shown once"
     token = next(w for w in r.text.replace("<", " ").replace(">", " ").split() if w.startswith("ulmo_"))
-    assert client.get("/api/v1/me", headers=_bearer(token)).status_code == 200
+    assert client.get("/api/v1/hosts", headers=_bearer(token)).status_code == 200
     assert token not in client.get("/agents").text, "token must not be shown again"
 
     for bad in ("", "has space", "x" * 41, "semi;colon"):

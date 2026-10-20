@@ -17,13 +17,12 @@
   <div class="card">
     <table>
       <thead>
-        <tr><th>Name</th><th>Token</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
+        <tr><th>Name</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
       </thead>
       <tbody>
         {% for a in agents %}
         <tr>
           <td>{{ a.name }}</td>
-          <td class="muted">…{{ a.token_hint }}</td>
           <td><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
           <td>{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
           <td>{{ a.last_used_at | local_time }}</td>
@@ -38,13 +37,13 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted">No agents yet.</td></tr>
+        <tr><td colspan="5" class="muted">No agents yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
     <hr style="border-color: var(--border); margin: 16px 0;" />
     <form method="post" action="/agents">
-      <label>Name<input type="text" name="name" required maxlength="40" pattern="[A-Za-z0-9._-]+" placeholder="n8n" /></label>
+      <label>Name<input type="text" name="name" required maxlength="40" placeholder="n8n" /></label>
       <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
       <button type="submit" class="secondary">Create agent</button>
     </form>
