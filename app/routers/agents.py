@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
+from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
 from app.models import Agent, AgentAudit
@@ -22,6 +23,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         "agents.html",
         {"agents": rows, "audit": audit, "error": error, "new_token": new_token},
         status_code=400 if error else 200,
+        # The page holding a plaintext token must not be kept by a browser or proxy cache.
+        headers={"Cache-Control": "no-store"} if new_token else None,
     )
 
 
@@ -32,6 +35,9 @@ def agents_page(request: Request):
 
 @router.post("/agents", response_class=HTMLResponse)
 def create_agent(request: Request, name: str = Form(...), expires_days: str = Form("")):
+    if AUTH_DISABLED:
+        # Without a login anyone who can reach this page could mint a token.
+        return _page(request, error="Turn off ULMO_DISABLE_AUTH to create agents: tokens need a real login behind them.")
     try:
         days = int(expires_days) if expires_days.strip() else None
         agent, token = agents.create_agent(name, days)

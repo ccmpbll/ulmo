@@ -63,7 +63,7 @@
           <td>{{ e.at | local_time }}</td>
           <td>{{ e.agent_name or '-' }}</td>
           <td>{{ e.method }} {{ e.path }}</td>
-          <td><span class="badge {{ 'success' if e.outcome == 'ok' else 'failed' }}">{{ e.outcome }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
+          <td><span class="badge {{ 'success' if e.status_code < 400 else 'failed' }}">{{ e.status_code }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
         </tr>
         {% else %}
         <tr><td colspan="4" class="muted">No requests yet.</td></tr>

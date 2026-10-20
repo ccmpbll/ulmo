@@ -54,8 +54,8 @@ class AgentAudit(SQLModel, table=True):
     agent_name: Optional[str] = None  # None when the token did not identify an agent
     method: str = ""
     path: str = ""
-    outcome: str = "ok"  # ok | denied
-    detail: str = ""
+    status_code: int = 0  # HTTP status returned; 401 = rejected before reaching a handler
+    detail: str = ""  # why a 401 happened (never sent to the caller)
 
 
 class PlaybookSchedule(SQLModel, table=True):

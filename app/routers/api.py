@@ -14,7 +14,26 @@ from app.services import git_sync, inventory, playbook_tags, runner
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_agent)])
 
 LOG_TAIL_CHARS = 64 * 1024
+# Read twice the cap from the end of the file: colour codes are stripped after
+# reading, so some of the window disappears.
+LOG_READ_BYTES = 2 * LOG_TAIL_CHARS
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _log_tail(run_id: int) -> str:
+    """Last LOG_TAIL_CHARS of a run's log, colours stripped, without loading a
+    multi-MB file per call."""
+    path = runner.log_path(run_id)
+    if not path.exists():
+        return ""
+    with path.open("rb") as f:
+        size = f.seek(0, 2)
+        start = max(0, size - LOG_READ_BYTES)
+        f.seek(start)
+        raw = f.read()
+    if start:  # began mid-line (maybe mid-escape or mid-character): drop the partial line
+        raw = raw.partition(b"\n")[2]
+    return ANSI_RE.sub("", raw.decode("utf-8", errors="replace"))[-LOG_TAIL_CHARS:]
 
 
 def _iso(ts: datetime | None) -> str | None:
@@ -69,10 +88,4 @@ def run_detail(run_id: int):
         run = session.get(RunHistory, run_id)
     if run is None:
         raise HTTPException(404, "Run not found")
-    log, _ = runner.read_log(run_id)
-    log = ANSI_RE.sub("", log)
-    return {
-        **_run_json(run),
-        "recap": runner.get_recap(run_id),
-        "log": log[-LOG_TAIL_CHARS:],
-    }
+    return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}

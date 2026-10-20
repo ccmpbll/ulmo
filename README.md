@@ -60,9 +60,9 @@ GET /api/v1/runs/{id}          one run: status, recap, log tail (ANSI stripped, 
 ```
 
 The API is read-only and separate from the login session: `ULMO_DISABLE_AUTH` does not open it,
-and a token cannot reach any admin page. Anyone who can open the Agents page can mint tokens, so
-with `ULMO_DISABLE_AUTH=true` keep ulmo behind your own access control. Serve ulmo over HTTPS so
-tokens are not sent in clear.
+and a token cannot reach any admin page. Agents cannot be created while `ULMO_DISABLE_AUTH=true`
+(otherwise anyone who reaches the page could mint a token). Requests are audited with the status
+code returned; the newest 5000 rows are kept. Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 

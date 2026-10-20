@@ -3,13 +3,17 @@ import re
 import secrets
 from datetime import timedelta, timezone
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app.database import engine
 from app.models import Agent, AgentAudit, utcnow
 
 TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
+MAX_EXPIRY_DAYS = 3650
+AUDIT_KEEP = 5000  # newest audit rows kept; unauthenticated callers can write rows too
+AUDIT_PATH_MAX = 200
+LAST_USED_REFRESH = timedelta(minutes=1)
 
 
 def hash_token(token: str) -> str:
@@ -25,8 +29,8 @@ def create_agent(name: str, expires_days: int | None = None) -> tuple[Agent, str
     name = name.strip()
     if not NAME_RE.match(name):
         raise ValueError("Name must be 1-40 characters: letters, digits, '.', '_' or '-'.")
-    if expires_days is not None and expires_days < 1:
-        raise ValueError("Expiry must be at least 1 day.")
+    if expires_days is not None and not 1 <= expires_days <= MAX_EXPIRY_DAYS:
+        raise ValueError(f"Expiry must be between 1 and {MAX_EXPIRY_DAYS} days.")
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with Session(engine) as session:
@@ -59,20 +63,31 @@ def authenticate(token: str) -> tuple[Agent | None, str]:
                 expires = expires.replace(tzinfo=timezone.utc)
             if expires <= utcnow():
                 return agent, "token expired"
-        agent.last_used_at = utcnow()
-        session.add(agent)
-        session.commit()
-        session.refresh(agent)
+        # Not on every request: that would be a second write per call.
+        last = agent.last_used_at
+        if last is not None and last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if last is None or utcnow() - last > LAST_USED_REFRESH:
+            agent.last_used_at = utcnow()
+            session.add(agent)
+            session.commit()
+            session.refresh(agent)
         return agent, ""
 
 
-def audit(agent_name: str | None, method: str, path: str, outcome: str, detail: str = "") -> None:
+def audit(agent_name: str | None, method: str, path: str, status_code: int, detail: str = "") -> None:
     with Session(engine) as session:
-        session.add(
-            AgentAudit(
-                agent_name=agent_name, method=method, path=path, outcome=outcome, detail=detail
-            )
+        row = AgentAudit(
+            agent_name=agent_name,
+            method=method,
+            path=path[:AUDIT_PATH_MAX],
+            status_code=status_code,
+            detail=detail,
         )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        session.exec(delete(AgentAudit).where(AgentAudit.id <= row.id - AUDIT_KEEP))
         session.commit()
 
 
