@@ -3,7 +3,7 @@ import re
 import secrets
 from datetime import timedelta
 
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, delete, select, update
 
 from app.database import engine
 from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, RunHistory, utcnow
@@ -137,9 +137,7 @@ def create_role(name: str) -> Role:
 def delete_role(role_id: int) -> None:
     """Agents on the role lose it (and with it the ability to run anything)."""
     with Session(engine) as session:
-        for agent in session.exec(select(Agent).where(Agent.role_id == role_id)).all():
-            agent.role_id = None
-            session.add(agent)
+        session.exec(update(Agent).where(Agent.role_id == role_id).values(role_id=None))
         session.exec(delete(Grant).where(Grant.role_id == role_id))
         session.exec(delete(Role).where(Role.id == role_id))
         session.commit()

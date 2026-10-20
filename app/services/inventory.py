@@ -58,7 +58,7 @@ def _fresh_cache() -> dict | None:
 
 def list_hosts() -> list[str]:
     cached = _fresh_cache()
-    return cached["hosts"] if cached else _refresh()[0]
+    return cached["hosts"] if cached else refresh_hosts_cache()[0]
 
 
 def list_groups() -> list[str]:
@@ -66,14 +66,10 @@ def list_groups() -> list[str]:
     --limit treats a name as a host OR a group, so callers that need a name to
     mean one host only must refuse names that are also groups."""
     cached = _fresh_cache()
-    return cached["groups"] if cached else _refresh()[1]
+    return cached["groups"] if cached else refresh_hosts_cache()[1]
 
 
-def refresh_hosts_cache() -> list[str]:
-    return _refresh()[0]
-
-
-def _refresh() -> tuple[list[str], list[str]]:
+def refresh_hosts_cache() -> tuple[list[str], list[str]]:
     """Recompute hosts and groups and persist them. Returns them even if the
     write fails (that's a cache problem, not a data problem)."""
     hosts, groups = _run_ansible_inventory()
