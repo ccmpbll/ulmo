@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SECRET_KEY, SECURE_COOKIES
 from app.database import init_db
-from app.routers import auth, inventory, logs, playbooks, runs, settings
+from app.routers import agents, api, auth, inventory, logs, playbooks, runs, settings
 from app.services import git_sync, runner, scheduler, ssh_keys
 
 
@@ -28,6 +28,8 @@ app = FastAPI(title="ulmo", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=SECURE_COOKIES)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+app.include_router(agents.router)
+app.include_router(api.router)
 app.include_router(auth.router)
 app.include_router(inventory.router)
 app.include_router(logs.router)

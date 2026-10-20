@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Agents - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Agents</h1></div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+{% if new_token %}
+<div class="card">
+  <p class="ok">Token for <strong>{{ new_token[0] }}</strong>. Copy it now; it is not shown again.</p>
+  <pre>{{ new_token[1] }}</pre>
+  <p class="muted">Send it as <code>Authorization: Bearer &lt;token&gt;</code> to <code>/api/v1/...</code>.</p>
+</div>
+{% endif %}
+
+<div class="settings-section">
+  <h2>API agents</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Token</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in agents %}
+        <tr>
+          <td>{{ a.name }}</td>
+          <td class="muted">…{{ a.token_hint }}</td>
+          <td><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
+          <td>{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
+          <td>{{ a.last_used_at | local_time }}</td>
+          <td>
+            <form method="post" action="/agents/{{ a.id }}/toggle" style="display:inline">
+              <input type="hidden" name="enabled" value="{{ '' if a.enabled else '1' }}" />
+              <button type="submit" class="secondary">{{ 'Disable' if a.enabled else 'Enable' }}</button>
+            </form>
+            <form method="post" action="/agents/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete agent {{ a.name }}? Its token stops working immediately.');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No agents yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <form method="post" action="/agents">
+      <label>Name<input type="text" name="name" required maxlength="40" pattern="[A-Za-z0-9._-]+" placeholder="n8n" /></label>
+      <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
+      <button type="submit" class="secondary">Create agent</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Recent API requests</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>When</th><th>Agent</th><th>Request</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        {% for e in audit %}
+        <tr>
+          <td>{{ e.at | local_time }}</td>
+          <td>{{ e.agent_name or '-' }}</td>
+          <td>{{ e.method }} {{ e.path }}</td>
+          <td><span class="badge {{ 'success' if e.outcome == 'ok' else 'failed' }}">{{ e.outcome }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No requests yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
