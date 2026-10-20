@@ -13,16 +13,40 @@
 {% endif %}
 
 <div class="settings-section">
+  <h2>Agent runs</h2>
+  <div class="card">
+    <form method="post" action="/agent-runs/toggle">
+      {% if runs_enabled %}
+      <span class="badge success">on</span> Agents can start playbooks they have a grant for.
+      <button type="submit" class="danger">Switch off</button>
+      {% else %}
+      <span class="badge failed">off</span> No agent can start a run. Reading and cancelling still work.
+      <input type="hidden" name="enable" value="1" />
+      <button type="submit" class="secondary">Switch on</button>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
   <h2>API agents</h2>
   <div class="card">
     <table>
       <thead>
-        <tr><th>Name</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
+        <tr><th>Name</th><th>Role</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
       </thead>
       <tbody>
         {% for a in agents %}
         <tr>
           <td>{{ a.name }}</td>
+          <td>
+            <form method="post" action="/agents/{{ a.id }}/role">
+              <select name="role_id" onchange="this.form.submit()">
+                <option value="">none (read only)</option>
+                {% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == a.role_id }}>{{ r.name }}</option>{% endfor %}
+              </select>
+            </form>
+          </td>
           <td><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
           <td>{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
           <td>{{ a.last_used_at | local_time }}</td>
@@ -36,16 +60,97 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No agents yet.</td></tr>
+        <tr><td colspan="6" class="muted">No agents yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
     <hr style="border-color: var(--border); margin: 16px 0;" />
     <form method="post" action="/agents">
       <label>Name<input type="text" name="name" required maxlength="40" placeholder="n8n" /></label>
+      <label>Role
+        <select name="role_id">
+          <option value="">none (read only)</option>
+          {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+        </select>
+      </label>
       <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
       <button type="submit" class="secondary">Create agent</button>
     </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Roles and grants</h2>
+  <div class="card">
+    <p class="muted">A grant lets a role run one playbook on specific hosts. Anything not granted is denied; an agent's limit must be hosts named in the grant.</p>
+    {% for r in roles %}
+    <div class="role-block" style="margin-bottom:16px;">
+      <strong>{{ r.name }}</strong>
+      <form method="post" action="/roles/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('Delete role {{ r.name }}? Agents on it lose the ability to run anything.');">
+        <button type="submit" class="danger">Delete role</button>
+      </form>
+      <table>
+        <tbody>
+          {% for g in grants[r.id] %}
+          <tr>
+            <td>{{ g.playbook }}</td>
+            <td class="muted">{{ g.hosts.replace(',', ', ') }}</td>
+            <td>
+              <form method="post" action="/grants/{{ g.id }}/delete">
+                <button type="submit" class="danger">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="muted">No grants: this role can read but not run.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if playbooks and hosts %}
+      <details>
+        <summary class="muted">Add a grant</summary>
+        <form method="post" action="/roles/{{ r.id }}/grants">
+          <label>Playbook
+            <select name="playbook">
+              {% for pb in playbooks %}<option value="{{ pb.rel_path }}">{{ pb.rel_path }}</option>{% endfor %}
+            </select>
+          </label>
+          <div class="chip-list">
+            {% for h in hosts %}
+            <label class="tag-chip"><input type="checkbox" name="hosts" value="{{ h }}" /> {{ h }}</label>
+            {% endfor %}
+          </div>
+          <button type="submit" class="secondary">Add grant</button>
+        </form>
+      </details>
+      {% else %}
+      <p class="muted">Sync the repo to list playbooks and hosts before adding grants.</p>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted">No roles yet.</p>
+    {% endfor %}
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <form method="post" action="/roles">
+      <label>New role<input type="text" name="name" required maxlength="40" placeholder="remediation" /></label>
+      <button type="submit" class="secondary">Create role</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Recent changes</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
+      <tbody>
+        {% for c in changes %}
+        <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
+        {% else %}
+        <tr><td colspan="3" class="muted">No changes yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

@@ -17,8 +17,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - "Sync from Git" installs collections from the repo's `requirements.yaml`; Sync Logs tab shows
   full output
 - Settings backup/restore as YAML
-- Read-only JSON API for scripts and automation (n8n etc.), with per-agent bearer tokens and an
-  audit log of every request (see below)
+- JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles and grants that
+  say which playbooks on which hosts an agent may run, a kill switch, and an audit log (see below)
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -53,16 +53,35 @@ Send it as `Authorization: Bearer <token>`. Tokens can be disabled, given an exp
 any time, and every request (allowed or denied, with the reason) is listed on the same page.
 
 ```
-GET /api/v1/playbooks          playbooks and their tags
-GET /api/v1/hosts              inventory hosts
-GET /api/v1/runs?limit=        recent runs
-GET /api/v1/runs/{id}          one run: status, recap, log tail (ANSI stripped, last 64 KB)
+GET  /api/v1/playbooks         playbooks and their tags
+GET  /api/v1/hosts             inventory hosts
+GET  /api/v1/runs?limit=       recent runs
+GET  /api/v1/runs/{id}         one run: status, recap, log tail (ANSI stripped, last 64 KB)
+GET  /api/v1/catalog           what this agent may run
+POST /api/v1/runs              start a playbook: {"playbook": "playbooks/x.yml", "limit": ["web1"]}
+POST /api/v1/runs/{id}/cancel  cancel a run this agent started
 ```
 
-The API is read-only and separate from the login session: `ULMO_DISABLE_AUTH` does not open it,
-and a token cannot reach any admin page. Agents cannot be created while `ULMO_DISABLE_AUTH=true`
-(otherwise anyone who reaches the page could mint a token). Requests are audited with the status
-code returned; the newest 5000 rows are kept. Serve ulmo over HTTPS so tokens are not sent in clear.
+**Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
+create a **role**, add a **grant** (one playbook plus the hosts it may target), and assign the
+role to the agent. `limit` is required and every host must be named in the role's grants for
+that playbook; matching is exact, so wildcards, groups and `a:b` patterns are refused. ansible
+reads a name as a host *or* a group, so a host that shares its name with a group cannot be
+granted or used, and everything is refused while the inventory cannot be read. Runs go through
+the same code as the Run button (same `ansible-runner` call, no extra variables or check mode)
+and show up in Run History as `agent:<name>`.
+
+Guard rails: a run is refused (409) while another run of the same playbook is going on any of
+the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at
+once (429). **Agent runs** on the page is a kill switch: when off, no agent can start a run
+(reading and cancelling still work); it is deliberately not part of Settings backup/restore.
+Every change made on the Agents page is listed under **Recent changes**.
+
+The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
+cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create
+agents or widen what they may do (anyone reaching the page could), though it will still switch
+runs off. Requests are audited with the status code returned; the newest 5000 rows are kept.
+Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
