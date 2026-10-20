@@ -32,6 +32,32 @@ class RunHistory(SQLModel, table=True):
     finished_at: Optional[datetime] = None
 
 
+class Agent(SQLModel, table=True):
+    """A non-human caller of the /api/v1 API (n8n, a script, an AI agent).
+    Only the sha256 of the bearer token is stored; the token itself is shown
+    once, when the agent is created."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    token_hash: str = Field(unique=True, index=True)
+    enabled: bool = True
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    last_used_at: Optional[datetime] = None
+
+
+class AgentAudit(SQLModel, table=True):
+    """One row per /api/v1 request, allowed or denied."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    at: datetime = Field(default_factory=utcnow, index=True)
+    agent_name: Optional[str] = None  # None when the token did not identify an agent
+    method: str = ""
+    path: str = ""
+    status_code: int = 0  # HTTP status returned; 401 = rejected before reaching a handler
+    detail: str = ""  # why a 401 happened (never sent to the caller)
+
+
 class PlaybookSchedule(SQLModel, table=True):
     rel_path: str = Field(primary_key=True)
     cron: str = ""  # empty = disabled

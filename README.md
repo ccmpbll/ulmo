@@ -17,6 +17,8 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - "Sync from Git" installs collections from the repo's `requirements.yaml`; Sync Logs tab shows
   full output
 - Settings backup/restore as YAML
+- Read-only JSON API for scripts and automation (n8n etc.), with per-agent bearer tokens and an
+  audit log of every request (see below)
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -43,6 +45,24 @@ placed differently; playbooks themselves live in a subdirectory (`playbooks/` by
 └── playbooks/
     └── site.yaml
 ```
+
+## Agent API
+
+**Agents** (top bar) creates API agents. Each gets a token, shown once; only its hash is stored.
+Send it as `Authorization: Bearer <token>`. Tokens can be disabled, given an expiry, or deleted at
+any time, and every request (allowed or denied, with the reason) is listed on the same page.
+
+```
+GET /api/v1/playbooks          playbooks and their tags
+GET /api/v1/hosts              inventory hosts
+GET /api/v1/runs?limit=        recent runs
+GET /api/v1/runs/{id}          one run: status, recap, log tail (ANSI stripped, last 64 KB)
+```
+
+The API is read-only and separate from the login session: `ULMO_DISABLE_AUTH` does not open it,
+and a token cannot reach any admin page. Agents cannot be created while `ULMO_DISABLE_AUTH=true`
+(otherwise anyone who reaches the page could mint a token). Requests are audited with the status
+code returned; the newest 5000 rows are kept. Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
