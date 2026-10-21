@@ -103,7 +103,6 @@ and never shell syntax. Host address, port, user and key come from the inventory
 ```
 POST /api/v1/commands          {"template": "logs", "host": "frodo", "params": {"n": 100, "container": "sonarr"}}
 GET  /api/v1/commands/{id}     status, return code, output (capped at 64 KB); only the agent's own runs
-GET  /api/v1/commands          the agent's recent command runs
 ```
 
 The host runs the command under its own `timeout` (coreutils or busybox must be installed there), so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept. The kill switch covers commands too. A template

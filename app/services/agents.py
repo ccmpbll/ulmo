@@ -156,16 +156,22 @@ def delete_role(role_id: int) -> None:
         session.commit()
 
 
-def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
+def _checked_hosts(hosts: list[str]) -> list[str]:
+    """Cleaned, sorted host names, all of which exist in the inventory."""
     hosts = sorted({h.strip() for h in hosts if h.strip()})
     if not hosts:
         raise ValueError("Pick at least one host.")
-    if playbook not in {p["rel_path"] for p in git_sync.list_playbooks()}:
-        raise ValueError("Unknown playbook.")
     known = set(inventory.list_hosts())
     unknown = [h for h in hosts if h not in known]
     if unknown:
         raise ValueError(f"Not in the inventory: {', '.join(unknown)}")
+    return hosts
+
+
+def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
+    hosts = _checked_hosts(hosts)
+    if playbook not in {p["rel_path"] for p in git_sync.list_playbooks()}:
+        raise ValueError("Unknown playbook.")
     groups = set(inventory.list_groups())
     shadowed = [h for h in hosts if h in groups]
     if shadowed:
@@ -183,15 +189,9 @@ def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
 
 
 def add_command_grant(role_id: int, template: str, hosts: list[str]) -> CommandGrant:
-    hosts = sorted({h.strip() for h in hosts if h.strip()})
-    if not hosts:
-        raise ValueError("Pick at least one host.")
+    hosts = _checked_hosts(hosts)
     if template not in command_templates.load()[0]:
         raise ValueError("Unknown command template.")
-    known = set(inventory.list_hosts())
-    unknown = [h for h in hosts if h not in known]
-    if unknown:
-        raise ValueError(f"Not in the inventory: {', '.join(unknown)}")
     with Session(engine) as session:
         if session.get(Role, role_id) is None:
             raise ValueError("Unknown role.")

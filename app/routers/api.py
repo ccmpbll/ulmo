@@ -219,14 +219,6 @@ def start_command(body: CommandRequest, request: Request, agent: Agent = Depends
     return _command_json(run)
 
 
-@router.get("/commands")
-def list_commands(limit: int = Query(20, ge=1, le=100), agent: Agent = Depends(require_agent)):
-    """This agent's own recent command runs (output is only on the single-run view)."""
-    query = select(CommandRun).where(CommandRun.agent_id == agent.id).order_by(CommandRun.id.desc()).limit(limit)
-    with Session(engine) as session:
-        return {"commands": [_command_json(r) for r in session.exec(query).all()]}
-
-
 @router.get("/commands/{run_id}")
 def command_detail(run_id: int, request: Request, agent: Agent = Depends(require_agent)):
     """A command's output can hold anything the host printed, so an agent sees only its own."""

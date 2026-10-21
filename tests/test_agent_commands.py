@@ -27,6 +27,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -418,8 +419,6 @@ def test_run_success_failure_timeout_truncation():
     detail = client.get(f"/api/v1/commands/{run.id}", headers=_h(token)).json()
     assert detail["output"] == "restarted sonarr\n" and detail["status"] == "success" and detail["host"] == "web1"
     assert detail["command"] == "docker restart sonarr" and detail["started_at"].endswith("+00:00")
-    listed = client.get("/api/v1/commands", headers=_h(token)).json()["commands"]
-    assert listed and "output" not in listed[0]
 
     # An injection attempt reaches the remote shell as one quoted word.
     r = _post(token, "say", "web1", {"text": "x; touch /tmp/pwned $(id)"})
@@ -479,8 +478,6 @@ def test_runs_are_private_to_their_agent():
     _wait(run_id)
     assert client.get(f"/api/v1/commands/{run_id}", headers=_h(other)).status_code == 404
     assert client.get("/api/v1/commands/999999", headers=_h(mine)).status_code == 404
-    assert run_id not in [c["id"] for c in client.get("/api/v1/commands", headers=_h(other)).json()["commands"]]
-    assert run_id in [c["id"] for c in client.get("/api/v1/commands", headers=_h(mine)).json()["commands"]]
 
     # Deleting an agent detaches its history, so a reused id inherits nothing.
     with Session(engine) as session:
@@ -495,7 +492,7 @@ def test_kill_switch_and_caps():
     agents.set_runs_enabled(False)
     try:
         assert _post(token, "restart", "web1", {"container": "sonarr"}).status_code == 503
-        assert client.get("/api/v1/commands", headers=_h(token)).status_code == 200
+        assert client.get("/api/v1/runs", headers=_h(token)).status_code == 200
     finally:
         agents.set_runs_enabled(True)
 
@@ -546,7 +543,7 @@ def test_orphaned_runs_are_settled():
         session.add(run)
         session.commit()
         session.refresh(run)
-    commands.reconcile_orphaned()
+    commands.settle_stale(timedelta(0), "ulmo restarted while this was running")
     with Session(engine) as session:
         r = session.get(CommandRun, run.id)
         assert r.status == "error" and r.finished_at is not None
@@ -566,8 +563,6 @@ def test_template_regex_cannot_backtrack_exponentially():
 
 
 def test_stuck_runs_do_not_hold_the_caps_forever():
-    from datetime import timedelta
-
     from app.models import utcnow
 
     with Session(engine) as session:

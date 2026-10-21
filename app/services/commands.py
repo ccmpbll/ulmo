@@ -125,22 +125,14 @@ def _finish(run_id: int, status: str, rc: int | None, output: str) -> None:
             time.sleep(0.2 * (attempt + 1))
 
 
-def reconcile_orphaned() -> None:
-    """Runs still marked running after a restart will never finish."""
-    with Session(engine) as session:
-        for run in session.exec(select(CommandRun).where(CommandRun.status == "running")).all():
-            run.status, run.output, run.finished_at = "error", "ulmo restarted while this was running", utcnow()
-            session.add(run)
-        session.commit()
-
-
-def settle_stale() -> None:
-    """A row still 'running' long after any timeout lost its thread (or its final write)."""
+def settle_stale(max_age: timedelta = STALE_AFTER, note: str = "ulmo lost track of this run") -> None:
+    """Mark 'running' rows older than max_age as errored: their thread (or final
+    write) is gone. At startup, max_age 0 settles everything that was in flight."""
     with Session(engine) as session:
         session.exec(
             update(CommandRun)
-            .where(CommandRun.status == "running", CommandRun.started_at < utcnow() - STALE_AFTER)
-            .values(status="error", output="ulmo lost track of this run", finished_at=utcnow())
+            .where(CommandRun.status == "running", CommandRun.started_at < utcnow() - max_age)
+            .values(status="error", output=note, finished_at=utcnow())
         )
         session.commit()
 

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
@@ -19,7 +20,7 @@ async def lifespan(app: FastAPI):
     # last time (crash, container restart) — settle those before anything
     # else touches them.
     runner.reconcile_orphaned_runs()
-    commands.reconcile_orphaned()
+    commands.settle_stale(timedelta(0), "ulmo restarted while this was running")
     git_sync.reconcile_orphaned_syncs()
     ssh_keys.ensure_symlinks()
     scheduler.start()
