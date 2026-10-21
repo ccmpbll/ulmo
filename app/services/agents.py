@@ -4,7 +4,7 @@ import secrets
 from datetime import timedelta
 
 from sqlalchemy.exc import OperationalError
-from sqlmodel import Session, delete, select, update
+from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
 from app.models import (
@@ -30,6 +30,8 @@ ADMIN_AUDIT_KEEP = 5000  # newest admin changes kept
 AUDIT_PATH_MAX = 200
 AUDIT_DETAIL_MAX = 300  # detail can carry agent-supplied text (denial reasons)
 LAST_USED_REFRESH = timedelta(minutes=1)
+DEFAULT_MAX_PER_HOUR = 60
+MAX_PER_HOUR = 100000
 
 
 def hash_token(token: str) -> str:
@@ -39,7 +41,7 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None) -> tuple[Agent, str]:
+def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
     """Create an agent and return it with its plaintext token (the only time
     the token exists outside the caller's hands)."""
     name = name.strip()
@@ -47,6 +49,7 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         raise ValueError("Name must be 1-40 characters: letters, digits, '.', '_' or '-'.")
     if expires_days is not None and not 1 <= expires_days <= MAX_EXPIRY_DAYS:
         raise ValueError(f"Expiry must be between 1 and {MAX_EXPIRY_DAYS} days.")
+    _check_limit(max_per_hour)
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with Session(engine) as session:
@@ -57,6 +60,7 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         agent = Agent(
             name=name,
             role_id=role_id,
+            max_per_hour=max_per_hour,
             token_hash=hash_token(token),
             expires_at=utcnow() + timedelta(days=expires_days) if expires_days else None,
         )
@@ -64,6 +68,43 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         session.commit()
         session.refresh(agent)
         return agent, token
+
+
+def _check_limit(value: int | None) -> None:
+    if value is not None and not 0 <= value <= MAX_PER_HOUR:
+        raise ValueError(f"The hourly limit must be between 0 (no limit) and {MAX_PER_HOUR}.")
+
+
+def set_hourly_limit(agent_id: int, value: int | None) -> None:
+    _check_limit(value)
+    with Session(engine) as session:
+        agent = session.get(Agent, agent_id)
+        if agent is None:
+            raise ValueError("Unknown agent.")
+        agent.max_per_hour = value
+        session.add(agent)
+        session.commit()
+
+
+def hourly_limit(agent: Agent) -> int:
+    """Requests per hour this agent may make; 0 means no limit."""
+    return DEFAULT_MAX_PER_HOUR if agent.max_per_hour is None else agent.max_per_hour
+
+
+def requests_last_hour(agent: Agent) -> int:
+    """What this agent asked for or started in the last hour, each thing once: every command and
+    playbook run it started, plus the approval requests that never became a run (an approved one
+    is already counted as its run)."""
+    since = utcnow() - timedelta(hours=1)
+    with Session(engine) as session:
+        commands = session.exec(select(func.count()).select_from(CommandRun).where(CommandRun.agent_id == agent.id, CommandRun.started_at >= since)).one()
+        runs = session.exec(
+            select(func.count()).select_from(AgentRun).join(RunHistory, RunHistory.id == AgentRun.run_id).where(AgentRun.agent_id == agent.id, RunHistory.started_at >= since)
+        ).one()
+        asked = session.exec(
+            select(func.count()).select_from(Approval).where(Approval.agent_id == agent.id, Approval.created_at >= since, Approval.run_id.is_(None))  # noqa: E711
+        ).one()
+    return commands + runs + asked
 
 
 def authenticate(token: str) -> tuple[Agent | None, str]:

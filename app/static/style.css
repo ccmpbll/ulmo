@@ -254,6 +254,7 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .decision-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-weight: 600; }
 .decision code { display: block; overflow-wrap: anywhere; font-size: 0.82rem; }
 .decision-meta { margin-top: 6px; font-size: 0.82rem; }
+.decision-note { margin-top: 6px; overflow-wrap: anywhere; }
 .panel-head { flex-wrap: wrap; }
 .panel code, .card > p code { overflow-wrap: anywhere; }
 

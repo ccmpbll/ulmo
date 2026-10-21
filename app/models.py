@@ -45,6 +45,7 @@ class Agent(SQLModel, table=True):
     expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
     last_used_at: Optional[datetime] = None
+    max_per_hour: Optional[int] = None  # runs, commands and approval requests per hour; None = the default, 0 = no limit
 
 
 class Role(SQLModel, table=True):
@@ -134,6 +135,7 @@ class Approval(SQLModel, table=True):
     params: str = "{}"  # JSON of the validated command values
     line: str = ""  # what would run, as shown to the admin; checked again when approved
     status: str = "pending"  # pending | approved | denied | expired | failed
+    agent_note: str = ""  # what the agent said about the request (untrusted text, shown escaped)
     note: str = ""  # why an approved request could not start
     run_id: Optional[int] = None  # the CommandRun or RunHistory id, once approved and started
     created_at: datetime = Field(default_factory=utcnow, index=True)

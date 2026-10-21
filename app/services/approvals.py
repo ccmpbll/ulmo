@@ -59,7 +59,7 @@ def expire_stale() -> None:
         session.commit()
 
 
-def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> tuple[Approval, bool]:
+def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str, agent_note: str = "") -> tuple[Approval, bool]:
     """Record a request, or return the identical one already waiting (a workflow that retries
     must not pile up copies, each of which could run). Returns (approval, created)."""
     params_json = json.dumps(params, sort_keys=True)
@@ -72,7 +72,7 @@ def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: 
         if len(waiting) >= MAX_PENDING_PER_AGENT:
             raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
         row = Approval(
-            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line,
+            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line, agent_note=agent_note,
             expires_at=utcnow() + EXPIRY,
         )
         session.add(row)

@@ -105,6 +105,7 @@ class RunRequest(BaseModel):
     playbook: str = Field(max_length=200)
     # Host names, matched exactly against the grants. Bounded because they are echoed in errors and the audit log.
     limit: list[Annotated[str, Field(max_length=100)]] = Field(min_length=1, max_length=50)
+    note: str | None = Field(None, max_length=500)  # shown to the admin if the run needs approval
 
 
 def _deny(request: Request, agent: Agent, status: int, reason: str):
@@ -125,10 +126,10 @@ def _approval_json(a: Approval) -> dict:
     return out
 
 
-def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> dict:
+def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str, note: str | None) -> dict:
     """`params` is what the agent sent: approving validates it again, exactly as a direct call would."""
     try:
-        approval, created = approvals.create(agent, kind, target, host, params, line)
+        approval, created = approvals.create(agent, kind, target, host, params, line, " ".join((note or "").split()))
     except approvals.TooManyPending as exc:
         _deny(request, agent, 429, str(exc))
     request.state.audit = (agent.name, f"{'requested' if created else 'repeated'} approval {approval.id}: {line}")
@@ -169,9 +170,10 @@ def catalog(agent: Agent = Depends(require_agent)):
 def start_run(body: RunRequest, request: Request, response: Response, agent: Agent = Depends(require_agent)):
     try:
         agent_runs.precheck_run(agent, body.playbook, body.limit)
+        agent_runs.check_rate(agent)
         if approvals.playbook_needs(agent, body.playbook, body.limit):
             line = f"ansible-playbook {body.playbook} --limit {','.join(body.limit)}"
-            return _request_approval(request, response, agent, "playbook", body.playbook, ",".join(body.limit), {}, line)
+            return _request_approval(request, response, agent, "playbook", body.playbook, ",".join(body.limit), {}, line, body.note)
         record = agent_runs.launch_run(agent, body.playbook, body.limit)
     except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)
@@ -200,6 +202,7 @@ class CommandRequest(BaseModel):
     command: str = Field(max_length=60)
     host: str = Field(max_length=100)
     params: dict = Field(default_factory=dict, max_length=20)
+    note: str | None = Field(None, max_length=500)  # shown to the admin if the call needs approval
 
 
 def _command_json(run: CommandRun, with_output: bool = False) -> dict:
@@ -234,8 +237,9 @@ def start_command(
     only once an admin approves it: poll GET /approvals/{id}."""
     try:
         template, host, values = agent_runs.precheck_command(agent, body.command, body.host, body.params)
+        agent_runs.check_rate(agent)
         if template.id in approvals.commands_needing(agent):
-            return _request_approval(request, response, agent, "command", template.id, host.name, body.params, agent_runs.command_line(template, values))
+            return _request_approval(request, response, agent, "command", template.id, host.name, body.params, agent_runs.command_line(template, values), body.note)
         run = agent_runs.launch_command(agent, template, host, values)
     except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)

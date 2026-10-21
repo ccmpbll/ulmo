@@ -537,7 +537,129 @@ def test_public_url_must_be_a_web_address():
     assert r.status_code == 303 and "must+start+with" in r.headers["location"] and settings_store.get("public_url") == ""
     r = admin.post("/settings/notifications", data={"public_url": " https://ulmo.example.com/ "}, follow_redirects=False)
     assert settings_store.get("public_url") == "https://ulmo.example.com"
-    settings_store.set_many({"public_url": ""})
+    settings_store.set_many({"public_url": "", "notify_pushover_token": "t", "notify_pushover_user": "u"})  # the form post above blanked them
+
+
+def _post(token, command, host="frodo", params=None, note=None):
+    body = {"command": command, "host": host, "params": params if params is not None else {}}
+    if note is not None:
+        body["note"] = note
+    return client.post("/api/v1/commands?wait=0", json=body, headers=_h(token))
+
+
+def test_notes_on_requests():
+    _, token, _ = _agent("noter", asking=["restart"])
+    sent.clear()
+    r = _post(token, "restart", params={"container": "sonarr"}, note="26 restarts\n in 24h  <b>bold</b>")
+    aid = r.json()["approval_id"]
+    assert _approval(aid).agent_note == "26 restarts in 24h <b>bold</b>", "whitespace is collapsed"
+    page = admin.get("/approvals").text
+    assert "noter says:" in page and "26 restarts in 24h &lt;b&gt;bold&lt;/b&gt;" in page and "<b>bold</b>" not in page, "shown escaped"
+    detail = admin.get(f"/approvals/{aid}").text
+    assert "noter says:" in detail and "&lt;b&gt;bold&lt;/b&gt;" in detail and "<b>bold</b>" not in detail, "escaped on the request page too"
+    _notified(1)
+    assert "noter says: 26 restarts in 24h" in sent[-1][1], sent[-1]
+
+    again = _post(token, "restart", params={"container": "sonarr"}, note="a different note").json()
+    assert again["approval_id"] == aid and _approval(aid).agent_note.startswith("26 restarts"), "the retry keeps the first note"
+
+    assert _post(token, "restart", params={"container": "radarr"}, note="x" * 501).status_code == 422, "bounded"
+    quiet = _post(token, "restart", params={"container": "radarr"}).json()["approval_id"]
+    assert _approval(quiet).agent_note == "" and "noter says" not in admin.get(f"/approvals/{quiet}").text
+
+    free = _post(token, "uptime", note="not needed").json()
+    assert free.get("status") in ("success", "running"), "a note on a call that needs no approval is simply ignored"
+
+
+def test_hourly_limit_counts_each_request_once():
+    agent, token, _ = _agent("limited", asking=["restart"])
+    agents.set_hourly_limit(agent.id, 3)
+    assert _post(token, "uptime").status_code in (200, 202)
+    a1 = _post(token, "restart", params={"container": "sonarr"}).json()["approval_id"]
+    assert _post(token, "restart", params={"container": "radarr"}).status_code == 202
+    r = _post(token, "uptime")
+    assert r.status_code == 429 and r.json()["detail"] == "rate limit: 3 requests per hour", r.text
+    assert agents.requests_last_hour(agent) == 3
+
+    admin.post(f"/approvals/{a1}/approve")
+    assert _approval(a1).status == "approved", "an approval is never refused for the limit: it was counted when asked"
+    assert agents.requests_last_hour(agent) == 3, "the approved request is now a run, not counted twice"
+    assert _post(token, "uptime").status_code == 429
+
+    with Session(engine) as session:  # an hour later it has gone
+        for run in session.exec(select(CommandRun).where(CommandRun.agent_id == agent.id)).all():
+            run.started_at = utcnow() - timedelta(hours=2)
+            session.add(run)
+        for row in session.exec(select(Approval).where(Approval.agent_id == agent.id)).all():
+            row.created_at = utcnow() - timedelta(hours=2)
+            session.add(row)
+        session.commit()
+    assert agents.requests_last_hour(agent) == 0 and _post(token, "uptime").status_code in (200, 202)
+
+
+def test_default_and_unlimited():
+    saved = agents.DEFAULT_MAX_PER_HOUR
+    agents.DEFAULT_MAX_PER_HOUR = 2
+    try:
+        agent, token, _ = _agent("defaulted")
+        assert agent.max_per_hour is None and agents.hourly_limit(agent) == 2
+        assert _post(token, "uptime").status_code in (200, 202) and _post(token, "uptime").status_code in (200, 202)
+        assert _post(token, "uptime").status_code == 429, "the default applies"
+        agents.set_hourly_limit(agent.id, 0)
+        for _ in range(5):
+            assert _post(token, "uptime").status_code in (200, 202), "0 is no limit"
+    finally:
+        agents.DEFAULT_MAX_PER_HOUR = saved
+
+
+def test_playbook_runs_count_too():
+    role = agents.create_role("pb-limited")
+    agent, token = agents.create_agent("pb-limited-agent", max_per_hour=1)
+    agents.assign_role(agent.id, role.id)
+    agents.add_grant(role.id, "playbooks/frodo.yaml", ["frodo"])
+    assert client.post("/api/v1/runs", json={"playbook": "playbooks/frodo.yaml", "limit": ["frodo"]}, headers=_h(token)).status_code == 202
+    for _ in range(100):  # let the first finish so the overlap rule is not what refuses the next
+        with Session(engine) as session:
+            if all(r.status != "running" for r in session.exec(select(RunHistory)).all()):
+                break
+        time.sleep(0.02)
+    r = client.post("/api/v1/runs", json={"playbook": "playbooks/frodo.yaml", "limit": ["frodo"]}, headers=_h(token))
+    assert r.status_code == 429 and "rate limit" in r.json()["detail"], r.text
+
+
+def test_limit_is_set_by_admins_only():
+    r = admin.post("/agents", data={"name": "setlimit", "max_per_hour": "7"})
+    assert r.status_code == 200
+    with Session(engine) as session:
+        agent = session.exec(select(Agent).where(Agent.name == "setlimit")).first()
+    assert agent.max_per_hour == 7
+    admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "12"})
+    with Session(engine) as session:
+        assert session.get(Agent, agent.id).max_per_hour == 12
+    assert 'value="12"' in admin.get("/agents").text
+    admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": ""})
+    with Session(engine) as session:
+        assert session.get(Agent, agent.id).max_per_hour is None, "blank is the default"
+    for bad in ("-1", "100001", "many"):
+        r = admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": bad})
+        assert r.status_code == 400, bad
+    assert admin.post("/agents", data={"name": "badlimit", "max_per_hour": "-5"}).status_code == 400
+    with Session(engine) as session:
+        assert session.get(Agent, agent.id).max_per_hour is None
+        audit = session.exec(select(AdminAudit).where(AdminAudit.action == "set agent limit")).all()
+    assert audit and "12 per hour" in audit[0].detail
+
+    _, sneaky = agents.create_agent("limit-sneak")
+    r = client.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "0"}, headers=_h(sneaky), follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
+    from app.routers import agents as agents_router
+    agents_router.AUTH_DISABLED = True
+    try:
+        assert admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "0"}).status_code == 400
+    finally:
+        agents_router.AUTH_DISABLED = False
+    with Session(engine) as session:
+        assert session.get(Agent, agent.id).max_per_hour is None
 
 
 def test_old_databases_get_the_new_columns():
@@ -546,6 +668,12 @@ def test_old_databases_get_the_new_columns():
     con = sqlite3.connect(path)
     con.execute('DROP TABLE "grant"')
     con.execute("DROP TABLE rolecommand")
+    con.execute("DROP TABLE agent")
+    con.execute("DROP TABLE approval")
+    con.execute("CREATE TABLE agent (id INTEGER PRIMARY KEY, name TEXT, token_hash TEXT, enabled BOOLEAN, role_id INTEGER, expires_at TIMESTAMP, created_at TIMESTAMP, last_used_at TIMESTAMP)")
+    con.execute("CREATE TABLE approval (id INTEGER PRIMARY KEY, agent_id INTEGER, agent_name TEXT, kind TEXT, target TEXT, host TEXT, params TEXT, line TEXT, status TEXT, note TEXT, run_id INTEGER, created_at TIMESTAMP, expires_at TIMESTAMP, decided_at TIMESTAMP, decided_by TEXT)")
+    con.execute("INSERT INTO agent (id, name) VALUES (1, 'old')")
+    con.execute("INSERT INTO approval (id, agent_id, status) VALUES (1, 1, 'pending')")
     con.execute('CREATE TABLE "grant" (id INTEGER PRIMARY KEY, role_id INTEGER, playbook TEXT, hosts TEXT)')
     con.execute("CREATE TABLE rolecommand (id INTEGER PRIMARY KEY, role_id INTEGER, command TEXT)")
     con.execute('INSERT INTO "grant" VALUES (1, 1, \'p.yml\', \'a\')')
@@ -560,6 +688,8 @@ def test_old_databases_get_the_new_columns():
         with database.engine.connect() as conn:
             assert conn.exec_driver_sql('SELECT requires_approval FROM "grant"').all() == [(0,)], "existing grants keep running at once"
             assert conn.exec_driver_sql("SELECT requires_approval FROM rolecommand").all() == [(0,)]
+            assert conn.exec_driver_sql("SELECT max_per_hour FROM agent").all() == [(None,)], "an old agent gets the default limit"
+            assert conn.exec_driver_sql("SELECT agent_note FROM approval").all() == [("",)]
     finally:
         database.engine = real
 
@@ -585,6 +715,11 @@ def main():
     test_the_nav_count_is_a_read()
     test_the_refusal_comes_from_the_session_not_the_link()
     test_public_url_must_be_a_web_address()
+    test_notes_on_requests()
+    test_hourly_limit_counts_each_request_once()
+    test_default_and_unlimited()
+    test_playbook_runs_count_too()
+    test_limit_is_set_by_admins_only()
     test_page_and_nav()
     test_login_returns_to_the_page_and_never_to_another_site()
     test_old_databases_get_the_new_columns()

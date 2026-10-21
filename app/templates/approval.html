@@ -9,6 +9,7 @@
     {% if a.kind == "command" %}On <strong>{{ a.host }}</strong>.{% else %}Playbook <strong>{{ a.target }}</strong> on <strong>{{ a.host.replace(',', ', ') }}</strong>.{% endif %}
     Asked {{ a.created_at | local_time }} by <strong>{{ a.agent_name }}</strong>.
   </p>
+  {% if a.agent_note %}<p><span class="muted">{{ a.agent_name }} says:</span> {{ a.agent_note }}</p>{% endif %}
   {% if a.status == "pending" %}
   <p class="muted">Expires {{ a.expires_at | local_time }}. Approving runs it now, exactly as shown.</p>
   {% if locked %}<p class="error">Approving is off while ULMO_DISABLE_AUTH is set.</p>{% endif %}

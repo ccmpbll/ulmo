@@ -11,6 +11,7 @@
   <div class="decision">
     <div class="decision-head"><a href="/approvals/{{ a.id }}">{{ a.agent_name }} wants to run {{ a.target }}</a></div>
     <code>{{ a.line }}</code>
+    {% if a.agent_note %}<div class="decision-note"><span class="muted">{{ a.agent_name }} says:</span> {{ a.agent_note }}</div>{% endif %}
     <div class="muted decision-meta">{% if a.kind == "command" %}on {{ a.host }} · {% endif %}expires {{ a.expires_at | local_time }}</div>
     <div class="actions form-actions">
       <form method="post" action="/approvals/{{ a.id }}/approve"><button type="submit">Approve</button></form>

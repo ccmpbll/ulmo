@@ -44,6 +44,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "hosts": inventory.list_hosts(),
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
+            "default_per_hour": agents.DEFAULT_MAX_PER_HOUR,
             "error": error,
             "new_token": new_token,
         },
@@ -72,6 +73,7 @@ def create_agent(
     name: str = Form(...),
     expires_days: str = Form(""),
     role_id: str = Form(""),
+    max_per_hour: str = Form(""),
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
@@ -79,7 +81,7 @@ def create_agent(
         return _page(request, error=LOGIN_REQUIRED)
     try:
         days = int(expires_days) if expires_days.strip() else None
-        agent, token = agents.create_agent(name, days, _role_id(role_id))
+        agent, token = agents.create_agent(name, days, _role_id(role_id), int(max_per_hour) if max_per_hour.strip() else None)
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
@@ -94,6 +96,19 @@ def toggle_agent(request: Request, agent_id: int, user=Depends(require_login)):
         return _page(request, error=LOGIN_REQUIRED)
     agents.toggle_enabled(agent_id)
     agents.admin_audit(user.username, "toggle agent", f"agent id {agent_id}")
+    return _back()
+
+
+@router.post("/agents/{agent_id}/limit")
+def set_agent_limit(request: Request, agent_id: int, max_per_hour: str = Form(""), user=Depends(require_login)):
+    # A higher limit is a widening, so it is locked like the rest while auth is disabled.
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        agents.set_hourly_limit(agent_id, int(max_per_hour) if max_per_hour.strip() else None)
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "set agent limit", f"agent id {agent_id}: {max_per_hour.strip() or 'default'} per hour")
     return _back()
 
 
