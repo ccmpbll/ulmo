@@ -32,6 +32,13 @@ class CommandError(Exception):
     """The command cannot be run (as opposed to ran and failed)."""
 
 
+def remote_command(argv: list[str], timeout: int) -> str:
+    """What the host's shell receives. The host's own `timeout` ends the command at
+    the deadline; killing only the local ssh would leave it running there while
+    ulmo reports it finished."""
+    return shlex.join(["timeout", "-k", str(REMOTE_KILL_AFTER), str(timeout), *argv])
+
+
 def ssh_command(host: command_library.Host, argv: list[str], timeout: int) -> list[str]:
     key = SSH_STORAGE_DIR / host.ssh_key if host.ssh_key else None
     if key is not None and not key.is_file():
@@ -43,10 +50,7 @@ def ssh_command(host: command_library.Host, argv: list[str], timeout: int) -> li
     ]
     if key is not None:
         cmd += ["-i", str(key), "-o", "IdentitiesOnly=yes"]
-    # The host's own `timeout` ends the command at the deadline; killing only the
-    # local ssh would leave it running there while ulmo reports it finished.
-    remote = ["timeout", "-k", str(REMOTE_KILL_AFTER), str(timeout), *argv]
-    return cmd + [f"{host.user}@{host.address}", "--", shlex.join(remote)]
+    return cmd + [f"{host.user}@{host.address}", "--", remote_command(argv, timeout)]
 
 
 def start(template: command_library.Template, host: command_library.Host, values: dict[str, str], triggered_by: str, agent_id: int | None) -> CommandRun:

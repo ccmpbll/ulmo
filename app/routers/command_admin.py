@@ -94,8 +94,8 @@ def preview_command(request: Request, name: str = Form(""), text: str = Form("")
     try:
         template = command_library.parse_command_text(name or "preview", text)
         values = command_library.validate_params(template, command_library.sample_values(template, samples))
-        line = shlex.join(command_library.build_argv(template, values))
-        preview = {"ok": True, "text": f"Would run on the host: {line}"}
+        line = commands.remote_command(command_library.build_argv(template, values), template.timeout)
+        preview = {"ok": True, "text": f"The host would receive: {line}"}
     except ValueError as exc:
         preview = {"ok": False, "text": str(exc)}
     return _editor(request, name, text, bool(is_new), preview=preview, samples=samples, status_code=200)
@@ -114,13 +114,14 @@ def save_command(
     if AUTH_DISABLED:
         return _editor(request, name, text, bool(is_new), error=LOGIN_REQUIRED)
     try:
-        command_library.parse_command_text(name, text)
+        template = command_library.parse_command_text(name, text)
         if is_new and name in command_library.load()[0].commands:
             raise ValueError(f"A command named {name!r} already exists.")
         command_library.save_command(name, yaml.safe_load(text), base)
     except ValueError as exc:
         return _editor(request, name, text, bool(is_new), error=str(exc))
-    agents.admin_audit(user.username, "save command", name)
+    what = shlex.join(template.argv) + (" (sudo)" if template.sudo else "") + f", timeout {template.timeout}s, params: {', '.join(template.params) or 'none'}"
+    agents.admin_audit(user.username, "save command", f"{name}: {what}")
     return RedirectResponse(f"/commands?ok=Saved+{name}", status_code=303)
 
 
@@ -132,7 +133,6 @@ def delete_command(request: Request, name: str, user=Depends(require_login)):
         command_library.delete_command(name)
     except ValueError as exc:
         return _page(request, error=f"Cannot delete {name}: {exc}")
-    agents.forget_command(name)
     agents.admin_audit(user.username, "delete command", name)
     return RedirectResponse(f"/commands?ok=Deleted+{name}", status_code=303)
 

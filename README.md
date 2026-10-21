@@ -103,14 +103,16 @@ hosts:
 ```
 
 Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
-(must match in full; may not start with `-` unless `allow_leading_dash: true`; patterns that
-repeat a repeated group, like `(a+)+`, are refused because they can take exponential time).
+(must match in full; may not start with `-` unless `allow_leading_dash: true`). Patterns that
+repeat a repeated group, like `(a+)+`, are refused when you save, and every match has a short
+time budget, so a pattern that is slow on some value (for example `(a|aa)+$`) rejects that value
+instead of hanging ulmo.
 
 The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
 command a set of sample values would produce, without running anything) and hosts through a form
 with a **Test connection** button. Every change validates the whole file, keeps the previous copy
 (the number kept is a setting, 20 by default) with **Restore**, refuses to save over a change made
-elsewhere, and is written to the change log. A hand edit that no longer parses keeps the last good
+elsewhere, and is written to the change log (with what the command now runs). A hand edit that no longer parses keeps the last good
 version in use and shows the error.
 
 A role lists which commands an agent may use (Agents page). A call is allowed only when the role

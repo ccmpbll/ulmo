@@ -94,7 +94,7 @@
       <tbody>
         {% for v in versions %}
         <tr>
-          <td>{{ v.id }}</td>
+          <td>{{ v.at | local_time }}</td>
           <td class="muted">{{ v.bytes }} bytes</td>
           <td>
             <a href="/commands/history/{{ v.id }}">Download</a>

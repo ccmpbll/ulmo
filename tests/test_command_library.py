@@ -21,6 +21,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 DATA_DIR = tempfile.mkdtemp(prefix="ulmo-test-")
@@ -200,6 +201,15 @@ def test_regex_cannot_backtrack_exponentially():
         cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": good}}})
 
 
+def test_slow_regex_values_are_cut_off():
+    # The static check cannot see every ambiguous pattern; the time budget is the guarantee.
+    tricky = cl.parse_command("t", {"description": "d", "argv": ["echo", "{x}"], "params": {"x": {"type": "regex", "pattern": "(a|aa)+$", "max_length": 200}}})
+    start = time.time()
+    _raises(cl.validate_params, tricky, {"x": "a" * 150 + "b"}, contains="too slow")
+    assert time.time() - start < 3, "the match must be abandoned, not run to completion"
+    assert cl.validate_params(tricky, {"x": "aaaa"}) == {"x": "aaaa"}, "ordinary values still pass"
+
+
 # --- hosts -----------------------------------------------------------------------------
 
 
@@ -340,6 +350,93 @@ def test_hand_edits_that_break_keep_the_last_good_library():
     # The UI will not write on top of a file it cannot read.
     cl.LIBRARY_PATH.write_text("- just\n- a list\n")
     _raises(cl.save_command, "x", {"description": "d", "argv": ["uptime"]}, contains="not a mapping")
+
+
+def test_roles_lose_commands_that_leave_the_library():
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_command("logs", LOGS)
+    cl.load()
+    role = agents.create_role("purge-role")
+    agents.set_role_commands(role.id, ["restart", "logs"])
+    good = cl.LIBRARY_PATH.read_text()
+
+    # A broken file removes nothing: the role keeps its entries until a file that parses says otherwise.
+    cl.LIBRARY_PATH.write_text("commands: [broken\n")
+    cl.load()
+    assert agents.role_commands(role.id) == ["logs", "restart"]
+
+    # A restore that drops a command (or a hand edit) takes it out of the role...
+    cl.LIBRARY_PATH.write_text(good.replace("restart:", "restart2:", 1))
+    cl.load()
+    assert agents.role_commands(role.id) == ["logs"]
+    # ...so a command that later gets the old name is not inherited.
+    cl.LIBRARY_PATH.write_text(good)
+    cl.load()
+    assert agents.role_commands(role.id) == ["logs"], "the role must not get 'restart' back by itself"
+
+    cl.save_command("restart3", RESTART)
+    cl.delete_command("restart3")
+    cl.restore(cl.list_versions()[-1]["id"])
+    assert set(cl.load()[0].commands) <= {"restart", "logs", "restart3"}
+
+
+def test_saves_are_durable_and_the_log_says_what_changed():
+    _reset()
+    calls = []
+    real = os.fsync
+    os.fsync = lambda fd: (calls.append(fd), real(fd))[1]
+    try:
+        cl.save_command("restart", RESTART)
+    finally:
+        os.fsync = real
+    assert len(calls) >= 2, "the new file and its directory must both be flushed"
+
+    text = yaml.safe_dump({**RESTART, "sudo": True, "timeout": 60}, sort_keys=False)
+    r = _form(admin, "/commands/save", name="restart", text=text, base=cl.current_version())
+    assert r.status_code == 303
+    with Session(engine) as session:
+        detail = [a.detail for a in session.exec(select(AdminAudit).where(AdminAudit.action == "save command")).all()][-1]
+    assert "docker restart" in detail and "{container}" in detail and "sudo" in detail and "timeout 60s" in detail and "container" in detail, detail
+
+
+def test_preview_shows_what_the_host_receives():
+    text = yaml.safe_dump(RESTART, sort_keys=False)
+    r = _form(admin, "/commands/preview", name="restart", text=text, samples="container=sonarr")
+    assert "timeout -k 5 30 docker restart sonarr" in r.text, "the host-side timeout wrapper must be visible"
+    sudo = yaml.safe_dump({**RESTART, "sudo": True, "timeout": 7}, sort_keys=False)
+    r = _form(admin, "/commands/preview", name="restart", text=sudo, samples="container=sonarr")
+    assert "timeout -k 5 7 sudo -n docker restart sonarr" in r.text
+
+
+def test_restore_recovers_from_an_unreadable_file():
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_command("logs", LOGS)
+    cl.load()
+    keep = cl.list_versions()[0]["id"]
+    cl.LIBRARY_PATH.write_text("- just\n- a list\n")  # nothing else can write over this
+    _raises(cl.save_command, "x", {"description": "d", "argv": ["uptime"]}, contains="not a mapping")
+    stale = cl.current_version()
+    cl.LIBRARY_PATH.write_text("- still\n- not valid\n")
+    try:
+        cl.restore(keep, stale)
+    except cl.Conflict:
+        pass
+    else:
+        raise AssertionError("restore ignored a stale editor")
+    cl.restore(keep, cl.current_version())
+    assert "restart" in cl.load()[0].commands and not cl.load()[1]
+
+
+def test_saved_copies_have_readable_times():
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_command("logs", LOGS)
+    versions = cl.list_versions()
+    assert versions and versions[0]["at"].tzinfo is not None and versions[0]["at"].year >= 2026
+    page = admin.get("/commands").text
+    assert '<time class="local-time"' in page.split("Saved copies")[1], "times go through the local_time filter"
 
 
 # --- the page ---------------------------------------------------------------------------------
@@ -519,11 +616,17 @@ def main():
     test_parameter_validation()
     test_values_stay_one_literal_argument()
     test_regex_cannot_backtrack_exponentially()
+    test_slow_regex_values_are_cut_off()
     test_hosts_are_validated()
     test_file_changes_are_whole_file_validated_and_versioned()
     test_stale_editor_is_refused()
     test_hand_edits_that_break_keep_the_last_good_library()
+    test_roles_lose_commands_that_leave_the_library()
+    test_saves_are_durable_and_the_log_says_what_changed()
+    test_restore_recovers_from_an_unreadable_file()
+    test_saved_copies_have_readable_times()
     test_commands_page()
+    test_preview_shows_what_the_host_receives()
     test_page_is_admin_only_and_locked_without_login()
     test_history_setting()
     print("OK: the command library validates strictly, versions every change, and is edited safely from the Commands page.")

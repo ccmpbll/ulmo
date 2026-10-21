@@ -3,6 +3,7 @@ import re
 import secrets
 from datetime import timedelta
 
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, delete, select, update
 
 from app.database import engine
@@ -204,12 +205,22 @@ def set_role_commands(role_id: int, commands: list[str]) -> list[str]:
     return names
 
 
-def forget_command(name: str) -> None:
-    """A deleted command must leave every role, or a new command later given the
-    same name would silently be allowed to them."""
-    with Session(engine) as session:
-        session.exec(delete(RoleCommand).where(RoleCommand.command == name))
-        session.commit()
+def purge_missing_commands(library) -> None:
+    """A command that is gone from the library must leave every role, or a new
+    command later given the same name would silently be allowed to them. Runs
+    whenever a library that parses is loaded, so a delete, a restore and a hand
+    edit are all covered."""
+    try:
+        with Session(engine) as session:
+            names = set(session.exec(select(RoleCommand.command)).all()) - set(library.commands)
+            if names:
+                session.exec(delete(RoleCommand).where(RoleCommand.command.in_(names)))
+                session.commit()
+    except OperationalError:  # the tables do not exist yet (first start): no roles to clean
+        pass
+
+
+command_library.on_valid_load(purge_missing_commands)
 
 
 def role_commands(role_id: int | None) -> list[str]:

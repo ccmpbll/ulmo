@@ -41,6 +41,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import regex as _regex  # same syntax as re, but a match can be given a time budget
 import yaml
 
 from app.config import DATA_DIR
@@ -54,6 +55,7 @@ MAX_COMMAND_BYTES = 20 * 1024
 MAX_FILE_BYTES = 200 * 1024
 MAX_TOKEN_CHARS = 500
 MAX_VALUE_CHARS = 200
+MATCH_BUDGET = 0.25  # seconds a regex parameter may spend matching one value
 COMMAND_KEYS = {"description", "argv", "params", "timeout", "sudo", "risk"}
 HOST_KEYS = {"address", "port", "user", "ssh_key", "commands"}
 PARAM_KEYS = {
@@ -252,7 +254,11 @@ def validate_params(template: Template, given) -> dict[str, str]:
         else:
             if not isinstance(value, str) or not value or len(value) > spec["max_length"]:
                 _bad(f"{name} must be a non-empty string of at most {spec['max_length']} characters")
-            if not re.fullmatch(spec["pattern"], value) or "\0" in value or "\n" in value:
+            try:
+                matched = _regex.fullmatch(spec["pattern"], value, timeout=MATCH_BUDGET)
+            except TimeoutError:
+                _bad(f"{name}: the pattern is too slow on this value")
+            if not matched or "\0" in value or "\n" in value:
                 _bad(f"{name} does not match the allowed pattern")
             if value.startswith("-") and not spec["allow_leading_dash"]:
                 _bad(f"{name} may not start with '-'")
@@ -316,6 +322,14 @@ def parse_host(name: str, data, command_names: set[str]) -> Host:
 
 _lock = threading.RLock()
 _state = {"fingerprint": None, "library": Library(), "error": ""}
+_on_valid_load = []
+
+
+def on_valid_load(callback) -> None:
+    """Call callback(library) whenever the file on disk changes and parses. Used to
+    drop role entries for commands that no longer exist; never called for a file
+    that fails to parse, so a typo cannot wipe anything."""
+    _on_valid_load.append(callback)
 
 
 def _blank() -> dict:
@@ -378,6 +392,9 @@ def load() -> tuple[Library, str]:
         except (ValueError, yaml.YAMLError) as exc:
             library, error = _state["library"], str(exc).splitlines()[0][:400]
         _state.update(fingerprint=fingerprint, library=library, error=error)
+        if not error:
+            for callback in _on_valid_load:
+                callback(library)
         return library, error
 
 
@@ -418,18 +435,29 @@ def _write(data: dict) -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())  # a power cut must not leave an empty commands.yml after the swap
         os.replace(tmp, LIBRARY_PATH)
+        dir_fd = os.open(LIBRARY_PATH.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+    load()  # pick up the new file now, so listeners (role cleanup) run straight away
 
 
-def _modify(base: str | None, change) -> None:
+def _modify(base: str | None, change, start: dict | None = None) -> None:
+    """Read, change, validate, write, under one lock. `start` replaces the current
+    contents as the thing to change (restore uses it, so a file that no longer
+    parses can still be recovered)."""
     with _lock:
         if base is not None and base != current_version():
             raise Conflict("The library changed since you opened this. Reload and try again.")
-        data = _raw()
+        data = _raw() if start is None else start
         change(data)
         _write(data)
 
@@ -472,7 +500,11 @@ def list_versions() -> list[dict]:
     if not HISTORY_DIR.is_dir():
         return []
     return [
-        {"id": p.stem, "bytes": p.stat().st_size}
+        {
+            "id": p.stem,
+            "bytes": p.stat().st_size,
+            "at": datetime.strptime(p.stem, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc),
+        }
         for p in sorted(HISTORY_DIR.glob("*.yml"), reverse=True)
     ]
 
@@ -493,7 +525,4 @@ def restore(version_id: str, base: str | None = None) -> None:
         data = yaml.safe_load(text) or _blank()
     except yaml.YAMLError as exc:
         _bad(f"that copy is not valid YAML: {exc}")
-    with _lock:
-        if base is not None and base != current_version():
-            raise Conflict("The library changed since you opened this. Reload and try again.")
-        _write(data)
+    _modify(base, lambda d: None, start=data)

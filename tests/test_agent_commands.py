@@ -243,7 +243,7 @@ def test_default_deny_and_validation():
 
 
 def test_changes_to_the_library_take_effect_immediately():
-    _, token, _ = _agent("moving", ["restart"])
+    _, token, role = _agent("moving", ["restart"])
     assert _post(token, "restart", "gandalf", {"container": "sonarr"}).status_code == 202
     _wait(max(r.id for r in _runs()))
 
@@ -259,9 +259,11 @@ def test_changes_to_the_library_take_effect_immediately():
         del changed["commands"]["restart"]
         _set_library(changed)
         r = _post(token, "restart", "gandalf", {"container": "sonarr"})
-        assert r.status_code == 403 and "no longer exists" in r.json()["detail"], r.text
+        assert r.status_code == 403 and "no permission" in r.json()["detail"], r.text  # purged from the role when the library changed
     finally:
         _set_library(LIBRARY)
+    assert agents.role_commands(role.id) == [], "the command left the role when it left the library"
+    agents.set_role_commands(role.id, ["restart"])
 
     # Removed between the permission check and use (an edit lands in the gap).
     real = cl.load
@@ -523,8 +525,16 @@ def test_roles_hold_command_names():
     agent, token, role = _agent("renamed", ["say"])
     assert _post(token, "say", "bare", {"text": "x"}).status_code == 202
     _wait(max(r.id for r in _runs()))
-    agents.forget_command("say")
-    assert agents.role_commands(role.id) == []
+    gone = json.loads(json.dumps(LIBRARY))
+    del gone["commands"]["say"]
+    for host in gone["hosts"].values():
+        host["commands"] = [c for c in host["commands"] if c != "say"]
+    _set_library(gone)  # a hand edit that removes the command
+    try:
+        assert agents.role_commands(role.id) == []
+    finally:
+        _set_library(LIBRARY)
+    assert agents.role_commands(role.id) == [], "putting the name back must not give it back to the role"
     assert _post(token, "say", "bare", {"text": "x"}).status_code == 403
     agents.delete_role(role.id)
     with Session(engine) as session:
