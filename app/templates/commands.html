@@ -64,7 +64,7 @@
   <h2>Commands</h2>
   <div class="card">
     <table>
-      <thead><tr><th>Command</th><th>Runs</th><th>Parameters</th><th>Offered by</th><th>Roles</th><th></th></tr></thead>
+      <thead><tr><th>Command</th><th>Runs</th><th>Parameters</th><th>Offered by</th><th></th></tr></thead>
       <tbody>
         {% for c in commands %}
         <tr>
@@ -72,13 +72,12 @@
           <td><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
           <td class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
           <td class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
-          <td class="muted">{{ roles_using.get(c.id, 0) }}</td>
           <td>
             <form method="post" action="/commands/{{ c.id }}/delete" style="display:inline" onsubmit="return confirm('Delete command {{ c.id }}?');"><button type="submit" class="danger">Delete</button></form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted">No commands yet.</td></tr>
+        <tr><td colspan="5" class="muted">No commands yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -97,7 +96,6 @@
           <td>{{ v.at | local_time }}</td>
           <td class="muted">{{ v.bytes }} bytes</td>
           <td>
-            <a href="/commands/history/{{ v.id }}">Download</a>
             <form method="post" action="/commands/history/{{ v.id }}/restore" style="display:inline" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">
               <input type="hidden" name="base" value="{{ base }}" />
               <button type="submit" class="secondary">Restore</button>

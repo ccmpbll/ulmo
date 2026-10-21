@@ -34,8 +34,6 @@ service and shows the error.
 import hashlib
 import os
 import re
-import re._constants as _sre_const
-import re._parser as _sre_parser
 import tempfile
 import threading
 from dataclasses import dataclass, field
@@ -170,30 +168,6 @@ def parse_command_text(name: str, text: str) -> Template:
     return parse_command(name, data)
 
 
-def _subpatterns(x):
-    if isinstance(x, _sre_parser.SubPattern):
-        yield x
-    elif isinstance(x, (tuple, list)):
-        for item in x:
-            yield from _subpatterns(item)
-
-
-def _nested_repeat(tree, inside: bool = False) -> bool:
-    """True for patterns like (a+)+ or ([a-z]+)*x: a repeat nested in a repeat can
-    backtrack exponentially, and Python's re has no timeout."""
-    for op, av in tree:
-        if op in (_sre_const.MAX_REPEAT, _sre_const.MIN_REPEAT):
-            _lo, hi, body = av
-            repeats = hi > 1
-            if (inside and repeats) or _nested_repeat(body, inside or repeats):
-                return True
-        else:
-            for sub in _subpatterns(av):
-                if _nested_repeat(sub, inside):
-                    return True
-    return False
-
-
 def _parse_param(name: str, spec) -> dict:
     if not isinstance(spec, dict) or spec.get("type") not in PARAM_KEYS:
         _bad(f"parameter {name}: type must be one of {', '.join(sorted(PARAM_KEYS))}")
@@ -217,11 +191,9 @@ def _parse_param(name: str, spec) -> dict:
     if not isinstance(pattern, str) or not pattern:
         _bad(f"parameter {name}: pattern is required")
     try:
-        tree = _sre_parser.parse(pattern)
-    except re.error as exc:
+        _regex.compile(pattern)
+    except _regex.error as exc:
         _bad(f"parameter {name}: bad pattern ({exc})")
-    if _nested_repeat(tree):
-        _bad(f"parameter {name}: pattern repeats a repeated group, which can take exponential time to match")
     if isinstance(max_length, bool) or not isinstance(max_length, int) or not 1 <= max_length <= MAX_VALUE_CHARS:
         _bad(f"parameter {name}: max_length must be 1-{MAX_VALUE_CHARS}")
     dash = spec.get("allow_leading_dash", False)

@@ -70,6 +70,33 @@ def start(template: command_library.Template, host: command_library.Host, values
     return run
 
 
+def _run(cmd: list[str], timeout: float, cap: int) -> tuple[int, bytes, bool, bool]:
+    """Run ssh, keep at most `cap` bytes of output, and kill it after `timeout`
+    seconds. Returns (exit code, output, output was cut, we killed it). Output past
+    the cap is drained and dropped so the real exit code is known."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    killed = threading.Event()
+
+    def _kill():
+        if proc.poll() is None:  # it may have just finished on its own
+            killed.set()
+            proc.kill()
+
+    timer = threading.Timer(timeout, _kill)
+    timer.start()
+    try:
+        raw = proc.stdout.read(cap + 1)
+        cut = len(raw) > cap
+        if cut:
+            while proc.stdout.read(65536):
+                pass
+        proc.stdout.close()
+        rc = proc.wait()
+    finally:
+        timer.cancel()
+    return rc, raw[:cap], cut, killed.is_set()
+
+
 def probe(host: command_library.Host) -> tuple[bool, str]:
     """Try the connection with a harmless command (the Test connection button)."""
     try:
@@ -77,48 +104,20 @@ def probe(host: command_library.Host) -> tuple[bool, str]:
     except CommandError as exc:
         return False, str(exc)
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-        timer = threading.Timer(CONNECT_TIMEOUT + 15, proc.kill)
-        timer.start()
-        try:
-            out = proc.stdout.read(2000).decode("utf-8", errors="replace").strip()
-            proc.stdout.close()
-            rc = proc.wait()
-        finally:
-            timer.cancel()
+        rc, raw, _, _ = _run(cmd, CONNECT_TIMEOUT + 15, 2000)
     except Exception as exc:  # noqa: BLE001
         return False, f"could not run ssh: {exc}"
+    out = raw.decode("utf-8", errors="replace").strip()
     return rc == 0 and "ulmo-ok" in out, out or f"ssh exited with {rc}"
 
 
 def _execute(run_id: int, cmd: list[str], local_timeout: float) -> None:
     status, rc, output = "error", None, ""
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-        timed_out = threading.Event()
-
-        def _kill():
-            if proc.poll() is None:  # it may have just finished on its own
-                timed_out.set()
-                proc.kill()
-
-        timer = threading.Timer(local_timeout, _kill)
-        timer.start()
-        try:
-            raw = proc.stdout.read(OUTPUT_CAP + 1)
-            truncated = len(raw) > OUTPUT_CAP
-            if truncated:  # keep draining so the real exit code is known; the timer bounds it
-                while proc.stdout.read(65536):
-                    pass
-            proc.stdout.close()
-            rc = proc.wait()
-        finally:
-            timer.cancel()
-        output = raw[:OUTPUT_CAP].decode("utf-8", errors="replace")
-        if truncated:
-            output += "\n[output truncated]"
+        rc, raw, cut, killed = _run(cmd, local_timeout, OUTPUT_CAP)
+        output = raw.decode("utf-8", errors="replace") + ("\n[output truncated]" if cut else "")
         # 124/137 are what the host's `timeout` returns when it ends the command.
-        if timed_out.is_set() or rc in (124, 137):
+        if killed or rc in (124, 137):
             status = "timeout"
         else:
             status = "success" if rc == 0 else "failed"

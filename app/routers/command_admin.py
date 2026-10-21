@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
-from app.models import CommandRun, RoleCommand
+from app.models import CommandRun
 from app.services import agents, command_library, commands, ssh_keys
 from app.templating import templates
 
@@ -35,9 +35,6 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
     library, load_error = command_library.load()
     with Session(engine) as session:
         runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(20)).all()
-        used_by = {}
-        for row in session.exec(select(RoleCommand)).all():
-            used_by[row.command] = used_by.get(row.command, 0) + 1
     return templates.TemplateResponse(
         request,
         "commands.html",
@@ -46,7 +43,6 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
             "commands": sorted(library.commands.values(), key=lambda t: t.id),
             "hosts": sorted(library.hosts.values(), key=lambda h: h.name),
             "offered_by": {n: library.hosts_offering(n) for n in library.commands},
-            "roles_using": used_by,
             "editing_host": library.hosts.get(host),
             "keys": [k["filename"] for k in ssh_keys.list_keys()],
             "load_error": load_error,
@@ -201,15 +197,6 @@ def download_library():
         media_type="application/x-yaml",
         headers={"Content-Disposition": "attachment; filename=commands.yml"},
     )
-
-
-@router.get("/commands/history/{version_id}")
-def download_version(version_id: str):
-    try:
-        text = command_library.version_text(version_id)
-    except ValueError as exc:
-        return PlainTextResponse(str(exc), status_code=404)
-    return PlainTextResponse(text, media_type="application/x-yaml", headers={"Content-Disposition": f"attachment; filename=commands-{version_id}.yml"})
 
 
 @router.post("/commands/history/{version_id}/restore", response_class=HTMLResponse)

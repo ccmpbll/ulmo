@@ -103,8 +103,7 @@ hosts:
 ```
 
 Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
-(must match in full; may not start with `-` unless `allow_leading_dash: true`). Patterns that
-repeat a repeated group, like `(a+)+`, are refused when you save, and every match has a short
+(must match in full; may not start with `-` unless `allow_leading_dash: true`). Every match has a short
 time budget, so a pattern that is slow on some value (for example `(a|aa)+$`) rejects that value
 instead of hanging ulmo.
 

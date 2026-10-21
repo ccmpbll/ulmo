@@ -3,7 +3,7 @@ Commands page.
 
   1. Commands are validated strictly: every malformed shape is rejected with a
      reason, parameter values are checked by type, can never become shell syntax
-     or an extra option, and regexes that can backtrack exponentially are refused.
+     or an extra option, and a regex gets a short time budget so a slow one cannot stall ulmo.
   2. Hosts are validated (address, port, user, key name, offered commands), and a
      host can only offer commands that exist.
   3. The file is changed only by validated, whole-file read-modify-write: the old
@@ -188,26 +188,26 @@ def test_values_stay_one_literal_argument():
     _raises(cl.sample_values, logs, "no equals sign", contains="name=value")
 
 
-def test_regex_cannot_backtrack_exponentially():
+def test_regex_parameters_are_checked_and_time_limited():
     base = {"description": "d", "argv": ["echo", "{x}"]}
-    for bad in ("(a+)+$", "([a-z]+)*x", "(x+x+)+y", "(a*)*", "(a{1,9})+", "((ab)+)+", "(?:\\w+\\s?)+$"):
-        try:
-            cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": bad}}})
-        except ValueError as exc:
-            assert "exponential" in str(exc), (bad, exc)
-        else:
-            raise AssertionError(f"accepted a backtracking pattern: {bad}")
     for good in ("[a-z0-9_-]+", "(foo|bar)+", "a?b*c+", "(ab?)+", ".+", "[a-z]+(\\.[a-z]+)?"):
         cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": good}}})
+    for bad in ("[", "(unclosed", "*start", "a{2,1}"):
+        _raises(cl.parse_command, "t", {**base, "params": {"x": {"type": "regex", "pattern": bad}}}, contains="bad pattern")
 
-
-def test_slow_regex_values_are_cut_off():
-    # The static check cannot see every ambiguous pattern; the time budget is the guarantee.
-    tricky = cl.parse_command("t", {"description": "d", "argv": ["echo", "{x}"], "params": {"x": {"type": "regex", "pattern": "(a|aa)+$", "max_length": 200}}})
-    start = time.time()
-    _raises(cl.validate_params, tricky, {"x": "a" * 150 + "b"}, contains="too slow")
-    assert time.time() - start < 3, "the match must be abandoned, not run to completion"
-    assert cl.validate_params(tricky, {"x": "aaaa"}) == {"x": "aaaa"}, "ordinary values still pass"
+    # Patterns that can backtrack exponentially are saved (no guessing about shapes), but every
+    # match has a time budget, so the slow value is rejected instead of stalling ulmo.
+    # (The engine happens to dodge some classic shapes; whatever it does, the call must end quickly.)
+    for pattern, value in [("(a+)+$", "a" * 80 + "b"), ("([a-z]+)*x", "a" * 80), ("(a|aa)+$", "a" * 150 + "b"),
+                           ("(a?a?)+$", "a" * 80 + "b"), ("(x|xy)*z$", "xy" * 60 + "b")]:
+        tricky = cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": pattern, "max_length": 200}}})
+        start = time.time()
+        _raises(cl.validate_params, tricky, {"x": value})
+        assert time.time() - start < 3, f"{pattern}: the match must be abandoned, not run to completion"
+    slow = cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": "(a|aa)+$", "max_length": 200}}})
+    _raises(cl.validate_params, slow, {"x": "a" * 150 + "b"}, contains="too slow")
+    ok = cl.parse_command("t", {**base, "params": {"x": {"type": "regex", "pattern": "(a|aa)+$", "max_length": 200}}})
+    assert cl.validate_params(ok, {"x": "aaaa"}) == {"x": "aaaa"}, "ordinary values still pass"
 
 
 # --- hosts -----------------------------------------------------------------------------
@@ -535,8 +535,7 @@ def test_commands_page():
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and "gandalf" in r.text
     versions = cl.list_versions()
     assert versions
-    r = admin.get(f"/commands/history/{versions[0]['id']}")
-    assert r.status_code == 200 and admin.get("/commands/history/..%2fetc").status_code == 404
+    assert admin.get(f"/commands/history/{versions[0]['id']}").status_code in (404, 405), "no per-copy download route"
     before = cl.current_version()
     r = _form(admin, f"/commands/history/{versions[-1]['id']}/restore", base=before)
     assert r.status_code == 303 and cl.current_version() != before
@@ -615,8 +614,7 @@ def main():
     test_commands_are_validated_strictly()
     test_parameter_validation()
     test_values_stay_one_literal_argument()
-    test_regex_cannot_backtrack_exponentially()
-    test_slow_regex_values_are_cut_off()
+    test_regex_parameters_are_checked_and_time_limited()
     test_hosts_are_validated()
     test_file_changes_are_whole_file_validated_and_versioned()
     test_stale_editor_is_refused()
