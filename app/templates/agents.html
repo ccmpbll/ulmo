@@ -32,15 +32,15 @@
 <div class="settings-section">
   <h2>API agents</h2>
   <div class="card">
-    <table>
+    <table class="stack">
       <thead>
         <tr><th>Name</th><th>Role</th><th>Status</th><th>Expires</th><th>Last used</th><th>Per hour</th><th></th></tr>
       </thead>
       <tbody>
         {% for a in agents %}
         <tr>
-          <td>{{ a.name }}</td>
-          <td>
+          <td data-label="Name">{{ a.name }}</td>
+          <td data-label="Role">
             <form method="post" action="/agents/{{ a.id }}/role">
               <select name="role_id" onchange="this.form.submit()">
                 <option value="">none (read only)</option>
@@ -48,16 +48,17 @@
               </select>
             </form>
           </td>
-          <td><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
-          <td>{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
-          <td>{{ a.last_used_at | local_time }}</td>
-          <td>
+          <td data-label="Status"><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
+          <td data-label="Expires">{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
+          <td data-label="Last used">{{ a.last_used_at | local_time }}</td>
+          <td data-label="Per hour">
             <form method="post" action="/agents/{{ a.id }}/limit" class="actions">
-              <input type="number" name="max_per_hour" min="0" max="100000" value="{{ a.max_per_hour if a.max_per_hour is not none }}" style="width: 5.5rem; margin: 0;" aria-label="Requests per hour for {{ a.name }}" />
+              <input type="number" name="max_per_hour" min="0" max="100000" value="{{ a.max_per_hour if a.max_per_hour is not none }}" placeholder="{{ default_per_hour }}" style="width: 5.5rem; margin: 0;" aria-label="Requests per hour for {{ a.name }}" />
               <button type="submit" class="secondary">Save</button>
             </form>
+            <span class="muted usage">{{ used_last_hour[a.id] }} used in the last hour{% if limit_of[a.id] %} of {{ limit_of[a.id] }}{% endif %}</span>
           </td>
-          <td class="actions-cell">
+          <td class="actions-cell" data-label="">
             <div class="actions">
               <form method="post" action="/agents/{{ a.id }}/toggle"><button type="submit" class="secondary">{{ 'Disable' if a.enabled else 'Enable' }}</button></form>
               <form method="post" action="/agents/{{ a.id }}/delete" onsubmit="return confirm('Delete agent {{ a.name }}? Its token stops working immediately.');"><button type="submit" class="danger">Delete</button></form>

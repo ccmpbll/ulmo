@@ -41,7 +41,7 @@ from app import database  # noqa: E402
 from app.config import SSH_STORAGE_DIR  # noqa: E402
 from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import AdminAudit, Agent, Approval, CommandRun, RoleCommand, RunHistory, utcnow  # noqa: E402
+from app.models import AdminAudit, Agent, AgentRequest, Approval, CommandRun, RoleCommand, RunHistory, utcnow  # noqa: E402
 from app.routers import approvals as approvals_router  # noqa: E402
 from app.services import agents, approvals, command_library as cl, commands, git_sync, inventory, notifier, settings_store  # noqa: E402
 
@@ -503,6 +503,17 @@ def test_deleting_an_agent_removes_its_requests():
     assert approvals.get(aid) is None
 
 
+def test_agent_deletion_clears_the_counter_and_the_page_shows_usage():
+    agent, token, _ = _agent("counted-gone")
+    assert _post(token, "uptime").status_code in (200, 202)
+    agents.set_hourly_limit(agent.id, 9)
+    page = admin.get("/agents").text
+    assert "1 used in the last hour of 9" in page and 'class="stack"' in page and 'data-label="Per hour"' in page
+    agents.delete_agent(agent.id)
+    with Session(engine) as session:
+        assert session.exec(select(AgentRequest).where(AgentRequest.agent_id == agent.id)).first() is None, "a reused id starts at zero"
+
+
 def test_the_nav_count_is_a_read():
     _, token, _ = _agent("counted", asking=["restart"])
     aid = _ask(token).json()["approval_id"]
@@ -562,6 +573,9 @@ def test_notes_on_requests():
 
     again = _post(token, "restart", params={"container": "sonarr"}, note="a different note").json()
     assert again["approval_id"] == aid and _approval(aid).agent_note.startswith("26 restarts"), "the retry keeps the first note"
+    spoof = _post(token, "restart", params={"container": "radarr"}, note="routine\u202e check\u200b done\x07").json()["approval_id"]
+    assert _approval(spoof).agent_note == "routine check done", "direction overrides, zero-width and control characters are dropped"
+    admin.post(f"/approvals/{spoof}/deny")
 
     assert _post(token, "restart", params={"container": "radarr"}, note="x" * 501).status_code == 422, "bounded"
     quiet = _post(token, "restart", params={"container": "radarr"}).json()["approval_id"]
@@ -581,20 +595,62 @@ def test_hourly_limit_counts_each_request_once():
     assert r.status_code == 429 and r.json()["detail"] == "rate limit: 3 requests per hour", r.text
     assert agents.requests_last_hour(agent) == 3
 
+    # a retry of a request that is already waiting costs nothing, so it is answered, not refused
+    again = _post(token, "restart", params={"container": "sonarr"})
+    assert again.status_code == 202 and again.json()["approval_id"] == a1
+    assert agents.requests_last_hour(agent) == 3
+
+    # a request refused before it starts (bad parameters, no permission) is not counted
+    assert _post(token, "restart", params={"container": "nope"}).status_code == 400
+    assert _post(token, "nosuchcommand").status_code == 403
+    assert agents.requests_last_hour(agent) == 3
+
     admin.post(f"/approvals/{a1}/approve")
     assert _approval(a1).status == "approved", "an approval is never refused for the limit: it was counted when asked"
-    assert agents.requests_last_hour(agent) == 3, "the approved request is now a run, not counted twice"
+    assert agents.requests_last_hour(agent) == 3, "approving adds nothing"
     assert _post(token, "uptime").status_code == 429
 
-    with Session(engine) as session:  # an hour later it has gone
-        for run in session.exec(select(CommandRun).where(CommandRun.agent_id == agent.id)).all():
-            run.started_at = utcnow() - timedelta(hours=2)
-            session.add(run)
-        for row in session.exec(select(Approval).where(Approval.agent_id == agent.id)).all():
-            row.created_at = utcnow() - timedelta(hours=2)
+    with Session(engine) as session:  # an hour later they have gone
+        for row in session.exec(select(AgentRequest).where(AgentRequest.agent_id == agent.id)).all():
+            row.at = utcnow() - timedelta(hours=2)
             session.add(row)
         session.commit()
     assert agents.requests_last_hour(agent) == 0 and _post(token, "uptime").status_code in (200, 202)
+    with Session(engine) as session:
+        assert not any(r.at < (utcnow() - timedelta(hours=1)).replace(tzinfo=None) for r in session.exec(select(AgentRequest)).all()), "old rows are cleared as new ones arrive"
+
+
+def test_the_limit_holds_under_concurrent_requests():
+    for round_ in range(12):  # a race is not certain on any one round
+        agent, _, _ = _agent(f"hammer{round_}")
+        agents.set_hourly_limit(agent.id, 10)
+        with Session(engine) as session:
+            agent = session.get(Agent, agent.id)
+        gate = threading.Barrier(40)
+        results = []
+
+        def go():
+            gate.wait()
+            results.append(agents.admit(agent))
+
+        threads = [threading.Thread(target=go) for _ in range(40)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert results.count(True) == 10 and agents.requests_last_hour(agent) == 10, (round_, results.count(True))
+
+
+def test_a_busy_agent_does_not_push_out_anothers_count():
+    quiet, _, _ = _agent("quiet-counter")
+    busy, _, _ = _agent("busy-counter")
+    agents.set_hourly_limit(quiet.id, 600)
+    agents.set_hourly_limit(busy.id, 0)
+    with Session(engine) as session:
+        quiet, busy = session.get(Agent, quiet.id), session.get(Agent, busy.id)
+    for _ in range(3):
+        assert agents.admit(quiet)
+    for _ in range(700):  # more than any row-count retention would keep
+        assert agents.admit(busy)
+    assert agents.requests_last_hour(quiet) == 3 and agents.requests_last_hour(busy) == 700
 
 
 def test_default_and_unlimited():
@@ -643,6 +699,8 @@ def test_limit_is_set_by_admins_only():
     for bad in ("-1", "100001", "many"):
         r = admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": bad})
         assert r.status_code == 400, bad
+    assert "must be a whole number" in admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "many"}).text
+    assert "invalid literal" not in admin.post("/agents", data={"name": "badexp", "expires_days": "soon"}).text
     assert admin.post("/agents", data={"name": "badlimit", "max_per_hour": "-5"}).status_code == 400
     with Session(engine) as session:
         assert session.get(Agent, agent.id).max_per_hour is None
@@ -717,6 +775,9 @@ def main():
     test_public_url_must_be_a_web_address()
     test_notes_on_requests()
     test_hourly_limit_counts_each_request_once()
+    test_the_limit_holds_under_concurrent_requests()
+    test_a_busy_agent_does_not_push_out_anothers_count()
+    test_agent_deletion_clears_the_counter_and_the_page_shows_usage()
     test_default_and_unlimited()
     test_playbook_runs_count_too()
     test_limit_is_set_by_admins_only()

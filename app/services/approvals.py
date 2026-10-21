@@ -59,6 +59,26 @@ def expire_stale() -> None:
         session.commit()
 
 
+def _key(row: Approval) -> tuple:
+    return (row.kind, row.target, row.host, row.params)
+
+
+def clean_note(note: str | None) -> str:
+    """The agent's own words, made safe to show next to Approve: no control, zero-width or
+    direction-override characters (they could make the text read differently from what was sent),
+    and whitespace collapsed."""
+    return " ".join("".join(c for c in (note or "") if c.isprintable() or c.isspace()).split())
+
+
+def find_pending(agent: Agent, kind: str, target: str, host: str, params: dict) -> Approval | None:
+    """The identical request this agent already has waiting, if any."""
+    wanted = (kind, target, host, json.dumps(params, sort_keys=True))
+    expire_stale()
+    with Session(engine) as session:
+        waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
+    return next((row for row in waiting if _key(row) == wanted), None)
+
+
 def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str, agent_note: str = "") -> tuple[Approval, bool]:
     """Record a request, or return the identical one already waiting (a workflow that retries
     must not pile up copies, each of which could run). Returns (approval, created)."""
@@ -66,9 +86,9 @@ def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: 
     expire_stale()
     with _create_lock, Session(engine) as session:
         waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
-        for row in waiting:
-            if (row.kind, row.target, row.host, row.params) == (kind, target, host, params_json):
-                return row, False
+        same = next((row for row in waiting if _key(row) == (kind, target, host, params_json)), None)
+        if same is not None:
+            return same, False
         if len(waiting) >= MAX_PENDING_PER_AGENT:
             raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
         row = Approval(

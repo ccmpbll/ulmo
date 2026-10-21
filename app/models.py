@@ -122,6 +122,15 @@ class AgentRun(SQLModel, table=True):
     agent_id: int = Field(index=True)
 
 
+class AgentRequest(SQLModel, table=True):
+    """One row per request an agent was let through to make (for its hourly limit). Kept for an
+    hour, not for a number of rows, so a busy agent cannot push another's rows out."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    agent_id: int = Field(index=True)
+    at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class Approval(SQLModel, table=True):
     """An agent's request to run something that needs an admin's say-so. Nothing runs
     until an admin approves it on the Approvals page; the agent can only look."""

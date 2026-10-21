@@ -1,6 +1,7 @@
 import hashlib
 import re
 import secrets
+import threading
 from datetime import timedelta
 
 from sqlalchemy.exc import OperationalError
@@ -11,6 +12,7 @@ from app.models import (
     AdminAudit,
     Agent,
     AgentAudit,
+    AgentRequest,
     AgentRun,
     Approval,
     CommandRun,
@@ -91,20 +93,29 @@ def hourly_limit(agent: Agent) -> int:
     return DEFAULT_MAX_PER_HOUR if agent.max_per_hour is None else agent.max_per_hour
 
 
+_admit_lock = threading.Lock()  # counting and recording are one step, so a burst cannot all see "one left"
+
+
 def requests_last_hour(agent: Agent) -> int:
-    """What this agent asked for or started in the last hour, each thing once: every command and
-    playbook run it started, plus the approval requests that never became a run (an approved one
-    is already counted as its run)."""
     since = utcnow() - timedelta(hours=1)
     with Session(engine) as session:
-        commands = session.exec(select(func.count()).select_from(CommandRun).where(CommandRun.agent_id == agent.id, CommandRun.started_at >= since)).one()
-        runs = session.exec(
-            select(func.count()).select_from(AgentRun).join(RunHistory, RunHistory.id == AgentRun.run_id).where(AgentRun.agent_id == agent.id, RunHistory.started_at >= since)
-        ).one()
-        asked = session.exec(
-            select(func.count()).select_from(Approval).where(Approval.agent_id == agent.id, Approval.created_at >= since, Approval.run_id.is_(None))  # noqa: E711
-        ).one()
-    return commands + runs + asked
+        return session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent.id, AgentRequest.at >= since)).one()
+
+
+def admit(agent: Agent) -> bool:
+    """Let one more request through if the agent is within its hourly allowance, and count it.
+    Called for new requests only: an approval an admin gives was counted when it was asked for."""
+    limit = hourly_limit(agent)
+    since = utcnow() - timedelta(hours=1)
+    with _admit_lock, Session(engine) as session:
+        session.exec(delete(AgentRequest).where(AgentRequest.at < since))  # everyone's, so the table stays small
+        used = session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent.id)).one()
+        if limit and used >= limit:
+            session.commit()
+            return False
+        session.add(AgentRequest(agent_id=agent.id))
+        session.commit()
+        return True
 
 
 def authenticate(token: str) -> tuple[Agent | None, str]:
@@ -161,6 +172,7 @@ def delete_agent(agent_id: int) -> None:
             # SQLite reuses the id of a deleted last row; a new agent must not inherit old runs.
             session.exec(delete(AgentRun).where(AgentRun.agent_id == agent_id))
             session.exec(delete(Approval).where(Approval.agent_id == agent_id))
+            session.exec(delete(AgentRequest).where(AgentRequest.agent_id == agent_id))
             session.exec(update(CommandRun).where(CommandRun.agent_id == agent_id).values(agent_id=None))
             session.delete(agent)
             session.commit()

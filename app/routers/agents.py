@@ -45,6 +45,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
             "default_per_hour": agents.DEFAULT_MAX_PER_HOUR,
+            "used_last_hour": {a.id: agents.requests_last_hour(a) for a in rows},
+            "limit_of": {a.id: agents.hourly_limit(a) for a in rows},
             "error": error,
             "new_token": new_token,
         },
@@ -60,6 +62,17 @@ def _back():
 
 def _role_id(value: str) -> int | None:
     return int(value) if value.strip() else None
+
+
+def _whole_number(value: str, what: str) -> int | None:
+    """A form number that may be left blank (None); anything else must be a whole number."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{what} must be a whole number.") from None
 
 
 @router.get("/agents", response_class=HTMLResponse)
@@ -80,8 +93,9 @@ def create_agent(
         # Without a login anyone who can reach this page could mint a token.
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        days = int(expires_days) if expires_days.strip() else None
-        agent, token = agents.create_agent(name, days, _role_id(role_id), int(max_per_hour) if max_per_hour.strip() else None)
+        agent, token = agents.create_agent(
+            name, _whole_number(expires_days, "Expiry"), _role_id(role_id), _whole_number(max_per_hour, "The hourly limit")
+        )
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
@@ -105,7 +119,7 @@ def set_agent_limit(request: Request, agent_id: int, max_per_hour: str = Form(""
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        agents.set_hourly_limit(agent_id, int(max_per_hour) if max_per_hour.strip() else None)
+        agents.set_hourly_limit(agent_id, _whole_number(max_per_hour, "The hourly limit"))
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "set agent limit", f"agent id {agent_id}: {max_per_hour.strip() or 'default'} per hour")

@@ -128,8 +128,10 @@ def _approval_json(a: Approval) -> dict:
 
 def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str, note: str | None) -> dict:
     """`params` is what the agent sent: approving validates it again, exactly as a direct call would."""
+    if approvals.find_pending(agent, kind, target, host, params) is None:  # a retry of a waiting request costs nothing
+        agent_runs.admit(agent)
     try:
-        approval, created = approvals.create(agent, kind, target, host, params, line, " ".join((note or "").split()))
+        approval, created = approvals.create(agent, kind, target, host, params, line, approvals.clean_note(note))
     except approvals.TooManyPending as exc:
         _deny(request, agent, 429, str(exc))
     request.state.audit = (agent.name, f"{'requested' if created else 'repeated'} approval {approval.id}: {line}")
@@ -170,10 +172,10 @@ def catalog(agent: Agent = Depends(require_agent)):
 def start_run(body: RunRequest, request: Request, response: Response, agent: Agent = Depends(require_agent)):
     try:
         agent_runs.precheck_run(agent, body.playbook, body.limit)
-        agent_runs.check_rate(agent)
         if approvals.playbook_needs(agent, body.playbook, body.limit):
             line = f"ansible-playbook {body.playbook} --limit {','.join(body.limit)}"
             return _request_approval(request, response, agent, "playbook", body.playbook, ",".join(body.limit), {}, line, body.note)
+        agent_runs.admit(agent)
         record = agent_runs.launch_run(agent, body.playbook, body.limit)
     except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)
@@ -237,9 +239,9 @@ def start_command(
     only once an admin approves it: poll GET /approvals/{id}."""
     try:
         template, host, values = agent_runs.precheck_command(agent, body.command, body.host, body.params)
-        agent_runs.check_rate(agent)
         if template.id in approvals.commands_needing(agent):
             return _request_approval(request, response, agent, "command", template.id, host.name, body.params, agent_runs.command_line(template, values), body.note)
+        agent_runs.admit(agent)
         run = agent_runs.launch_command(agent, template, host, values)
     except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)
