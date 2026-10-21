@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import defer
 from sqlmodel import Session, select
 
 from app.config import AUTH_DISABLED
@@ -25,7 +26,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
         changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(20)).all()
         command_grants = session.exec(select(CommandGrant).order_by(CommandGrant.template)).all()
-        command_runs = session.exec(select(CommandRun).order_by(CommandRun.id.desc()).limit(20)).all()
+        command_runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(20)).all()
     templates_loaded, template_errors = command_templates.load()
     return templates.TemplateResponse(
         request,

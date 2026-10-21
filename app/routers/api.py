@@ -201,7 +201,9 @@ def start_command(body: CommandRequest, request: Request, agent: Agent = Depends
     reason = agents.check_command(agent, body.template, body.host)
     if reason:
         _deny(request, agent, 403, reason)
-    template = command_templates.load()[0][body.template]
+    template = command_templates.load()[0].get(body.template)
+    if template is None:  # removed by a sync since the check above
+        _deny(request, agent, 403, "that command template is not loaded")
     try:
         values = command_templates.validate_params(template, body.params)
     except ValueError as exc:

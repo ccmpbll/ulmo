@@ -110,12 +110,18 @@ admin = TestClient(app)
 class FakeStdout:
     def __init__(self, proc):
         self.proc = proc
+        self.pos = 0
 
     def read(self, n):
         if self.proc.behavior.get("hang"):
             self.proc.killed.wait(5)
             return b""
-        return self.proc.behavior.get("output", b"done\n")[:n]
+        if self.proc.behavior.get("delay") and self.pos == 0:
+            time.sleep(self.proc.behavior["delay"])
+        data = self.proc.behavior.get("output", b"done\n")
+        chunk = data[self.pos : self.pos + n]
+        self.pos += len(chunk)
+        return chunk
 
     def close(self):
         pass
@@ -135,11 +141,22 @@ class FakePopen:
     def kill(self):
         self.killed.set()
 
+    def poll(self):
+        return -9 if self.killed.is_set() else self.behavior.get("poll")
+
     def wait(self):
         return -9 if self.killed.is_set() else self.behavior.get("rc", 0)
 
 
 commands.subprocess = SimpleNamespace(Popen=FakePopen, PIPE=-1, STDOUT=-2, DEVNULL=-3)
+commands.KILL_GRACE = 0  # tests let the local timer be the one that ends a hung fake process
+
+
+def _remote(cmd):
+    """The argument list the host will run, without the timeout wrapper."""
+    words = shlex.split(cmd[-1])
+    assert words[:3] == ["timeout", "-k", "5"], words
+    return words[4:]
 
 
 def _h(token):
@@ -325,14 +342,15 @@ def test_ssh_command():
     restart = ct.parse("restart", FILES["restart.yml"])
     cmd = commands.ssh_command(restart, "web1", ["docker", "restart", "sonarr"])
     assert cmd[0] == "ssh" and isinstance(cmd, list)
+    assert "LogLevel=ERROR" in cmd, "ssh's own notices must not end up in the command output"
     assert "BatchMode=yes" in cmd and "-p" in cmd and cmd[cmd.index("-p") + 1] == "22"
     assert cmd[cmd.index("-i") + 1] == "/home/ansible/.ssh/ansible-ed25519"
-    assert cmd[-3:] == ["ansible@10.0.0.1", "--", "docker restart sonarr"]
+    assert cmd[-3:] == ["ansible@10.0.0.1", "--", "timeout -k 5 30 docker restart sonarr"], "the host must enforce the deadline too"
 
     cmd = commands.ssh_command(restart, "db1", ["echo", "a b; id"])
     assert "-i" not in cmd and cmd[cmd.index("-p") + 1] == "2222"
-    assert cmd[-3:] == ["dba@db1.lan", "--", "echo 'a b; id'"], cmd[-3:]
-    assert shlex.split(cmd[-1]) == ["echo", "a b; id"]
+    assert cmd[-3:] == ["dba@db1.lan", "--", "timeout -k 5 30 echo 'a b; id'"], cmd[-3:]
+    assert _remote(cmd) == ["echo", "a b; id"]
 
     status = ct.parse("status", FILES["status.yml"])  # overrides user and key
     cmd = commands.ssh_command(status, "web1", ["systemctl", "status", "ssh"])
@@ -393,7 +411,7 @@ def test_run_success_failure_timeout_truncation():
     run = _wait(r.json()["id"])
     assert run.status == "success" and run.return_code == 0 and run.output == "restarted sonarr\n"
     proc = FakePopen.instances[-1]
-    assert isinstance(proc.cmd, list) and proc.cmd[-1] == "docker restart sonarr" and "shell" not in proc.kw
+    assert isinstance(proc.cmd, list) and _remote(proc.cmd) == ["docker", "restart", "sonarr"] and "shell" not in proc.kw
     assert proc.kw["stdin"] == -3, "ssh must not be able to read stdin"
     assert run.triggered_by == "agent:runner" and json.loads(run.params) == {"container": "sonarr"}
 
@@ -406,7 +424,7 @@ def test_run_success_failure_timeout_truncation():
     # An injection attempt reaches the remote shell as one quoted word.
     r = _post(token, "say", "web1", {"text": "x; touch /tmp/pwned $(id)"})
     _wait(r.json()["id"])
-    assert shlex.split(FakePopen.instances[-1].cmd[-1]) == ["echo", "x; touch /tmp/pwned $(id)"]
+    assert _remote(FakePopen.instances[-1].cmd) == ["echo", "x; touch /tmp/pwned $(id)"]
 
     FakePopen.behavior = {"output": b"no such container\n", "rc": 3}
     run = _wait(_post(token, "restart", "web1", {"container": "radarr"}).json()["id"])
@@ -418,10 +436,22 @@ def test_run_success_failure_timeout_truncation():
     assert run.status == "timeout" and time.time() - start < 4, "timeout should kill the process"
     assert FakePopen.instances[-1].killed.is_set()
 
-    FakePopen.behavior = {"output": b"x" * (commands.OUTPUT_CAP + 500), "rc": 0}
+    # Big output is truncated, but the command still gets its real exit status.
+    FakePopen.behavior = {"output": b"x" * (commands.OUTPUT_CAP * 3 + 500), "rc": 0}
     run = _wait(_post(token, "restart", "web1", {"container": "sonarr"}).json()["id"])
     assert len(run.output) < commands.OUTPUT_CAP + 100 and run.output.endswith("[output truncated]")
-    assert FakePopen.instances[-1].killed.is_set()
+    assert run.status == "success" and run.return_code == 0, f"large output must not turn success into {run.status}"
+    assert not FakePopen.instances[-1].killed.is_set(), "the process must be allowed to finish"
+    FakePopen.behavior = {"output": b"y" * (commands.OUTPUT_CAP + 10), "rc": 2}
+    run = _wait(_post(token, "restart", "web1", {"container": "sonarr"}).json()["id"])
+    assert run.status == "failed" and run.return_code == 2
+    FakePopen.behavior = {}
+
+    # The host's own `timeout` ending the command (124 / 137) is a timeout, not a plain failure.
+    for rc in (124, 137):
+        FakePopen.behavior = {"output": b"", "rc": rc}
+        run = _wait(_post(token, "restart", "web1", {"container": "sonarr"}).json()["id"])
+        assert run.status == "timeout" and run.return_code == rc
     FakePopen.behavior = {}
 
     # A broken inventory entry fails before anything is recorded.
@@ -438,7 +468,7 @@ def test_run_success_failure_timeout_truncation():
     FakePopen.behavior = {"output": b"ok", "rc": 0}
     run = _wait(_post(token, "status", "web1", {"unit": "ssh"}).json()["id"])
     cmd = FakePopen.instances[-1].cmd
-    assert "svc@10.0.0.1" in cmd and cmd[-1] == "sudo -n systemctl status ssh" and str(SSH_STORAGE_DIR / "svc-key") in cmd
+    assert "svc@10.0.0.1" in cmd and _remote(cmd) == ["sudo", "-n", "systemctl", "status", "ssh"] and str(SSH_STORAGE_DIR / "svc-key") in cmd
     FakePopen.behavior = {}
 
 
@@ -522,6 +552,156 @@ def test_orphaned_runs_are_settled():
         assert r.status == "error" and r.finished_at is not None
 
 
+def test_template_regex_cannot_backtrack_exponentially():
+    base = "description: d\nargv: [echo, '{x}']\nparams: {x: {type: regex, pattern: %s}}\n"
+    for bad in ("'(a+)+$'", "'([a-z]+)*x'", "'(x+x+)+y'", "'(a*)*'", "'(a{1,9})+'", "'((ab)+)+'", "'(?:\\w+\\s?)+$'"):
+        try:
+            ct.parse("t", base % bad)
+        except ValueError as exc:
+            assert "exponential" in str(exc), (bad, exc)
+        else:
+            raise AssertionError(f"accepted a backtracking pattern: {bad}")
+    for good in ("'[a-z0-9_-]+'", "'(foo|bar)+'", "'a?b*c+'", "'(ab?)+'", "'.+'", "'[a-z]+(\\.[a-z]+)?'"):
+        ct.parse("t", base % good)
+
+
+def test_stuck_runs_do_not_hold_the_caps_forever():
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    with Session(engine) as session:
+        old = CommandRun(template="restart", host="stuckhost", status="running", started_at=utcnow() - commands.STALE_AFTER - timedelta(minutes=1))
+        fresh = CommandRun(template="restart", host="stuckhost", status="running")
+        session.add(old)
+        session.add(fresh)
+        session.commit()
+        session.refresh(old)
+        session.refresh(fresh)
+    assert commands.running("stuckhost") == 1, "only the recent run still counts"
+    with Session(engine) as session:
+        assert session.get(CommandRun, old.id).status == "error" and session.get(CommandRun, fresh.id).status == "running"
+        row = session.get(CommandRun, fresh.id)
+        row.status = "success"
+        session.add(row)
+        session.commit()
+
+
+def test_result_write_is_retried_and_history_is_pruned():
+    with Session(engine) as session:
+        run = CommandRun(template="restart", host="web1")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+    real = commands.Session
+    calls = {"n": 0}
+
+    def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("database is locked")
+        return real(*a, **kw)
+
+    commands.Session = flaky
+    sleep = commands.time.sleep
+    commands.time.sleep = lambda s: None
+    try:
+        commands._finish(run.id, "success", 0, "fine")
+    finally:
+        commands.Session = real
+        commands.time.sleep = sleep
+    with Session(engine) as session:
+        assert session.get(CommandRun, run.id).status == "success", "the write should have been retried"
+
+    keep = commands.KEEP_RUNS
+    commands.KEEP_RUNS = 3
+    try:
+        ids = []
+        for _ in range(6):
+            with Session(engine) as session:
+                r = CommandRun(template="restart", host="web1")
+                session.add(r)
+                session.commit()
+                session.refresh(r)
+                ids.append(r.id)
+            commands._finish(ids[-1], "success", 0, "z" * 100)
+    finally:
+        commands.KEEP_RUNS = keep
+    with Session(engine) as session:
+        left = {r.id for r in session.exec(select(CommandRun)).all()}
+    assert set(ids[-3:]) <= left and not set(ids[:2]) & left, "old runs should be pruned, newest kept"
+
+
+def test_timeout_timer_does_not_overrule_a_finished_command():
+    with Session(engine) as session:
+        run = CommandRun(template="restart", host="web1")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+    # ssh has already exited (poll() == 0) when the timer fires during the final read.
+    FakePopen.behavior = {"poll": 0, "delay": 0.8, "output": b"ok\n", "rc": 0}
+    try:
+        commands._execute(run.id, ["ssh", "x"], 0.2)
+    finally:
+        FakePopen.behavior = {}
+    with Session(engine) as session:
+        done = session.get(CommandRun, run.id)
+    assert done.status == "success" and done.return_code == 0
+    assert not FakePopen.instances[-1].killed.is_set()
+
+
+def test_template_removed_between_check_and_use():
+    _, token, _ = _agent("racy", {"restart": ["web1"]})
+    real = ct.load
+    seen = {"n": 0}
+
+    def load_once():
+        seen["n"] += 1
+        return real() if seen["n"] == 1 else ({}, {})
+
+    ct.load = load_once
+    try:
+        r = _post(token, "restart", "web1", {"container": "sonarr"})
+    finally:
+        ct.load = real
+    assert r.status_code == 403 and "not loaded" in r.json()["detail"], f"{r.status_code} {r.text}"
+
+
+def test_agents_page_does_not_read_command_output():
+    from sqlalchemy import event
+
+    statements = []
+
+    def spy(conn, cursor, statement, *a):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        assert admin.get("/agents").status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    reads = [s for s in statements if "FROM commandrun" in s]
+    assert reads and not any("commandrun.output" in s for s in reads), reads
+
+
+def test_granting_looks_up_the_inventory_once():
+    role = agents.create_role("lookups")
+    calls = {"n": 0}
+    real = inventory.list_hosts
+
+    def counted():
+        calls["n"] += 1
+        return real()
+
+    inventory.list_hosts = counted
+    try:
+        agents.add_command_grant(role.id, "restart", ["web1", "web2", "db1"])
+    finally:
+        inventory.list_hosts = real
+    assert calls["n"] == 1, calls
+
+
 # --- admin -------------------------------------------------------------------------
 
 
@@ -590,7 +770,14 @@ def main():
     test_kill_switch_and_caps()
     test_catalog_lists_commands()
     test_orphaned_runs_are_settled()
+    test_template_regex_cannot_backtrack_exponentially()
+    test_stuck_runs_do_not_hold_the_caps_forever()
+    test_result_write_is_retried_and_history_is_pruned()
+    test_timeout_timer_does_not_overrule_a_finished_command()
+    test_template_removed_between_check_and_use()
+    test_granting_looks_up_the_inventory_once()
     test_admin_command_grants()
+    test_agents_page_does_not_read_command_output()
     print("OK: command templates validate strictly, run over a quoted ssh argv, and are default-deny.")
 
 

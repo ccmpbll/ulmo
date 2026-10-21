@@ -94,7 +94,7 @@ ssh_key: my-key      # optional; a key uploaded under Settings -> SSH Key
 ```
 
 Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
-(must match in full; may not start with `-` unless `allow_leading_dash: true`). The agent names
+(must match in full; may not start with `-` unless `allow_leading_dash: true`; patterns that repeat a repeated group, like `(a+)+`, are refused because they can take exponential time). The agent names
 a template, a host and values; ulmo checks every value, builds the argument list itself, and
 sends it to the host as one shell-quoted string, so a value is always a single literal argument
 and never shell syntax. Host address, port, user and key come from the inventory. A role gets a
@@ -106,7 +106,7 @@ GET  /api/v1/commands/{id}     status, return code, output (capped at 64 KB); on
 GET  /api/v1/commands          the agent's recent command runs
 ```
 
-At most 5 commands run at once and 2 per host. The kill switch covers commands too. A template
+The host runs the command under its own `timeout` (coreutils or busybox must be installed there), so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept. The kill switch covers commands too. A template
 file that fails to parse is listed on the Agents page and keeps its last good version.
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token

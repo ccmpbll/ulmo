@@ -188,7 +188,8 @@ def add_command_grant(role_id: int, template: str, hosts: list[str]) -> CommandG
         raise ValueError("Pick at least one host.")
     if template not in command_templates.load()[0]:
         raise ValueError("Unknown command template.")
-    unknown = [h for h in hosts if h not in set(inventory.list_hosts())]
+    known = set(inventory.list_hosts())
+    unknown = [h for h in hosts if h not in known]
     if unknown:
         raise ValueError(f"Not in the inventory: {', '.join(unknown)}")
     with Session(engine) as session:
