@@ -253,3 +253,14 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .decision-meta { margin-top: 6px; font-size: 0.82rem; }
 .panel-head { flex-wrap: wrap; }
 .panel code, .card > p code { overflow-wrap: anywhere; }
+
+/* Phones: brand and log out on one line, the links below in two compact rows */
+@media (max-width: 640px) {
+  .topbar { padding: 8px 14px; gap: 4px 12px; }
+  .topbar .brand { font-size: 1rem; }
+  .topbar nav { order: 3; flex: 1 0 100%; gap: 2px 14px; font-size: 0.9rem; }
+  .logout-form { margin-left: auto; }
+  .logout-form .who { display: none; }
+  .logout-form button { padding: 4px 10px; font-size: 0.8rem; }
+  .container { padding: 16px 14px; }
+}
