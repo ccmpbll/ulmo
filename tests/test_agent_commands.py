@@ -145,8 +145,10 @@ def _h(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _post(token, command, host, params=None):
-    return client.post("/api/v1/commands", json={"command": command, "host": host, "params": params or {}}, headers=_h(token))
+def _post(token, command, host, params=None, wait=0):
+    """Fire and forget by default, so the tests can look at a run while it is going."""
+    suffix = "" if wait is None else f"?wait={wait}"
+    return client.post(f"/api/v1/commands{suffix}", json={"command": command, "host": host, "params": params or {}}, headers=_h(token))
 
 
 def _wait(run_id):
@@ -373,6 +375,61 @@ def test_run_success_failure_timeout_truncation():
     FakePopen.behavior = {}
 
 
+def test_post_can_wait_for_the_result():
+    _, token, _ = _agent("waiter", ["restart", "hang"])
+
+    # Default: wait for a quick command and get the output in the same answer.
+    FakePopen.behavior = {"output": b"restarted sonarr\n", "rc": 0}
+    r = _post(token, "restart", "gandalf", {"container": "sonarr"}, wait=None)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "success" and body["return_code"] == 0 and body["output"] == "restarted sonarr\n"
+    assert body["line"] == "docker restart sonarr" and body["finished_at"] is not None
+
+    # A failure is reported the same way, with its output.
+    FakePopen.behavior = {"output": b"no such container\n", "rc": 3}
+    r = _post(token, "restart", "gandalf", {"container": "radarr"}, wait=5)
+    assert r.status_code == 200 and r.json()["status"] == "failed" and r.json()["output"] == "no such container\n"
+
+    # wait=0 answers at once with "running", no output yet.
+    FakePopen.behavior = {"output": b"ok\n", "delay": 0.5}
+    start = time.time()
+    r = _post(token, "restart", "gandalf", {"container": "sonarr"}, wait=0)
+    assert r.status_code == 202 and r.json()["status"] == "running" and "output" not in r.json()
+    assert time.time() - start < 0.4
+    run = _wait(r.json()["id"])
+    assert run.status == "success", "the command keeps running after the answer"
+
+    # A command that outlasts the wait: 202 after about that long, and polling still works.
+    FakePopen.behavior = {"hang": True}
+    start = time.time()
+    r = _post(token, "hang", "gandalf", wait=0.4)
+    waited = time.time() - start
+    assert r.status_code == 202 and r.json()["status"] == "running" and 0.3 < waited < 0.9, (r.status_code, waited)
+    assert _wait(r.json()["id"]).status == "timeout"
+    # ...but one that finishes inside the wait is answered directly (hang.yml times out at 1 s).
+    r = _post(token, "hang", "gandalf", wait=5)
+    assert r.status_code == 200 and r.json()["status"] == "timeout" and "output" in r.json()
+    FakePopen.behavior = {}
+
+    # The limits on the parameter, and that errors are not delayed by it.
+    for bad in ("-1", "61", "abc", "nan"):
+        r = client.post(f"/api/v1/commands?wait={bad}", json={"command": "restart", "host": "gandalf", "params": {"container": "sonarr"}}, headers=_h(token))
+        assert r.status_code == 422, (bad, r.status_code)
+    start = time.time()
+    r = _post(token, "restart", "gandalf", {"container": "plex"}, wait=30)
+    assert r.status_code == 400 and time.time() - start < 1
+    r = _post(token, "say", "gandalf", {"text": "x"}, wait=30)
+    assert r.status_code == 403 and time.time() - start < 2
+
+    # The output is still only for the agent that started it, wait or not.
+    _, other, _ = _agent("nosy", ["restart"])
+    FakePopen.behavior = {"output": b"secret\n", "rc": 0}
+    run_id = _post(token, "restart", "gandalf", {"container": "sonarr"}, wait=5).json()["id"]
+    assert client.get(f"/api/v1/commands/{run_id}", headers=_h(other)).status_code == 404
+    FakePopen.behavior = {}
+
+
 def test_runs_are_private_to_their_agent():
     _, mine, _ = _agent("owner-cmd", ["restart"])
     _, other, _ = _agent("other-cmd", ["restart"])
@@ -589,6 +646,7 @@ def main():
     test_changes_to_the_library_take_effect_immediately()
     test_catalog_is_role_intersect_hosts()
     test_run_success_failure_timeout_truncation()
+    test_post_can_wait_for_the_result()
     test_runs_are_private_to_their_agent()
     test_kill_switch_and_caps()
     test_executor_housekeeping()

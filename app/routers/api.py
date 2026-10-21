@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -100,6 +100,8 @@ def run_detail(run_id: int):
 MAX_AGENT_RUNS = 5  # agent playbook runs going at once, across all agents
 MAX_COMMAND_RUNS = 5  # command runs going at once, across all agents
 MAX_COMMANDS_PER_HOST = 2
+DEFAULT_WAIT = 20  # seconds POST /commands waits for the result before answering "still running"
+MAX_WAIT = 60
 _start_lock = threading.Lock()  # makes "any conflicting run?" and "start it" one step
 
 
@@ -192,8 +194,16 @@ def _command_json(run: CommandRun, with_output: bool = False) -> dict:
 
 
 @router.post("/commands", status_code=202)
-def start_command(body: CommandRequest, request: Request, agent: Agent = Depends(require_agent)):
-    """Run a library command on one host over SSH. Poll GET /commands/{id}."""
+def start_command(
+    body: CommandRequest,
+    request: Request,
+    response: Response,
+    wait: float = Query(DEFAULT_WAIT, ge=0, le=MAX_WAIT),
+    agent: Agent = Depends(require_agent),
+):
+    """Run a library command on one host over SSH. Waits up to `wait` seconds for it
+    to finish and, if it does, answers 200 with the status and output. Otherwise 202
+    ("running"): poll GET /commands/{id}. The command keeps running either way."""
     if not agents.runs_enabled():
         _deny(request, agent, 503, "agent runs are switched off")
     reason = agents.check_command(agent, body.command, body.host)
@@ -215,7 +225,14 @@ def start_command(body: CommandRequest, request: Request, agent: Agent = Depends
         except commands.CommandError as exc:
             _deny(request, agent, 502, str(exc))
     request.state.audit = (agent.name, f"started command {run.id}: {template.id} on {body.host}")
-    return _command_json(run)
+    deadline = time.monotonic() + wait
+    while run.status == "running" and time.monotonic() < deadline:
+        time.sleep(0.1)
+        with Session(engine) as session:
+            run = session.get(CommandRun, run.id)
+    if run.status != "running":
+        response.status_code = 200
+    return _command_json(run, with_output=run.status != "running")
 
 
 @router.get("/commands/{run_id}")
