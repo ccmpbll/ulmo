@@ -49,35 +49,51 @@ def list_files() -> list[dict]:
     return files
 
 
-def _fresh_cache() -> dict | None:
+CONN_VARS = ("ansible_host", "ansible_port", "ansible_user", "ansible_ssh_user", "ansible_ssh_private_key_file")
+
+
+def _data() -> dict:
     cached = _read_hosts_cache()
-    if cached is not None and "groups" in cached and time.time() - cached["ts"] < HOSTS_CACHE_TTL_SECONDS:
+    if cached is not None and "conn" in cached and time.time() - cached["ts"] < HOSTS_CACHE_TTL_SECONDS:
         return cached
-    return None
+    return refresh_hosts_cache()
 
 
 def list_hosts() -> list[str]:
-    cached = _fresh_cache()
-    return cached["hosts"] if cached else refresh_hosts_cache()[0]
+    return _data()["hosts"]
 
 
 def list_groups() -> list[str]:
     """Group names, including the implicit `all` and `ungrouped`. ansible's
     --limit treats a name as a host OR a group, so callers that need a name to
     mean one host only must refuse names that are also groups."""
-    cached = _fresh_cache()
-    return cached["groups"] if cached else refresh_hosts_cache()[1]
+    return _data()["groups"]
 
 
-def refresh_hosts_cache() -> tuple[list[str], list[str]]:
-    """Recompute hosts and groups and persist them. Returns them even if the
+def host_conn(host: str) -> dict | None:
+    """How to reach a host over SSH, from its inventory variables:
+    {"address", "port", "user", "key"} (key may be empty), or None if the host
+    is not in the inventory."""
+    raw = _data()["conn"].get(host)
+    if raw is None:
+        return None
+    return {
+        "address": str(raw.get("ansible_host") or host),
+        "port": str(raw.get("ansible_port") or "22"),
+        "user": str(raw.get("ansible_user") or raw.get("ansible_ssh_user") or ""),
+        "key": str(raw.get("ansible_ssh_private_key_file") or ""),
+    }
+
+
+def refresh_hosts_cache() -> dict:
+    """Recompute the inventory facts and persist them. Returns them even if the
     write fails (that's a cache problem, not a data problem)."""
-    hosts, groups = _run_ansible_inventory()
+    data = {"ts": time.time(), **_run_ansible_inventory()}
     try:
-        HOSTS_CACHE_PATH.write_text(json.dumps({"ts": time.time(), "hosts": hosts, "groups": groups}))
+        HOSTS_CACHE_PATH.write_text(json.dumps(data))
     except OSError:
         pass
-    return hosts, groups
+    return data
 
 
 def _read_hosts_cache() -> dict | None:
@@ -89,10 +105,11 @@ def _read_hosts_cache() -> dict | None:
         return None
 
 
-def _run_ansible_inventory() -> tuple[list[str], list[str]]:
+def _run_ansible_inventory() -> dict:
+    empty = {"hosts": [], "groups": [], "conn": {}}
     root = _inventory_root()
     if root is None or not root.exists():
-        return [], []
+        return empty
     try:
         result = subprocess.run(
             ["ansible-inventory", "-i", str(root), "--list"],
@@ -102,12 +119,16 @@ def _run_ansible_inventory() -> tuple[list[str], list[str]]:
             timeout=30,
         )
         if result.returncode != 0:
-            return [], []
+            return empty
         data = json.loads(result.stdout)
-        hosts = sorted(data.get("_meta", {}).get("hostvars", {}).keys())
-        return hosts, sorted(k for k in data if k != "_meta")
+        hostvars = data.get("_meta", {}).get("hostvars", {})
+        return {
+            "hosts": sorted(hostvars),
+            "groups": sorted(k for k in data if k != "_meta"),
+            "conn": {h: {k: v[k] for k in CONN_VARS if k in v} for h, v in hostvars.items()},
+        }
     except Exception:
-        return [], []
+        return empty
 
 
 def read_file(rel_path: str) -> dict:

@@ -197,7 +197,7 @@ def test_granted_run_uses_the_runner_unchanged():
     assert len(calls) == before + 1
 
     cat = client.get("/api/v1/catalog", headers=_h(token)).json()
-    assert cat == {"runs_enabled": True, "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"]}]}
+    assert cat == {"runs_enabled": True, "commands": [], "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"]}]}
     assert client.get(f"/api/v1/runs/{body['id']}", headers=_h(token)).json()["triggered_by"] == "agent:runner1"
 
 

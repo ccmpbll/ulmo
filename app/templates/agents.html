@@ -80,6 +80,31 @@
 </div>
 
 <div class="settings-section">
+  <h2>Command templates</h2>
+  <div class="card">
+    <p class="muted">Loaded from <code>ulmo/templates/*.yml</code> in the synced repo. Edit them in the repo, then Sync. A file that fails to load keeps its last good version.</p>
+    <table>
+      <thead><tr><th>Template</th><th>Command</th><th>Parameters</th><th>Risk</th></tr></thead>
+      <tbody>
+        {% for t in command_templates %}
+        <tr>
+          <td>{{ t.id }}<br /><span class="muted">{{ t.description }}</span></td>
+          <td><code>{{ ('sudo -n ' if t.sudo else '') ~ t.argv | join(' ') }}</code></td>
+          <td class="muted">{% for name, spec in t.params.items() %}{{ name }} ({{ spec.type }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+          <td>{{ t.risk or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No templates loaded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% for file, msg in template_errors.items() %}
+    <p class="error">{{ file }}: {{ msg }}</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="settings-section">
   <h2>Roles and grants</h2>
   <div class="card">
     <p class="muted">A grant lets a role run one playbook on specific hosts. Anything not granted is denied; an agent's limit must be hosts named in the grant.</p>
@@ -106,6 +131,39 @@
           {% endfor %}
         </tbody>
       </table>
+      <table>
+        <tbody>
+          {% for g in command_grants[r.id] %}
+          <tr>
+            <td>command: {{ g.template }}</td>
+            <td class="muted">{{ g.hosts.replace(',', ', ') }}</td>
+            <td>
+              <form method="post" action="/command-grants/{{ g.id }}/delete">
+                <button type="submit" class="danger">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if command_templates and hosts %}
+      <details>
+        <summary class="muted">Add a command grant</summary>
+        <form method="post" action="/roles/{{ r.id }}/command-grants">
+          <label>Command template
+            <select name="template">
+              {% for t in command_templates %}<option value="{{ t.id }}">{{ t.id }}</option>{% endfor %}
+            </select>
+          </label>
+          <div class="chip-list">
+            {% for h in hosts %}
+            <label class="tag-chip"><input type="checkbox" name="hosts" value="{{ h }}" /> {{ h }}</label>
+            {% endfor %}
+          </div>
+          <button type="submit" class="secondary">Add command grant</button>
+        </form>
+      </details>
+      {% endif %}
       {% if playbooks and hosts %}
       <details>
         <summary class="muted">Add a grant</summary>
@@ -135,6 +193,28 @@
       <label>New role<input type="text" name="name" required maxlength="40" placeholder="remediation" /></label>
       <button type="submit" class="secondary">Create role</button>
     </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Recent command runs</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>Host</th><th>Command</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for c in command_runs %}
+        <tr>
+          <td>{{ c.started_at | local_time }}</td>
+          <td>{{ c.triggered_by }}</td>
+          <td>{{ c.host }}</td>
+          <td><code>{{ c.command }}</code></td>
+          <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No command runs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

@@ -76,6 +76,32 @@ class AgentAudit(SQLModel, table=True):
     detail: str = ""  # why a 401/403/503 happened, or what a run request started
 
 
+class CommandGrant(SQLModel, table=True):
+    """Lets a role run one command template on specific inventory hosts."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    role_id: int = Field(index=True)
+    template: str  # template id (file name without extension)
+    hosts: str  # comma-separated inventory host names
+
+
+class CommandRun(SQLModel, table=True):
+    """One execution of a command template over SSH."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    template: str
+    host: str
+    params: str = "{}"  # JSON of the validated values
+    command: str = ""  # the argument list that ran, shell-quoted, for display
+    status: str = "running"  # running | success | failed | timeout | error
+    return_code: Optional[int] = None
+    output: str = ""  # combined stdout/stderr, capped
+    triggered_by: str = ""  # agent:<name>
+    agent_id: Optional[int] = Field(default=None, index=True)
+    started_at: datetime = Field(default_factory=utcnow)
+    finished_at: Optional[datetime] = None
+
+
 class AgentRun(SQLModel, table=True):
     """Which agent started which run. Cancel ownership is decided here, not by
     parsing RunHistory.triggered_by (a username can look like "agent:x")."""

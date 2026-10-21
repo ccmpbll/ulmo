@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import defer
 from sqlmodel import Session, select
 
 from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
-from app.models import AdminAudit, Agent, AgentAudit, Grant, Role
-from app.services import agents, git_sync, inventory
+from app.models import AdminAudit, Agent, AgentAudit, CommandGrant, CommandRun, Grant, Role
+from app.services import agents, command_templates, git_sync, inventory
 from app.templating import templates
 
 # Admin side of the agent API: cookie-session login only. Tokens, roles and
@@ -24,6 +25,9 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         grants = session.exec(select(Grant).order_by(Grant.playbook)).all()
         audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
         changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(20)).all()
+        command_grants = session.exec(select(CommandGrant).order_by(CommandGrant.template)).all()
+        command_runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(20)).all()
+    templates_loaded, template_errors = command_templates.load()
     return templates.TemplateResponse(
         request,
         "agents.html",
@@ -31,6 +35,10 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "agents": rows,
             "roles": roles,
             "grants": {r.id: [g for g in grants if g.role_id == r.id] for r in roles},
+            "command_grants": {r.id: [g for g in command_grants if g.role_id == r.id] for r in roles},
+            "command_templates": sorted(templates_loaded.values(), key=lambda t: t.id),
+            "template_errors": template_errors,
+            "command_runs": command_runs,
             "playbooks": git_sync.list_playbooks(),
             "hosts": inventory.list_hosts(),
             "runs_enabled": agents.runs_enabled(),
@@ -150,6 +158,31 @@ def add_grant(
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "add grant", f"role id {role_id}: {grant.playbook} on {grant.hosts}")
+    return _back()
+
+
+@router.post("/roles/{role_id}/command-grants", response_class=HTMLResponse)
+def add_command_grant(
+    request: Request,
+    role_id: int,
+    template: str = Form(...),
+    hosts: list[str] = Form([]),
+    user=Depends(require_login),
+):
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        grant = agents.add_command_grant(role_id, template, hosts)
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "add command grant", f"role id {role_id}: {grant.template} on {grant.hosts}")
+    return _back()
+
+
+@router.post("/command-grants/{grant_id}/delete")
+def delete_command_grant(grant_id: int, user=Depends(require_login)):
+    agents.delete_command_grant(grant_id)
+    agents.admin_audit(user.username, "delete command grant", f"command grant id {grant_id}")
     return _back()
 
 
