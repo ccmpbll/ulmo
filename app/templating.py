@@ -33,7 +33,7 @@ templates.env.filters["local_time"] = local_time
 # style.css/local-time.js/logo.png picks up changes after a deploy without
 # needing a hard refresh. Content hash rather than mtime, since COPY in the
 # Docker build doesn't reliably preserve source file mtimes.
-_static_assets = [static_dir / "style.css", static_dir / "local-time.js", static_dir / "logo.png"]
+_static_assets = [static_dir / "style.css", static_dir / "local-time.js", static_dir / "filter.js", static_dir / "logo.png"]
 _hash = hashlib.sha256()
 for _asset in _static_assets:
     if _asset.exists():

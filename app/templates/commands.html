@@ -1,13 +1,16 @@
 {% extends "base.html" %}
+{% from "_macros.html" import checklist %}
 {% block title %}Commands - ulmo{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Commands</h1></div>
+<div class="page-header">
+  <h1>Commands</h1>
+  <a class="btn secondary" href="/commands/download">Download commands.yml</a>
+</div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
 {% if locked %}<p class="error">Changes are disabled while ULMO_DISABLE_AUTH is set.</p>{% endif %}
 {% if load_error %}<p class="error">commands.yml on disk does not parse, so the last good copy is in use: {{ load_error }}</p>{% endif %}
-<p class="muted">What agents may run over SSH, and where. A command is a fixed command line with typed blanks; a host lists the commands it offers. A role then decides which commands an agent may use (on the <a href="/agents">Agents</a> page). All of it is stored in one file, <code>commands.yml</code>.
-  <a href="/commands/download">Download</a></p>
+<p class="muted">What agents may run over SSH, and where. A command is a fixed command line with typed blanks; a host lists the commands it offers. A role then decides which commands an agent may use (on the <a href="/agents">Agents</a> page). All of it is stored in one file, <code>commands.yml</code>.</p>
 
 <div class="settings-section">
   <h2>Hosts</h2>
@@ -20,11 +23,17 @@
           <td>{{ h.name }}</td>
           <td>{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
           <td class="muted">{{ h.ssh_key or 'ssh default' }}</td>
-          <td class="muted">{{ h.commands | join(', ') or 'nothing' }}</td>
-          <td>
-            <a href="/commands?host={{ h.name | urlencode }}#host-form">Edit</a>
-            <form method="post" action="/commands/hosts/{{ h.name }}/test" style="display:inline"><button type="submit" class="secondary">Test connection</button></form>
-            <form method="post" action="/commands/hosts/{{ h.name }}/delete" style="display:inline" onsubmit="return confirm('Delete host {{ h.name }}?');"><button type="submit" class="danger">Delete</button></form>
+          <td class="muted">
+            {% if h.commands | length > 4 %}
+            <details><summary>{{ h.commands | length }} commands</summary>{{ h.commands | join(', ') }}</details>
+            {% else %}{{ h.commands | join(', ') or 'nothing' }}{% endif %}
+          </td>
+          <td class="actions-cell">
+            <div class="actions">
+              <a class="btn secondary" href="/commands?host={{ h.name | urlencode }}#host-form">Edit</a>
+              <form method="post" action="/commands/hosts/{{ h.name }}/test"><button type="submit" class="secondary">Test connection</button></form>
+              <form method="post" action="/commands/hosts/{{ h.name }}/delete" onsubmit="return confirm('Delete host {{ h.name }}?');"><button type="submit" class="danger">Delete</button></form>
+            </div>
           </td>
         </tr>
         {% else %}
@@ -32,48 +41,55 @@
         {% endfor %}
       </tbody>
     </table>
-    <hr style="border-color: var(--border); margin: 16px 0;" id="host-form" />
-    <h3>{{ 'Edit host ' ~ editing_host.name if editing_host else 'Add a host' }}</h3>
+  </div>
+
+  <div class="card" id="host-form">
+    <div class="section-head"><h3>{{ 'Edit host ' ~ editing_host.name if editing_host else 'Add a host' }}</h3></div>
     <form method="post" action="/commands/hosts">
       <input type="hidden" name="base" value="{{ base }}" />
       <input type="hidden" name="original" value="{{ editing_host.name if editing_host else '' }}" />
-      <label>Name<input type="text" name="name" required maxlength="60" value="{{ editing_host.name if editing_host else '' }}" {{ 'readonly' if editing_host }} placeholder="gandalf" /></label>
-      <label>Address<input type="text" name="address" required value="{{ editing_host.address if editing_host else '' }}" placeholder="10.42.11.10" /></label>
-      <label>Port<input type="number" name="port" min="1" max="65535" value="{{ editing_host.port if editing_host else 22 }}" /></label>
-      <label>User<input type="text" name="user" required value="{{ editing_host.user if editing_host else '' }}" placeholder="root" /></label>
-      <label>SSH key (uploaded under Settings)
-        <select name="ssh_key">
-          <option value="">ssh default</option>
-          {% for k in keys %}<option value="{{ k }}" {{ 'selected' if editing_host and editing_host.ssh_key == k }}>{{ k }}</option>{% endfor %}
-        </select>
-      </label>
-      <div class="chip-list">
-        {% for c in commands %}
-        <label class="tag-chip"><input type="checkbox" name="commands" value="{{ c.id }}" {{ 'checked' if editing_host and c.id in editing_host.commands }} /> {{ c.id }}</label>
-        {% else %}
-        <span class="muted">Add commands below, then come back to choose which ones this host offers.</span>
-        {% endfor %}
+      <div class="form-grid">
+        <label>Name<input type="text" name="name" required maxlength="60" value="{{ editing_host.name if editing_host else '' }}" {{ 'readonly' if editing_host }} placeholder="gandalf" /></label>
+        <label>Address<input type="text" name="address" required value="{{ editing_host.address if editing_host else '' }}" placeholder="10.42.11.10" /></label>
+        <label>Port<input type="number" name="port" min="1" max="65535" value="{{ editing_host.port if editing_host else 22 }}" /></label>
+        <label>User<input type="text" name="user" required value="{{ editing_host.user if editing_host else '' }}" placeholder="root" /></label>
+        <label>SSH key (uploaded under Settings)
+          <select name="ssh_key">
+            <option value="">ssh default</option>
+            {% for k in keys %}<option value="{{ k }}" {{ 'selected' if editing_host and editing_host.ssh_key == k }}>{{ k }}</option>{% endfor %}
+          </select>
+        </label>
       </div>
-      <button type="submit" class="secondary">{{ 'Save host' if editing_host else 'Add host' }}</button>
-      {% if editing_host %}<a href="/commands">Cancel</a>{% endif %}
+      <div class="subhead">Commands this host offers</div>
+      {{ checklist("host-commands", "commands", command_items, editing_host.commands if editing_host else [], "No commands yet. Add one below, then come back and choose which hosts offer it.") }}
+      <div class="actions form-actions">
+        <button type="submit">{{ 'Save host' if editing_host else 'Add host' }}</button>
+        {% if editing_host %}<a class="btn secondary" href="/commands">Cancel</a>{% endif %}
+      </div>
     </form>
   </div>
 </div>
 
 <div class="settings-section">
-  <h2>Commands</h2>
+  <div class="section-head">
+    <h2 style="border: 0; padding: 0; margin: 0;">Commands</h2>
+    <a class="btn" href="/commands/edit">New command</a>
+  </div>
   <div class="card">
     <table>
       <thead><tr><th>Command</th><th>Runs</th><th>Parameters</th><th>Offered by</th><th></th></tr></thead>
       <tbody>
         {% for c in commands %}
         <tr>
-          <td><a href="/commands/edit?name={{ c.id | urlencode }}">{{ c.id }}</a><br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
+          <td>{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
           <td><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
           <td class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
           <td class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
-          <td>
-            <form method="post" action="/commands/{{ c.id }}/delete" style="display:inline" onsubmit="return confirm('Delete command {{ c.id }}?');"><button type="submit" class="danger">Delete</button></form>
+          <td class="actions-cell">
+            <div class="actions">
+              <a class="btn secondary" href="/commands/edit?name={{ c.id | urlencode }}">Edit</a>
+              <form method="post" action="/commands/{{ c.id }}/delete" onsubmit="return confirm('Delete command {{ c.id }}?');"><button type="submit" class="danger">Delete</button></form>
+            </div>
           </td>
         </tr>
         {% else %}
@@ -81,29 +97,32 @@
         {% endfor %}
       </tbody>
     </table>
-    <p><a href="/commands/edit">New command</a></p>
   </div>
 </div>
 
 <div class="settings-section">
   <h2>Saved copies</h2>
   <div class="card">
-    <p class="muted">Every change keeps the previous copy. The number kept is set under Settings.</p>
+    <p class="muted">Every change keeps the copy it replaced. Each line says what the change after that copy was; open one to see what restoring it would undo. The number kept is set under Settings.</p>
     <table>
+      <thead><tr><th>Copy from</th><th>What changed after it</th><th></th></tr></thead>
       <tbody>
         {% for v in versions %}
         <tr>
           <td>{{ v.at | local_time }}</td>
-          <td class="muted">{{ v.bytes }} bytes</td>
-          <td>
-            <form method="post" action="/commands/history/{{ v.id }}/restore" style="display:inline" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">
-              <input type="hidden" name="base" value="{{ base }}" />
-              <button type="submit" class="secondary">Restore</button>
-            </form>
+          <td class="muted">{{ v.change or '(not summarised)' }}</td>
+          <td class="actions-cell">
+            <div class="actions">
+              <a class="btn secondary" href="/commands/history/{{ v.id }}">View</a>
+              <form method="post" action="/commands/history/{{ v.id }}/restore" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">
+                <input type="hidden" name="base" value="{{ base }}" />
+                <button type="submit" class="secondary">Restore</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% else %}
-        <tr><td class="muted">No saved copies yet.</td></tr>
+        <tr><td colspan="3" class="muted">No saved copies yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

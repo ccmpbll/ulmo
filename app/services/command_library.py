@@ -31,6 +31,7 @@ re-checked, the previous copy is kept as history, and the new one is swapped in
 atomically. A hand edit that no longer parses keeps the last good library in
 service and shows the error.
 """
+import difflib
 import hashlib
 import os
 import re
@@ -330,6 +331,12 @@ def validate(data) -> Library:
     return library
 
 
+def dump_yaml(obj) -> str:
+    """YAML as a person would write it: lists and mappings of plain values stay on
+    one line (argv: [df, -h]) instead of becoming a dash list."""
+    return yaml.safe_dump(obj, sort_keys=False, default_flow_style=None, allow_unicode=True, width=10000)
+
+
 def version_of(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
@@ -389,12 +396,15 @@ def _history_keep() -> int:
         return 20
 
 
-def _write(data: dict) -> None:
-    """Validate everything, keep the old copy, swap the new one in."""
+def _write(data: dict, before_write=None) -> None:
+    """Validate everything, keep the old copy, swap the new one in. `before_write`
+    runs once the new contents are known to be valid, just before the swap."""
     validate(data)
-    text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    text = dump_yaml(data)
     if len(text.encode()) > MAX_FILE_BYTES:
         _bad(f"the file would be over {MAX_FILE_BYTES // 1024} KB")
+    if before_write:
+        before_write()
     old = read_text()
     if old and old != text:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -422,7 +432,7 @@ def _write(data: dict) -> None:
     load()  # pick up the new file now, so listeners (role cleanup) run straight away
 
 
-def _modify(base: str | None, change, start: dict | None = None) -> None:
+def _modify(base: str | None, change, start: dict | None = None, before_write=None) -> None:
     """Read, change, validate, write, under one lock. `start` replaces the current
     contents as the thing to change (restore uses it, so a file that no longer
     parses can still be recovered)."""
@@ -431,11 +441,27 @@ def _modify(base: str | None, change, start: dict | None = None) -> None:
             raise Conflict("The library changed since you opened this. Reload and try again.")
         data = _raw() if start is None else start
         change(data)
-        _write(data)
+        _write(data, before_write)
 
 
-def save_command(name: str, body: dict, base: str | None = None) -> None:
-    _modify(base, lambda d: d["commands"].__setitem__(name, body))
+def save_command(name: str, body: dict, base: str | None = None, rename_from: str | None = None, before_write=None) -> None:
+    """Save a command. With rename_from, the command is renamed in the same step: the
+    library key and every host that offers it move together, in one validated write
+    (before_write lets the caller move role entries too)."""
+
+    def change(data):
+        if rename_from and rename_from != name:
+            if rename_from not in data["commands"]:
+                _bad("no such command")
+            if name in data["commands"]:
+                _bad(f"A command named {name!r} already exists.")
+            data["commands"] = {(name if k == rename_from else k): v for k, v in data["commands"].items()}
+            for host in data["hosts"].values():
+                if isinstance(host, dict) and isinstance(host.get("commands"), list):
+                    host["commands"] = [name if c == rename_from else c for c in host["commands"]]
+        data["commands"][name] = body
+
+    _modify(base, change, before_write=before_write)
 
 
 def delete_command(name: str, base: str | None = None) -> None:
@@ -468,17 +494,58 @@ def command_body(name: str) -> dict:
     return dict(_raw()["commands"].get(name) or {})
 
 
-def list_versions() -> list[dict]:
+def describe_changes(old_text: str, new_text: str) -> str:
+    """One line on what differs between two copies, by command and host name."""
+    try:
+        old, new = (yaml.safe_load(t) or {} for t in (old_text, new_text))
+        parts = []
+        for kind in ("commands", "hosts"):
+            before, after = old.get(kind) or {}, new.get(kind) or {}
+            added = [n for n in after if n not in before]
+            removed = [n for n in before if n not in after]
+            for gone in list(removed):  # same contents under another name: a rename
+                twin = next((a for a in added if after[a] == before[gone]), None)
+                if twin:
+                    parts.append(f"renamed {kind[:-1]} {gone} to {twin}")
+                    removed.remove(gone)
+                    added.remove(twin)
+            parts += [f"added {kind[:-1]} {n}" for n in added] + [f"removed {kind[:-1]} {n}" for n in removed]
+            parts += [f"changed {kind[:-1]} {n}" for n in before if n in after and before[n] != after[n]]
+    except (yaml.YAMLError, AttributeError, TypeError):
+        return "(could not read this copy)"
+    if not parts:
+        return "no change to commands or hosts"
+    return "; ".join(parts[:3]) + (f"; and {len(parts) - 3} more" if len(parts) > 3 else "")
+
+
+def list_versions(describe: int = 50) -> list[dict]:
+    """Saved copies, newest first. Each copy is the file as it was BEFORE a change;
+    `change` says what that change was (for the newest `describe` copies)."""
     if not HISTORY_DIR.is_dir():
         return []
-    return [
-        {
-            "id": p.stem,
-            "bytes": p.stat().st_size,
-            "at": datetime.strptime(p.stem, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc),
-        }
-        for p in sorted(HISTORY_DIR.glob("*.yml"), reverse=True)
-    ]
+    paths = sorted(HISTORY_DIR.glob("*.yml"), reverse=True)
+    newer = read_text()  # the state that replaced the newest copy
+    out = []
+    for i, p in enumerate(paths):
+        text = p.read_text() if i < describe else ""
+        out.append(
+            {
+                "id": p.stem,
+                "bytes": p.stat().st_size,
+                "at": datetime.strptime(p.stem, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc),
+                "change": describe_changes(text, newer) if i < describe else "",
+            }
+        )
+        newer = text
+    return out
+
+
+def diff_with_current(version_id: str) -> list[str]:
+    """Unified diff from the current file to a saved copy: what restoring it would change
+    (lines starting with - go away, lines starting with + come back)."""
+    return list(
+        difflib.unified_diff(read_text().splitlines(), version_text(version_id).splitlines(), "current", "this copy", lineterm="", n=2)
+    )
 
 
 def version_text(version_id: str) -> str:

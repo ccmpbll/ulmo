@@ -1,0 +1,30 @@
+{#
+  A scrollable list of checkboxes with a toolbar: a filter box once there are many, Select all / Clear
+  (they act on the rows currently shown), and an "N of M selected" count.
+  items: list of (value, detail) pairs; selected: the values to tick.
+#}
+{% macro checklist(id, field, items, selected, empty="Nothing to choose from yet.") %}
+{% set ticked = namespace(n=0) %}
+{% for value, detail in items %}{% if value in selected %}{% set ticked.n = ticked.n + 1 %}{% endif %}{% endfor %}
+{% if items | length > 1 %}
+<div class="check-tools">
+  {% if items | length > 6 %}
+  <input type="search" class="check-filter" data-filter="#{{ id }}" placeholder="Filter {{ items | length }} items" aria-label="Filter the list" />
+  {% endif %}
+  <button type="button" class="secondary" data-check="all" data-target="#{{ id }}" title="Tick every row currently shown">Select all</button>
+  <button type="button" class="secondary" data-check="none" data-target="#{{ id }}" title="Untick every row currently shown">Clear</button>
+  <span class="muted check-count" data-count-for="#{{ id }}">{{ ticked.n }} of {{ items | length }} selected</span>
+</div>
+{% endif %}
+<div class="checklist" id="{{ id }}">
+  {% for value, detail in items %}
+  <label class="check-item">
+    <input type="checkbox" name="{{ field }}" value="{{ value }}" {{ 'checked' if value in selected }} />
+    <span><span class="name">{{ value }}</span>{% if detail %}<span class="meta">{{ detail }}</span>{% endif %}</span>
+  </label>
+  {% else %}
+  <p class="empty" style="padding: 0 12px;">{{ empty }}</p>
+  {% endfor %}
+  <p class="empty check-none" style="padding: 0 12px;" hidden>Nothing matches that filter.</p>
+</div>
+{% endmacro %}

@@ -439,6 +439,184 @@ def test_saved_copies_have_readable_times():
     assert '<time class="local-time"' in page.split("Saved copies")[1], "times go through the local_time filter"
 
 
+def test_yaml_keeps_the_way_you_write_it():
+    _reset()
+    text = "description: Disk usage\nrisk: low\nargv: [df, -h]\nparams: {}\n"
+    base = cl.current_version()
+    assert _form(admin, "/commands/save", name="disk-usage", text="description: Disk usage\nrisk: low\nargv: [df, -h]\n", base=base, is_new="1").status_code == 303
+    editor = admin.get("/commands/edit?name=disk-usage").text
+    assert "argv: [df, -h]" in editor and "- df" not in editor, editor
+    assert "description: Disk usage" in editor and "risk: low" in editor
+    on_disk = cl.LIBRARY_PATH.read_text()
+    assert "argv: [df, -h]" in on_disk and "- df" not in on_disk, on_disk
+
+    # Parameters stay readable too, and the text survives a trip through the editor unchanged.
+    cl.save_command("restart", RESTART)
+    cl.save_host("gandalf", GANDALF)
+    text = cl.LIBRARY_PATH.read_text()
+    assert "values: [sonarr, radarr]" in text and "commands: [restart]" in text, text
+    assert yaml.safe_load(text)["commands"]["restart"] == RESTART
+    again = cl.dump_yaml(yaml.safe_load(text))
+    assert again == text, "dumping what we dumped must not change it"
+    assert cl.dump_yaml(cl.command_body("restart")) == cl.dump_yaml(RESTART)
+    # Long descriptions are not folded across lines.
+    long_desc = "word " * 60
+    cl.save_command("wordy", {"description": long_desc.strip(), "argv": ["uptime"]})
+    assert long_desc.strip() in cl.LIBRARY_PATH.read_text()
+    # Awkward strings are still quoted so they read back the same.
+    cl.save_command("tricky", {"description": "yes", "argv": ["echo", "no", "on", "{x}", "- dash", "a: b"], "params": {"x": {"type": "enum", "values": ["1", "true", "null"]}}})
+    assert cl.load()[0].commands["tricky"].argv == ["echo", "no", "on", "{x}", "- dash", "a: b"]
+    assert cl.load()[0].commands["tricky"].params["x"]["values"] == ["1", "true", "null"]
+
+
+def test_saved_copies_say_what_changed():
+    old = {"commands": {"a": {"description": "x", "argv": ["uptime"]}}, "hosts": {}}
+    def d(new, o=old):
+        return cl.describe_changes(yaml.safe_dump(o), yaml.safe_dump(new))
+    assert d(old) == "no change to commands or hosts"
+    assert d({"commands": {"a": {"description": "x", "argv": ["uptime"]}, "b": {"description": "y", "argv": ["df"]}}, "hosts": {}}) == "added command b"
+    assert d({"commands": {}, "hosts": {}}) == "removed command a"
+    assert d({"commands": {"a": {"description": "changed", "argv": ["uptime"]}}, "hosts": {}}) == "changed command a"
+    assert d({"commands": {"c": {"description": "x", "argv": ["uptime"]}}, "hosts": {}}) == "renamed command a to c"
+    assert d({"commands": {"a": old["commands"]["a"]}, "hosts": {"h": {"address": "x", "user": "u"}}}) == "added host h"
+    many = {"commands": {n: {"description": n, "argv": ["uptime"]} for n in "abcdef"}, "hosts": {}}
+    assert d(many) == "added command b; added command c; added command d; and 3 more"
+    assert "could not read" in cl.describe_changes("a: [broken", yaml.safe_dump(old))
+
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_host("gandalf", GANDALF)
+    cl.save_host("gandalf", {**GANDALF, "port": 2222})
+    cl.save_command("restart", {**RESTART, "description": "edited"})
+    cl.save_command("restart", {**RESTART, "description": "edited"}, rename_from=None)
+    versions = cl.list_versions()
+    changes = [v["change"] for v in versions]
+    assert changes[0] == "no change to commands or hosts" or changes[0] == "changed command restart", changes
+    assert "changed command restart" in changes and "changed host gandalf" in changes and "added host gandalf" in changes, changes
+    assert changes[-1] == "added host gandalf", "no copy is kept of the file that did not exist yet, so the oldest is after the first save"
+
+    # The page lists the summaries and links to a viewer.
+    page = admin.get("/commands").text
+    assert "added host gandalf" in page and "changed command restart" in page
+    assert f'/commands/history/{versions[0]["id"]}"' in page
+
+    # The viewer shows what restoring would undo, and the whole copy.
+    oldest = versions[-1]
+    r = admin.get(f"/commands/history/{oldest['id']}")
+    assert r.status_code == 200 and "What restoring it would change" in r.text
+    diff = cl.diff_with_current(oldest["id"])
+    assert any(line.startswith("-") and "gandalf" in line for line in diff), diff
+    assert any(line.startswith("-") and "gandalf" in line for line in r.text.replace("&#34;", '"').splitlines()) or "gandalf" in r.text
+    mid = next(v for v in versions if v["change"] == "added host gandalf")
+    body = admin.get(f"/commands/history/{mid['id']}").text
+    assert "- " in body and "gandalf" in body, "the host that was added later shows as something restore would remove"
+    assert "Restore this copy" in body and "disabled" not in body.split("Restore this copy")[0].rsplit("<button", 1)[1]
+    r = _form(admin, f"/commands/history/{mid['id']}/restore", base=cl.current_version())
+    assert r.status_code == 303 and "gandalf" not in cl.load()[0].hosts
+
+    # Bad ids are 404, never a file read.
+    for bad in ("..%2fcommands", "nope", "20990101T000000000000Z", "../../etc/hostname"):
+        assert admin.get(f"/commands/history/{bad}").status_code in (404, 405), bad
+    assert admin.get("/commands/history/20990101T000000000000Z").status_code == 404
+    _, token = agents.create_agent("viewer-intruder")
+    r = client.get(f"/commands/history/{versions[0]['id']}", headers={"Authorization": f"Bearer {token}"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+
+    command_admin.AUTH_DISABLED = True
+    try:
+        assert "disabled" in admin.get(f"/commands/history/{versions[0]['id']}").text, "restore button is greyed out while login is disabled"
+    finally:
+        command_admin.AUTH_DISABLED = False
+
+
+def test_rename_a_command_in_use():
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_command("logs", LOGS)
+    cl.save_host("gandalf", {**GANDALF, "commands": ["restart", "logs"]})
+    cl.save_host("frodo", {"address": "10.0.0.2", "user": "ansible", "commands": ["logs"]})
+    cl.load()
+    role = agents.create_role("rename-role")
+    agents.set_role_commands(role.id, ["restart", "logs"])
+    agent, token = agents.create_agent("rename-agent")
+    agents.assign_role(agent.id, role.id)
+    base = cl.current_version()
+    text = yaml.safe_dump(RESTART, sort_keys=False)
+
+    # Rename through the page: library key, hosts and roles all follow, in one step.
+    r = _form(admin, "/commands/save", name="restart-container", text=text, base=base, original="restart")
+    assert r.status_code == 303 and "Renamed" in r.headers["location"], r.headers.get("location")
+    library = cl.load()[0]
+    assert "restart" not in library.commands and "restart-container" in library.commands
+    assert list(library.commands) == ["restart-container", "logs"], "order is kept"
+    assert library.hosts["gandalf"].commands == ["restart-container", "logs"] and library.hosts["frodo"].commands == ["logs"]
+    assert agents.role_commands(role.id) == ["logs", "restart-container"]
+    with Session(engine) as session:
+        agent = session.get(type(agent), agent.id)
+    assert agents.check_command(agent, "restart-container", "gandalf") == ""
+    assert "no permission" in agents.check_command(agent, "restart", "gandalf"), "the old name no longer works"
+    assert not cl.load()[1]
+    with Session(engine) as session:
+        entry = [a for a in session.exec(select(AdminAudit).where(AdminAudit.action == "rename command")).all()][-1]
+    assert "restart -> restart-container" in entry.detail
+
+    # The editor opens under the new name; renaming and editing can happen together.
+    assert "restart-container" in admin.get("/commands/edit?name=restart-container").text
+    edited = yaml.safe_dump({**RESTART, "description": "Restart it"}, sort_keys=False)
+    r = _form(admin, "/commands/save", name="bounce", text=edited, base=cl.current_version(), original="restart-container")
+    assert r.status_code == 303
+    assert cl.load()[0].commands["bounce"].description == "Restart it" and cl.load()[0].hosts["gandalf"].commands == ["bounce", "logs"]
+    assert agents.role_commands(role.id) == ["bounce", "logs"]
+    summaries = " | ".join(v["change"] for v in cl.list_versions())
+    assert "renamed command restart to restart-container" in summaries, summaries
+    assert "added command bounce; removed command restart-container" in summaries, "renamed AND edited reads as a replacement"
+
+    # Refusals leave everything exactly as it was.
+    before = (cl.LIBRARY_PATH.read_text(), agents.role_commands(role.id))
+    for kwargs, contains in [
+        (dict(name="logs", original="bounce", text=edited), "already exists"),
+        (dict(name="bad name!", original="bounce", text=edited), "command name"),
+        (dict(name="", original="bounce", text=edited), None),
+        (dict(name="ghost2", original="no-such", text=edited), "no such command"),
+    ]:
+        r = _form(admin, "/commands/save", base=cl.current_version(), **kwargs)
+        assert r.status_code in (400, 422), (kwargs, r.status_code)
+        if contains:
+            assert contains in r.text, (kwargs, r.text[:300])
+    r = _form(admin, "/commands/save", name="stale-rename", text=edited, base="stale", original="bounce")
+    assert r.status_code == 400 and "changed since" in r.text
+    assert (cl.LIBRARY_PATH.read_text(), agents.role_commands(role.id)) == before
+
+    # If the file cannot be written after the roles were moved, the roles move back.
+    real = os.replace
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    os.replace = boom
+    try:
+        try:
+            _form(admin, "/commands/save", name="never", text=edited, base=cl.current_version(), original="bounce")
+        except OSError:
+            pass
+    finally:
+        os.replace = real
+    assert agents.role_commands(role.id) == ["bounce", "logs"], "role entries must follow the file, not run ahead of it"
+    assert "bounce" in cl.load()[0].commands and "never" not in cl.load()[0].commands
+
+    # Hand-renaming in the file is not a rename: roles lose it (nothing says it is the same command).
+    cl.LIBRARY_PATH.write_text(cl.LIBRARY_PATH.read_text().replace("bounce", "hand-renamed"))
+    assert not cl.load()[1] and "hand-renamed" in cl.load()[0].commands
+    assert agents.role_commands(role.id) == ["logs"]
+
+    # Locked while login is disabled.
+    command_admin.AUTH_DISABLED = True
+    try:
+        r = _form(admin, "/commands/save", name="locked-name", text=edited, base=cl.current_version(), original="hand-renamed")
+        assert r.status_code == 400 and "ULMO_DISABLE_AUTH" in r.text
+    finally:
+        command_admin.AUTH_DISABLED = False
+    assert "locked-name" not in cl.load()[0].commands
+
+
 # --- the page ---------------------------------------------------------------------------------
 
 
@@ -461,7 +639,7 @@ def test_commands_page():
 
     # The saved command opens for editing, and changes round-trip.
     r = admin.get("/commands/edit?name=restart")
-    assert r.status_code == 200 and "docker" in r.text and "readonly" in r.text
+    assert r.status_code == 200 and "docker" in r.text and "readonly" not in r.text, "the name can be changed"
     assert admin.get("/commands/edit?name=ghost").status_code == 400
 
     # Errors keep the text and say why; nothing is written.
@@ -535,7 +713,7 @@ def test_commands_page():
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and "gandalf" in r.text
     versions = cl.list_versions()
     assert versions
-    assert admin.get(f"/commands/history/{versions[0]['id']}").status_code in (404, 405), "no per-copy download route"
+    assert admin.get(f"/commands/history/{versions[0]['id']}").status_code == 200, "a saved copy can be viewed"
     before = cl.current_version()
     r = _form(admin, f"/commands/history/{versions[-1]['id']}/restore", base=before)
     assert r.status_code == 303 and cl.current_version() != before
@@ -592,6 +770,142 @@ def test_page_is_admin_only_and_locked_without_login():
     assert cl.current_version() == base, "nothing may change while login is disabled"
 
 
+def test_checklist_pieces():
+    css = Path("app/static/style.css").read_text()
+    assert ".check-item[hidden]" in css and "display: none" in css.split(".check-item[hidden]")[1].split("}")[0], \
+        "a rule that keeps filtered rows hidden (display:flex on .check-item would otherwise win)"
+    for needed in (".actions", ".checklist", ".panel", ".form-grid"):
+        assert needed in css, needed
+    import re
+    assert re.search(r"a\.btn[^{]*\{[^}]*display:\s*inline-block", css), "links styled as buttons must be laid out like buttons"
+    base = admin.get("/commands").text
+    assert '/static/filter.js?v=' in base, "the filter script is loaded on every page"
+    assert admin.get("/static/filter.js").status_code == 200
+    node = shutil.which("node")
+    if node:  # the script must at least parse (this environment has no browser to run it in)
+        import subprocess
+        assert subprocess.run([node, "--check", "app/static/filter.js"], capture_output=True).returncode == 0
+    # A long list of commands gets a filter box; a short one does not.
+    _reset()
+    for i in range(8):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    page = admin.get("/commands").text
+    assert 'data-filter="#host-commands"' in page and 'placeholder="Filter 8 items"' in page
+    _reset()
+    cl.save_command("only", {"description": "d", "argv": ["uptime"]})
+    assert "data-filter=" not in admin.get("/commands").text
+    # Actions are buttons, not bare links.
+    cl.save_host("h", {"address": "10.0.0.1", "user": "root", "commands": ["only"]})
+    page = admin.get("/commands").text
+    for label in ("Edit", "New command", "Download commands.yml"):
+        assert f'class="btn' in page and label in page
+    import re
+    assert not re.findall(r'<a href="/commands[^"]*">(?:Edit|View|New command|Back|Cancel)</a>', page), "no plain-link actions"
+    # The other pages' actions are buttons too: the editor, and a saved copy's page.
+    editor = admin.get("/commands/edit?name=only").text
+    assert editor.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Cancel"
+    cl.save_command("only", {"description": "d2", "argv": ["uptime"]})
+    version = cl.list_versions()[0]["id"]
+    viewer = admin.get(f"/commands/history/{version}").text
+    assert viewer.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Back"
+    for html in (editor, viewer):
+        assert not re.findall(r'<a href="/commands"[^>]*>(?:Back|Cancel|Back to commands)</a>', html), "no plain-link Back/Cancel"
+    # A long Offers list is folded; a short one is shown.
+    cl.save_host("busy", {"address": "10.0.0.2", "user": "root", "commands": ["only"]})
+    for i in range(8):
+        cl.save_command(f"x{i}", {"description": "d", "argv": ["uptime"]})
+    cl.save_host("busy", {"address": "10.0.0.2", "user": "root", "commands": [f"x{i}" for i in range(8)]})
+    page = admin.get("/commands").text
+    assert "<summary>8 commands</summary>" in page
+
+
+def test_select_all_markup():
+    _reset()
+    for i in range(3):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    cl.save_host("h", {"address": "10.0.0.1", "user": "root", "commands": ["c1"]})
+    page = admin.get("/commands?host=h").text
+    assert page.count('data-check="all" data-target="#host-commands"') == 1 and page.count('data-check="none" data-target="#host-commands"') == 1
+    assert 'type="button" class="secondary" data-check="all"' in page, "must not submit the form"
+    assert ">1 of 3 selected<" in page, "the count starts from what is already ticked"
+    assert 'class="empty check-none"' in page and "hidden>Nothing matches that filter." in page, "a no-match line exists, hidden"
+    assert "data-filter=" not in page, "three items need no filter box, but still get Select all"
+    # One item (or none) needs no toolbar.
+    _reset()
+    cl.save_command("only", {"description": "d", "argv": ["uptime"]})
+    assert "data-check=" not in admin.get("/commands").text
+    # The Agents page gets the same controls on every role's list.
+    for i in range(3):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    role = agents.create_role("select-all-role")
+    agents.set_role_commands(role.id, ["c0", "c2"])
+    agents_page = admin.get("/agents").text
+    assert f'data-target="#role-commands-{role.id}"' in agents_page and ">2 of 4 selected<" in agents_page.split(f'id="role-commands-{role.id}"')[0].rsplit('check-tools', 1)[1]
+
+
+def test_select_all_script_behaviour():
+    node = shutil.which("node")
+    if not node:
+        print("  (node not found: skipping the script behaviour check)")
+        return
+    import subprocess
+    harness = r"""
+const fs = require("fs"), assert = require("assert");
+const handlers = {};
+const names = ["disk-usage", "disk-inodes", "docker-ps", "uptime"];
+const items = names.map((n, i) => ({ hidden: false, textContent: n.toUpperCase() + " Some Description", input: { checked: n === "docker-ps" },
+                                      querySelector() { return this.input; } }));
+const countEl = { textContent: "" };
+const noneEl = { hidden: true };
+const list = { id: "L", querySelectorAll(sel) { return sel === ".check-item" ? items : sel === "input:checked" ? items.map(i => i.input).filter(i => i.checked) : []; },
+               closest(sel) { return sel === ".checklist" ? this : null; } };
+const box = { value: "", getAttribute() { return "#L"; } };
+const document = {
+  addEventListener(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
+  querySelector(sel) { return sel === "#L" ? list : sel === '[data-count-for="#L"]' ? countEl : sel === "#L .check-none" ? noneEl : null; },
+  querySelectorAll(sel) { return sel === "#L .check-item" ? items : []; },
+};
+new Function("document", fs.readFileSync("app/static/filter.js", "utf8"))(document);
+const fire = (type, target) => handlers[type].forEach(h => h({ target }));
+const typeFilter = v => { box.value = v; fire("input", { closest: s => (s === "[data-filter]" ? box : null) }); };
+const press = what => fire("click", { closest: s => (s === "[data-check]" ? { getAttribute: n => (n === "data-check" ? what : "#L") } : null) });
+const state = () => items.map(i => (i.input.checked ? 1 : 0)).join("");
+const shown = () => items.map(i => (i.hidden ? 0 : 1)).join("");
+
+typeFilter("disk");
+assert.strictEqual(shown(), "1100", "filter hides non-matching rows");
+assert.strictEqual(noneEl.hidden, true, "the no-match line stays hidden while something matches");
+typeFilter("zzz");
+assert.strictEqual(shown(), "0000");
+assert.strictEqual(noneEl.hidden, false, "a filter that matches nothing says so");
+typeFilter("disk");
+assert.strictEqual(noneEl.hidden, true);
+press("all");
+assert.strictEqual(state(), "1110", "Select all ticks the shown rows and leaves hidden ones alone");
+assert.strictEqual(countEl.textContent, "3 of 4 selected");
+press("none");
+assert.strictEqual(state(), "0010", "Clear unticks only the shown rows; the hidden ticked one stays");
+assert.strictEqual(countEl.textContent, "1 of 4 selected");
+typeFilter("");
+assert.strictEqual(shown(), "1111", "clearing the filter shows everything again");
+press("all");
+assert.strictEqual(state(), "1111");
+assert.strictEqual(countEl.textContent, "4 of 4 selected");
+items[1].input.checked = false;
+fire("change", { closest: s => (s === ".checklist" ? list : null) });
+assert.strictEqual(countEl.textContent, "3 of 4 selected", "ticking by hand updates the count");
+press("none");
+assert.strictEqual(state(), "0000");
+typeFilter("DoCkEr");
+assert.strictEqual(shown(), "0010", "the filter ignores case (rows are upper case here, the typed text is mixed)");
+fire("click", { closest: () => null });  // clicks elsewhere do nothing
+fire("input", { closest: () => null });
+console.log("script ok");
+"""
+    r = subprocess.run([node, "-e", harness], capture_output=True, text=True)
+    assert r.returncode == 0 and "script ok" in r.stdout, r.stdout + r.stderr
+
+
 def test_history_setting():
     r = admin.post("/settings", data={"git_repo_url": "", "git_branch": "main", "playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml",
                                       "requirements_path": "", "git_sync_cron": "", "extra_args": "", "recent_runs_count": "5",
@@ -624,8 +938,14 @@ def main():
     test_restore_recovers_from_an_unreadable_file()
     test_saved_copies_have_readable_times()
     test_commands_page()
+    test_yaml_keeps_the_way_you_write_it()
+    test_saved_copies_say_what_changed()
+    test_rename_a_command_in_use()
     test_preview_shows_what_the_host_receives()
     test_page_is_admin_only_and_locked_without_login()
+    test_checklist_pieces()
+    test_select_all_markup()
+    test_select_all_script_behaviour()
     test_history_setting()
     print("OK: the command library validates strictly, versions every change, and is edited safely from the Commands page.")
 

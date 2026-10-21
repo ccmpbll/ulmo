@@ -41,6 +41,10 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
         {
             "library": library,
             "commands": sorted(library.commands.values(), key=lambda t: t.id),
+            "command_items": [
+                (t.id, t.description + (f" · risk {t.risk}" if t.risk else ""))
+                for t in sorted(library.commands.values(), key=lambda t: t.id)
+            ],
             "hosts": sorted(library.hosts.values(), key=lambda h: h.name),
             "offered_by": {n: library.hosts_offering(n) for n in library.commands},
             "editing_host": library.hosts.get(host),
@@ -57,12 +61,12 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
     )
 
 
-def _editor(request: Request, name: str, text: str, is_new: bool, error=None, preview=None, samples="", status_code=None):
+def _editor(request: Request, name: str, text: str, is_new: bool, error=None, preview=None, samples="", status_code=None, original=None):
     return templates.TemplateResponse(
         request,
         "command_edit.html",
-        {"name": name, "text": text, "is_new": is_new, "base": command_library.current_version(), "error": error,
-         "preview": preview, "samples": samples},
+        {"name": name, "original": name if original is None else original, "text": text, "is_new": is_new,
+         "base": command_library.current_version(), "error": error, "preview": preview, "samples": samples},
         status_code=status_code or (400 if error else 200),
     )
 
@@ -82,11 +86,11 @@ def edit_command(request: Request, name: str = ""):
         return _page(request, error=str(exc))
     if not body:
         return _page(request, error=f"No command named {name!r}.")
-    return _editor(request, name, yaml.safe_dump(body, sort_keys=False, allow_unicode=True), False)
+    return _editor(request, name, command_library.dump_yaml(body), False)
 
 
 @router.post("/commands/preview", response_class=HTMLResponse)
-def preview_command(request: Request, name: str = Form(""), text: str = Form(""), is_new: str = Form(""), samples: str = Form("")):
+def preview_command(request: Request, name: str = Form(""), text: str = Form(""), is_new: str = Form(""), samples: str = Form(""), original: str = Form("")):
     try:
         template = command_library.parse_command_text(name or "preview", text)
         values = command_library.validate_params(template, command_library.sample_values(template, samples))
@@ -94,7 +98,7 @@ def preview_command(request: Request, name: str = Form(""), text: str = Form("")
         preview = {"ok": True, "text": f"The host would receive: {line}"}
     except ValueError as exc:
         preview = {"ok": False, "text": str(exc)}
-    return _editor(request, name, text, bool(is_new), preview=preview, samples=samples, status_code=200)
+    return _editor(request, name, text, bool(is_new), preview=preview, samples=samples, status_code=200, original=original)
 
 
 @router.post("/commands/save", response_class=HTMLResponse)
@@ -104,19 +108,38 @@ def save_command(
     text: str = Form(""),
     base: str = Form(""),
     is_new: str = Form(""),
+    original: str = Form(""),
     user=Depends(require_login),
 ):
-    name = name.strip()
+    name, original = name.strip(), original.strip()
+    renaming = bool(original) and not is_new and name != original
     if AUTH_DISABLED:
-        return _editor(request, name, text, bool(is_new), error=LOGIN_REQUIRED)
+        return _editor(request, name, text, bool(is_new), error=LOGIN_REQUIRED, original=original)
+    moved = []
     try:
         template = command_library.parse_command_text(name, text)
         if is_new and name in command_library.load()[0].commands:
             raise ValueError(f"A command named {name!r} already exists.")
-        command_library.save_command(name, yaml.safe_load(text), base)
+
+        def move_roles():  # runs once the new library is known to be valid, just before the swap
+            agents.rename_role_command(original, name)
+            moved.append(True)
+
+        try:
+            command_library.save_command(
+                name, yaml.safe_load(text), base,
+                rename_from=original if renaming else None, before_write=move_roles if renaming else None,
+            )
+        except Exception:
+            if moved:  # the swap itself failed after the roles were moved: put them back
+                agents.rename_role_command(name, original)
+            raise
     except ValueError as exc:
-        return _editor(request, name, text, bool(is_new), error=str(exc))
+        return _editor(request, name, text, bool(is_new), error=str(exc), original=original)
     what = shlex.join(template.argv) + (" (sudo)" if template.sudo else "") + f", timeout {template.timeout}s, params: {', '.join(template.params) or 'none'}"
+    if renaming:
+        agents.admin_audit(user.username, "rename command", f"{original} -> {name}: {what}")
+        return RedirectResponse(f"/commands?ok=Renamed+{original}+to+{name}", status_code=303)
     agents.admin_audit(user.username, "save command", f"{name}: {what}")
     return RedirectResponse(f"/commands?ok=Saved+{name}", status_code=303)
 
@@ -196,6 +219,20 @@ def download_library():
         command_library.read_text(),
         media_type="application/x-yaml",
         headers={"Content-Disposition": "attachment; filename=commands.yml"},
+    )
+
+
+@router.get("/commands/history/{version_id}", response_class=HTMLResponse)
+def view_version(request: Request, version_id: str):
+    try:
+        text = command_library.version_text(version_id)
+    except ValueError:
+        return _page(request, error="No such saved copy.", status_code=404)
+    version = next((v for v in command_library.list_versions() if v["id"] == version_id), None)
+    return templates.TemplateResponse(
+        request,
+        "command_version.html",
+        {"version": version, "text": text, "diff": command_library.diff_with_current(version_id), "base": command_library.current_version(), "locked": AUTH_DISABLED},
     )
 
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import checklist %}
 {% block title %}Agents - ulmo{% endblock %}
 {% block content %}
 <div class="page-header"><h1>Agents</h1></div>
@@ -17,7 +18,7 @@
   <div class="card">
     <form method="post" action="/agent-runs/toggle">
       {% if runs_enabled %}
-      <span class="badge success">on</span> Agents can start playbooks they have a grant for.
+      <span class="badge success">on</span> Agents can start the playbooks and commands their role allows.
       <button type="submit" class="danger">Switch off</button>
       {% else %}
       <span class="badge failed">off</span> No agent can start a run. Reading and cancelling still work.
@@ -50,13 +51,11 @@
           <td><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
           <td>{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
           <td>{{ a.last_used_at | local_time }}</td>
-          <td>
-            <form method="post" action="/agents/{{ a.id }}/toggle" style="display:inline">
-              <button type="submit" class="secondary">{{ 'Disable' if a.enabled else 'Enable' }}</button>
-            </form>
-            <form method="post" action="/agents/{{ a.id }}/delete" style="display:inline" onsubmit="return confirm('Delete agent {{ a.name }}? Its token stops working immediately.');">
-              <button type="submit" class="danger">Delete</button>
-            </form>
+          <td class="actions-cell">
+            <div class="actions">
+              <form method="post" action="/agents/{{ a.id }}/toggle"><button type="submit" class="secondary">{{ 'Disable' if a.enabled else 'Enable' }}</button></form>
+              <form method="post" action="/agents/{{ a.id }}/delete" onsubmit="return confirm('Delete agent {{ a.name }}? Its token stops working immediately.');"><button type="submit" class="danger">Delete</button></form>
+            </div>
           </td>
         </tr>
         {% else %}
@@ -64,94 +63,96 @@
         {% endfor %}
       </tbody>
     </table>
-    <hr style="border-color: var(--border); margin: 16px 0;" />
-    <form method="post" action="/agents">
-      <label>Name<input type="text" name="name" required maxlength="40" placeholder="n8n" /></label>
-      <label>Role
-        <select name="role_id">
-          <option value="">none (read only)</option>
-          {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
-        </select>
-      </label>
-      <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
-      <button type="submit" class="secondary">Create agent</button>
-    </form>
   </div>
+  <div class="card">
+    <div class="section-head"><h3>Create an agent</h3></div>
+    <form method="post" action="/agents">
+      <div class="form-grid">
+        <label>Name<input type="text" name="name" required maxlength="40" placeholder="n8n" /></label>
+        <label>Role
+          <select name="role_id">
+            <option value="">none (read only)</option>
+            {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
+      </div>
+      <div class="actions form-actions"><button type="submit" class="secondary">Create agent</button></div>
+    </form>
+</div>
 </div>
 
 <div class="settings-section">
-  <h2>Roles and grants</h2>
+  <h2>Roles</h2>
   <div class="card">
-    <p class="muted">A grant lets a role run one playbook on specific hosts. Anything not granted is denied; an agent's limit must be hosts named in the grant.</p>
+    <p class="muted">A role says what an agent may use: <strong>playbook grants</strong> (a playbook on specific hosts from the Ansible inventory) and <strong>commands</strong> (from the <a href="/commands">Commands</a> page). Anything not listed is denied.</p>
     {% for r in roles %}
-    <div class="role-block" style="margin-bottom:16px;">
-      <strong>{{ r.name }}</strong>
-      <form method="post" action="/roles/{{ r.id }}/delete" style="display:inline" onsubmit="return confirm('Delete role {{ r.name }}? Agents on it lose the ability to run anything.');">
-        <button type="submit" class="danger">Delete role</button>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>{{ r.name }}</h3>
+        <form method="post" action="/roles/{{ r.id }}/delete" onsubmit="return confirm('Delete role {{ r.name }}? Agents on it lose the ability to run anything.');">
+          <button type="submit" class="danger">Delete role</button>
+        </form>
+      </div>
+
+      <div class="subhead">Commands</div>
+      <form method="post" action="/roles/{{ r.id }}/commands">
+        {{ checklist("role-commands-" ~ r.id, "commands", command_items, role_commands[r.id], "No commands yet. Add some on the Commands page.") }}
+        {% for name in role_commands[r.id] if name not in library_commands %}
+        <p class="error">{{ name }} is no longer in the command library (ignored). Save to remove it.</p>
+        {% endfor %}
+        {% if library_commands %}
+        <div class="actions form-actions"><button type="submit" class="secondary">Save commands</button></div>
+        {% endif %}
       </form>
+
+      <div class="subhead">Playbook grants</div>
+      {% if grants[r.id] %}
       <table>
         <tbody>
           {% for g in grants[r.id] %}
           <tr>
             <td>{{ g.playbook }}</td>
             <td class="muted">{{ g.hosts.replace(',', ', ') }}</td>
-            <td>
-              <form method="post" action="/grants/{{ g.id }}/delete">
-                <button type="submit" class="danger">Remove</button>
-              </form>
+            <td class="actions-cell">
+              <form method="post" action="/grants/{{ g.id }}/delete"><button type="submit" class="danger">Remove</button></form>
             </td>
           </tr>
-          {% else %}
-          <tr><td colspan="3" class="muted">No grants: this role can read but not run.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-      <details {{ 'open' if role_commands[r.id] }}>
-        <summary class="muted">Commands this role may use{% if role_commands[r.id] %} ({{ role_commands[r.id] | length }}){% endif %}</summary>
-        <form method="post" action="/roles/{{ r.id }}/commands">
-          {% for name in library_commands %}
-          <div>
-            <label class="tag-chip"><input type="checkbox" name="commands" value="{{ name }}" {{ 'checked' if name in role_commands[r.id] }} /> {{ name }}</label>
-            <span class="muted">{% if offered_by[name] %}runs on {{ offered_by[name] | join(', ') }}{% else %}no host offers this yet{% endif %}</span>
-          </div>
-          {% else %}
-          <p class="muted">No commands yet. Add some on the <a href="/commands">Commands</a> page.</p>
-          {% endfor %}
-          {% for name in role_commands[r.id] if name not in library_commands %}
-          <p class="error">{{ name }} is no longer in the command library (ignored). Save to remove it.</p>
-          {% endfor %}
-          {% if library_commands %}<button type="submit" class="secondary">Save commands</button>{% endif %}
-        </form>
-      </details>
+      {% else %}
+      <p class="empty">No playbook grants: this role cannot run playbooks.</p>
+      {% endif %}
       {% if playbooks and hosts %}
       <details>
-        <summary class="muted">Add a grant</summary>
+        <summary class="btn secondary">Add a playbook grant</summary>
         <form method="post" action="/roles/{{ r.id }}/grants">
           <label>Playbook
             <select name="playbook">
               {% for pb in playbooks %}<option value="{{ pb.rel_path }}">{{ pb.rel_path }}</option>{% endfor %}
             </select>
           </label>
-          <div class="chip-list">
-            {% for h in hosts %}
-            <label class="tag-chip"><input type="checkbox" name="hosts" value="{{ h }}" /> {{ h }}</label>
-            {% endfor %}
-          </div>
-          <button type="submit" class="secondary">Add grant</button>
+          <div class="subhead">Hosts it may run on</div>
+          {{ checklist("grant-hosts-" ~ r.id, "hosts", host_items, [], "No hosts in the inventory.") }}
+          <div class="actions form-actions"><button type="submit" class="secondary">Add grant</button></div>
         </form>
       </details>
       {% else %}
-      <p class="muted">Sync the repo to list playbooks and hosts before adding grants.</p>
+      <p class="muted">Sync the Ansible repo (Playbooks page) to list playbooks and hosts before adding playbook grants.</p>
       {% endif %}
     </div>
     {% else %}
-    <p class="muted">No roles yet.</p>
+    <p class="empty">No roles yet.</p>
     {% endfor %}
-    <hr style="border-color: var(--border); margin: 16px 0;" />
-    <form method="post" action="/roles">
-      <label>New role<input type="text" name="name" required maxlength="40" placeholder="remediation" /></label>
-      <button type="submit" class="secondary">Create role</button>
-    </form>
+
+    <div class="panel">
+      <div class="panel-head"><h3>New role</h3></div>
+      <form method="post" action="/roles">
+        <label>Name<input type="text" name="name" required maxlength="40" placeholder="remediation" /></label>
+        <div class="actions form-actions"><button type="submit" class="secondary">Create role</button></div>
+      </form>
+    </div>
   </div>
 </div>
 

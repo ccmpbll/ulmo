@@ -34,10 +34,15 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "roles": roles,
             "grants": {r.id: [g for g in grants if g.role_id == r.id] for r in roles},
             "library_commands": sorted(library.commands),
+            "command_items": [
+                (name, f"runs on {', '.join(library.hosts_offering(name))}" if library.hosts_offering(name) else "no host offers this yet")
+                for name in sorted(library.commands)
+            ],
             "role_commands": {r.id: sorted(c.command for c in role_commands if c.role_id == r.id) for r in roles},
             "offered_by": {name: library.hosts_offering(name) for name in library.commands},
             "playbooks": git_sync.list_playbooks(),
             "hosts": inventory.list_hosts(),
+            "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
             "audit": audit,
             "changes": changes,
