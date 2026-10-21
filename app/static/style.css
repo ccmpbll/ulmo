@@ -223,7 +223,10 @@ td.actions-cell .actions { flex-wrap: nowrap; justify-content: flex-end; }
 .check-item input[type="checkbox"] { display: inline-block; width: auto; margin: 3px 0 0; flex: none; }
 .check-item .name { display: block; font-weight: 600; }
 .check-item .meta { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
-.check-filter { margin: 0 0 8px; }
+.check-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.check-tools .check-filter { margin: 0; flex: 1 1 200px; width: auto; }
+.check-tools .check-count { margin-left: auto; font-size: 0.8rem; }
+.check-tools button { padding: 6px 12px; }
 
 /* A role (or other grouped thing) on its own panel inside a card */
 .panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; background: rgba(255, 255, 255, 0.015); }

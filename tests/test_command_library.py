@@ -819,6 +819,93 @@ def test_checklist_pieces():
     assert "<summary>8 commands</summary>" in page
 
 
+def test_select_all_markup():
+    _reset()
+    for i in range(3):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    cl.save_host("h", {"address": "10.0.0.1", "user": "root", "commands": ["c1"]})
+    page = admin.get("/commands?host=h").text
+    assert page.count('data-check="all" data-target="#host-commands"') == 1 and page.count('data-check="none" data-target="#host-commands"') == 1
+    assert 'type="button" class="secondary" data-check="all"' in page, "must not submit the form"
+    assert ">1 of 3 selected<" in page, "the count starts from what is already ticked"
+    assert 'class="empty check-none"' in page and "hidden>Nothing matches that filter." in page, "a no-match line exists, hidden"
+    assert "data-filter=" not in page, "three items need no filter box, but still get Select all"
+    # One item (or none) needs no toolbar.
+    _reset()
+    cl.save_command("only", {"description": "d", "argv": ["uptime"]})
+    assert "data-check=" not in admin.get("/commands").text
+    # The Agents page gets the same controls on every role's list.
+    for i in range(3):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    role = agents.create_role("select-all-role")
+    agents.set_role_commands(role.id, ["c0", "c2"])
+    agents_page = admin.get("/agents").text
+    assert f'data-target="#role-commands-{role.id}"' in agents_page and ">2 of 4 selected<" in agents_page.split(f'id="role-commands-{role.id}"')[0].rsplit('check-tools', 1)[1]
+
+
+def test_select_all_script_behaviour():
+    node = shutil.which("node")
+    if not node:
+        print("  (node not found: skipping the script behaviour check)")
+        return
+    import subprocess
+    harness = r"""
+const fs = require("fs"), assert = require("assert");
+const handlers = {};
+const names = ["disk-usage", "disk-inodes", "docker-ps", "uptime"];
+const items = names.map((n, i) => ({ hidden: false, textContent: n.toUpperCase() + " Some Description", input: { checked: n === "docker-ps" },
+                                      querySelector() { return this.input; } }));
+const countEl = { textContent: "" };
+const noneEl = { hidden: true };
+const list = { id: "L", querySelectorAll(sel) { return sel === ".check-item" ? items : sel === "input:checked" ? items.map(i => i.input).filter(i => i.checked) : []; },
+               closest(sel) { return sel === ".checklist" ? this : null; } };
+const box = { value: "", getAttribute() { return "#L"; } };
+const document = {
+  addEventListener(type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
+  querySelector(sel) { return sel === "#L" ? list : sel === '[data-count-for="#L"]' ? countEl : sel === "#L .check-none" ? noneEl : null; },
+  querySelectorAll(sel) { return sel === "#L .check-item" ? items : []; },
+};
+new Function("document", fs.readFileSync("app/static/filter.js", "utf8"))(document);
+const fire = (type, target) => handlers[type].forEach(h => h({ target }));
+const typeFilter = v => { box.value = v; fire("input", { closest: s => (s === "[data-filter]" ? box : null) }); };
+const press = what => fire("click", { closest: s => (s === "[data-check]" ? { getAttribute: n => (n === "data-check" ? what : "#L") } : null) });
+const state = () => items.map(i => (i.input.checked ? 1 : 0)).join("");
+const shown = () => items.map(i => (i.hidden ? 0 : 1)).join("");
+
+typeFilter("disk");
+assert.strictEqual(shown(), "1100", "filter hides non-matching rows");
+assert.strictEqual(noneEl.hidden, true, "the no-match line stays hidden while something matches");
+typeFilter("zzz");
+assert.strictEqual(shown(), "0000");
+assert.strictEqual(noneEl.hidden, false, "a filter that matches nothing says so");
+typeFilter("disk");
+assert.strictEqual(noneEl.hidden, true);
+press("all");
+assert.strictEqual(state(), "1110", "Select all ticks the shown rows and leaves hidden ones alone");
+assert.strictEqual(countEl.textContent, "3 of 4 selected");
+press("none");
+assert.strictEqual(state(), "0010", "Clear unticks only the shown rows; the hidden ticked one stays");
+assert.strictEqual(countEl.textContent, "1 of 4 selected");
+typeFilter("");
+assert.strictEqual(shown(), "1111", "clearing the filter shows everything again");
+press("all");
+assert.strictEqual(state(), "1111");
+assert.strictEqual(countEl.textContent, "4 of 4 selected");
+items[1].input.checked = false;
+fire("change", { closest: s => (s === ".checklist" ? list : null) });
+assert.strictEqual(countEl.textContent, "3 of 4 selected", "ticking by hand updates the count");
+press("none");
+assert.strictEqual(state(), "0000");
+typeFilter("DoCkEr");
+assert.strictEqual(shown(), "0010", "the filter ignores case (rows are upper case here, the typed text is mixed)");
+fire("click", { closest: () => null });  // clicks elsewhere do nothing
+fire("input", { closest: () => null });
+console.log("script ok");
+"""
+    r = subprocess.run([node, "-e", harness], capture_output=True, text=True)
+    assert r.returncode == 0 and "script ok" in r.stdout, r.stdout + r.stderr
+
+
 def test_history_setting():
     r = admin.post("/settings", data={"git_repo_url": "", "git_branch": "main", "playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml",
                                       "requirements_path": "", "git_sync_cron": "", "extra_args": "", "recent_runs_count": "5",
@@ -857,6 +944,8 @@ def main():
     test_preview_shows_what_the_host_receives()
     test_page_is_admin_only_and_locked_without_login()
     test_checklist_pieces()
+    test_select_all_markup()
+    test_select_all_script_behaviour()
     test_history_setting()
     print("OK: the command library validates strictly, versions every change, and is edited safely from the Commands page.")
 
