@@ -177,6 +177,7 @@ def update_notifications(
     notify_pushover_token: str = Form(""),
     notify_pushover_user: str = Form(""),
     notify_ntfy_url: str = Form(""),
+    public_url: str = Form(""),
 ):
     settings_store.set_many(
         {
@@ -184,6 +185,7 @@ def update_notifications(
             "notify_pushover_token": notify_pushover_token.strip(),
             "notify_pushover_user": notify_pushover_user.strip(),
             "notify_ntfy_url": notify_ntfy_url.strip(),
+            "public_url": public_url.strip(),
         }
     )
     return RedirectResponse("/settings?ok=Notification+settings+saved", status_code=303)

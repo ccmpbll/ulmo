@@ -138,7 +138,7 @@ def test_security_and_privacy():
     _, token = agents.create_agent("activity-intruder")
     for url in ("/activity", "/activity?tab=changes", "/activity?tab=commands"):
         r = client.get(url, headers={"Authorization": f"Bearer {token}"}, follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/login", url
+        assert r.status_code == 303 and r.headers["location"].startswith("/login"), url
         assert client.get(url, follow_redirects=False).status_code == 303
     assert client.post("/activity", follow_redirects=False).status_code in (303, 405)
 
@@ -278,7 +278,7 @@ def test_old_list_pages_redirect_and_detail_pages_stay():
     assert r.status_code == 303 and r.headers["location"] == "/activity?tab=syncs"
     for url in ("/runs", "/logs"):
         anon = client.get(url, follow_redirects=False)
-        assert anon.status_code == 303 and anon.headers["location"] == "/login", "still login-only"
+        assert anon.status_code == 303 and anon.headers["location"].startswith("/login"), "still login-only"
 
     run = _all(RunHistory)[0]
     assert admin.get(f"/runs/{run.id}").status_code == 200

@@ -37,6 +37,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
                 for name in sorted(library.commands)
             ],
             "role_commands": {r.id: sorted(c.command for c in role_commands if c.role_id == r.id) for r in roles},
+            "role_command_items": {r.id: [(c.command, "") for c in sorted(role_commands, key=lambda c: c.command) if c.role_id == r.id] for r in roles},
+            "role_needing": {r.id: sorted(c.command for c in role_commands if c.role_id == r.id and c.requires_approval) for r in roles},
             "offered_by": {name: library.hosts_offering(name) for name in library.commands},
             "playbooks": git_sync.list_playbooks(),
             "hosts": inventory.list_hosts(),
@@ -147,15 +149,16 @@ def add_grant(
     role_id: int,
     playbook: str = Form(...),
     hosts: list[str] = Form([]),
+    requires_approval: str = Form(""),
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        grant = agents.add_grant(role_id, playbook, hosts)
+        grant = agents.add_grant(role_id, playbook, hosts, bool(requires_approval))
     except ValueError as exc:
         return _page(request, error=str(exc))
-    agents.admin_audit(user.username, "add grant", f"role id {role_id}: {grant.playbook} on {grant.hosts}")
+    agents.admin_audit(user.username, "add grant", f"role id {role_id}: {grant.playbook} on {grant.hosts}" + (" (needs approval)" if grant.requires_approval else ""))
     return _back()
 
 
@@ -173,6 +176,36 @@ def set_role_commands(
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "set role commands", f"role id {role_id}: {', '.join(names) or 'none'}")
+    return _back()
+
+
+@router.post("/roles/{role_id}/approval-commands", response_class=HTMLResponse)
+def set_approval_commands(
+    request: Request,
+    role_id: int,
+    commands: list[str] = Form([]),
+    user=Depends(require_login),
+):
+    # Turning approval OFF for a command is a widening, so it is locked like the rest while auth is disabled.
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        names = agents.set_commands_needing_approval(role_id, commands)
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "set commands needing approval", f"role id {role_id}: {', '.join(names) or 'none'}")
+    return _back()
+
+
+@router.post("/grants/{grant_id}/approval")
+def toggle_grant_approval(request: Request, grant_id: int, user=Depends(require_login)):
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        now = agents.toggle_grant_approval(grant_id)
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "grant approval", f"grant id {grant_id}: " + ("needs approval" if now else "runs at once"))
     return _back()
 
 

@@ -63,6 +63,8 @@ class Grant(SQLModel, table=True):
     role_id: int = Field(index=True)
     playbook: str  # rel_path, as listed by git_sync.list_playbooks()
     hosts: str  # comma-separated inventory host names
+    requires_approval: bool = False  # a run waits for an admin's approval before it starts
+
 
 class AgentAudit(SQLModel, table=True):
     """One row per /api/v1 request, allowed or denied."""
@@ -91,6 +93,7 @@ class RoleCommand(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     role_id: int = Field(index=True)
     command: str
+    requires_approval: bool = False  # a call waits for an admin's approval before it runs
 
 
 class CommandRun(SQLModel, table=True):
@@ -116,6 +119,27 @@ class AgentRun(SQLModel, table=True):
 
     run_id: int = Field(primary_key=True)
     agent_id: int = Field(index=True)
+
+
+class Approval(SQLModel, table=True):
+    """An agent's request to run something that needs an admin's say-so. Nothing runs
+    until an admin approves it on the Approvals page; the agent can only look."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    agent_id: int = Field(index=True)
+    agent_name: str = ""
+    kind: str  # command | playbook
+    target: str  # command name or playbook rel_path
+    host: str  # the host for a command; comma-separated --limit hosts for a playbook
+    params: str = "{}"  # JSON of the validated command values
+    line: str = ""  # what would run, as shown to the admin; checked again when approved
+    status: str = "pending"  # pending | approved | denied | expired | failed
+    note: str = ""  # why an approved request could not start
+    run_id: Optional[int] = None  # the CommandRun or RunHistory id, once approved and started
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    expires_at: datetime = Field(default_factory=utcnow)
+    decided_at: Optional[datetime] = None
+    decided_by: str = ""
 
 
 class AdminAudit(SQLModel, table=True):

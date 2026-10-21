@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Approvals - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Approvals</h1></div>
+<p class="muted">What agents asked to run that needs your say-so. Nothing runs until you approve it, and a request nobody decides on expires after 15 minutes.</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="card">
+  <div class="section-head"><h3>Waiting for you</h3></div>
+  {% for a in pending %}
+  <div class="panel">
+    <div class="panel-head">
+      <h3><a href="/approvals/{{ a.id }}">{{ a.agent_name }} wants to run {{ a.target }}</a></h3>
+      <span class="muted">expires {{ a.expires_at | local_time }}</span>
+    </div>
+    <p><code>{{ a.line }}</code>{% if a.kind == "command" %} on <strong>{{ a.host }}</strong>{% endif %}</p>
+    <div class="actions">
+      <form method="post" action="/approvals/{{ a.id }}/approve"><button type="submit">Approve</button></form>
+      <form method="post" action="/approvals/{{ a.id }}/deny"><button type="submit" class="danger">Deny</button></form>
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">Nothing is waiting.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="section-head"><h3>Recent decisions</h3></div>
+  <table>
+    <thead><tr><th>Asked</th><th>Agent</th><th>What</th><th>Outcome</th></tr></thead>
+    <tbody>
+      {% for a in recent %}
+      <tr>
+        <td>{{ a.created_at | local_time }}</td>
+        <td>{{ a.agent_name }}</td>
+        <td><a href="/approvals/{{ a.id }}">{{ a.target }}</a><br /><code class="muted">{{ a.line }}</code>{% if a.kind == "command" %} <span class="muted">on {{ a.host }}</span>{% endif %}</td>
+        <td><span class="badge {{ 'success' if a.status == 'approved' else ('failed' if a.status == 'failed' else 'cancelled') }}">{{ a.status }}</span>{% if a.decided_by %}<br /><span class="muted">{{ a.decided_by }}</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No decisions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

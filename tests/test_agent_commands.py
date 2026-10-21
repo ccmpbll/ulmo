@@ -633,7 +633,7 @@ def test_agents_page_roles_ui():
 
     _, token = agents.create_agent("cmd-intruder")
     r = client.post(f"/roles/{role.id}/commands", data={"commands": ["restart"]}, headers=_h(token), follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
     assert agents.role_commands(role.id) == ["logs"]
 
 

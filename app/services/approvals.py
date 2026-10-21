@@ -1,0 +1,126 @@
+"""Approvals: a role can mark a command or a playbook grant as "needs approval".
+
+A call that needs it is recorded as a pending Approval and nothing runs. An admin
+decides on the Approvals page (cookie login only; no agent token reaches it). On
+approval the run starts through the same path a direct call uses, with every check
+repeated, so a role, host or command that changed while the request waited is
+refused rather than trusted. The agent can only look at its own requests.
+"""
+from datetime import timedelta
+from typing import Callable
+
+from sqlmodel import Session, delete, select, update
+
+from app.database import engine
+from app.models import Agent, Approval, Grant, RoleCommand, utcnow
+
+EXPIRY = timedelta(minutes=15)  # a request nobody decided on this long is dropped
+MAX_PENDING_PER_AGENT = 10  # so a stuck workflow cannot bury the real requests
+KEEP = 500  # newest approvals kept
+
+
+class TooManyPending(ValueError):
+    pass
+
+
+def commands_needing(agent: Agent) -> set[str]:
+    """The command names this agent's role marks as needing approval."""
+    if agent.role_id is None:
+        return set()
+    with Session(engine) as session:
+        return set(
+            session.exec(
+                select(RoleCommand.command).where(RoleCommand.role_id == agent.role_id, RoleCommand.requires_approval == True)  # noqa: E712
+            ).all()
+        )
+
+
+def playbook_needs(agent: Agent, playbook: str, hosts: list[str]) -> bool:
+    """A playbook run needs approval unless the grants that do not ask for it already
+    cover every requested host (grants for one playbook add up, so the freest path wins)."""
+    if agent.role_id is None:
+        return True
+    with Session(engine) as session:
+        mine = session.exec(select(Grant).where(Grant.role_id == agent.role_id, Grant.playbook == playbook)).all()
+    free = {h for g in mine if not g.requires_approval for h in g.hosts.split(",")}
+    return not set(hosts) <= free
+
+
+def expire_stale() -> None:
+    with Session(engine) as session:
+        session.exec(
+            update(Approval).where(Approval.status == "pending", Approval.expires_at < utcnow()).values(status="expired")
+        )
+        session.commit()
+
+
+def create(agent: Agent, kind: str, target: str, host: str, params: str, line: str) -> Approval:
+    expire_stale()
+    with Session(engine) as session:
+        pending = session.exec(select(Approval.id).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
+        if len(pending) >= MAX_PENDING_PER_AGENT:
+            raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
+        row = Approval(
+            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params, line=line,
+            expires_at=utcnow() + EXPIRY,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        session.exec(delete(Approval).where(Approval.id <= row.id - KEEP))
+        session.commit()
+        session.refresh(row)  # the commit expired it, and the caller reads it after the session closes
+        return row
+
+
+def get(approval_id: int) -> Approval | None:
+    expire_stale()
+    with Session(engine) as session:
+        return session.get(Approval, approval_id)
+
+
+def pending() -> list[Approval]:
+    expire_stale()
+    with Session(engine) as session:
+        return list(session.exec(select(Approval).where(Approval.status == "pending").order_by(Approval.id)).all())
+
+
+def recent(limit: int = 50) -> list[Approval]:
+    expire_stale()
+    with Session(engine) as session:
+        return list(
+            session.exec(select(Approval).where(Approval.status != "pending").order_by(Approval.id.desc()).limit(limit)).all()
+        )
+
+
+def pending_count() -> int:
+    return len(pending())
+
+
+def decide(approval_id: int, approve: bool, admin: str, start: Callable[[Approval], int]) -> Approval:
+    """Record the decision, once, and on approval start the run with `start` (which returns
+    the run id or raises an error carrying `.reason`). Raises ValueError if the request is not pending."""
+    expire_stale()
+    with Session(engine) as session:
+        # One conditional UPDATE: two admins (or two taps) cannot both decide the same request.
+        result = session.exec(
+            update(Approval)
+            .where(Approval.id == approval_id, Approval.status == "pending")
+            .values(status="approved" if approve else "denied", decided_by=admin, decided_at=utcnow())
+        )
+        session.commit()
+        row = session.get(Approval, approval_id)
+        if result.rowcount != 1:
+            raise ValueError("No such request." if row is None else f"This request is already {row.status}.")
+        session.expunge(row)
+    if not approve:
+        return row
+    try:
+        run_id = start(row)
+        update_values = {"run_id": run_id}
+    except Exception as exc:  # noqa: BLE001 - whatever stopped it is shown to the admin
+        update_values = {"status": "failed", "note": str(getattr(exc, "reason", exc))[:300]}
+    with Session(engine) as session:
+        session.exec(update(Approval).where(Approval.id == approval_id).values(**update_values))
+        session.commit()
+        return session.get(Approval, approval_id)

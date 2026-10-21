@@ -106,6 +106,15 @@
         {% endif %}
       </form>
 
+      {% if role_commands[r.id] %}
+      <form method="post" action="/roles/{{ r.id }}/approval-commands">
+        <div class="subhead">Commands that need your approval</div>
+        <p class="muted">A call to a ticked command waits on the <a href="/approvals">Approvals</a> page until you approve it. Unticked commands run at once.</p>
+        {{ checklist("role-approval-" ~ r.id, "commands", role_command_items[r.id], role_needing[r.id]) }}
+        <div class="actions form-actions"><button type="submit" class="secondary">Save approvals</button></div>
+      </form>
+      {% endif %}
+
       <div class="subhead">Playbook grants</div>
       {% if grants[r.id] %}
       <table>
@@ -114,8 +123,12 @@
           <tr>
             <td>{{ g.playbook }}</td>
             <td class="muted">{{ g.hosts.replace(',', ', ') }}</td>
+            <td>{% if g.requires_approval %}<span class="badge running">needs approval</span>{% endif %}</td>
             <td class="actions-cell">
-              <form method="post" action="/grants/{{ g.id }}/delete"><button type="submit" class="danger">Remove</button></form>
+              <div class="actions">
+                <form method="post" action="/grants/{{ g.id }}/approval"><button type="submit" class="secondary">{{ 'Run at once' if g.requires_approval else 'Require approval' }}</button></form>
+                <form method="post" action="/grants/{{ g.id }}/delete"><button type="submit" class="danger">Remove</button></form>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -135,6 +148,7 @@
           </label>
           <div class="subhead">Hosts it may run on</div>
           {{ checklist("grant-hosts-" ~ r.id, "hosts", host_items, [], "No hosts in the inventory.") }}
+          <label class="check-item" style="margin-top: 12px;"><input type="checkbox" name="requires_approval" value="1" /><span><span class="name">Needs approval</span><span class="meta">A run waits on the Approvals page until you approve it.</span></span></label>
           <div class="actions form-actions"><button type="submit" class="secondary">Add grant</button></div>
         </form>
       </details>

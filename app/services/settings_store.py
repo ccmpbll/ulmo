@@ -18,6 +18,7 @@ DEFAULTS = {
     "notify_pushover_token": "",
     "notify_pushover_user": "",
     "notify_ntfy_url": "",
+    "public_url": "",  # how you reach ulmo, e.g. https://ulmo.example.com; used for links in notifications
     "command_history_keep": "20",  # saved copies of the command library kept for Restore
 }
 

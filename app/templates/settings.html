@@ -155,6 +155,10 @@
       <label>ntfy URL
         <input type="text" name="notify_ntfy_url" value="{{ settings.notify_ntfy_url }}" placeholder="https://ntfy.sh/my-topic" />
       </label>
+      <label>Public URL of ulmo
+        <input type="text" name="public_url" value="{{ settings.public_url }}" />
+        <span class="muted">Used for the link in approval requests. Leave blank to send them without a link.</span>
+      </label>
       <button type="submit">Save notification settings</button>
     </form>
   </div>

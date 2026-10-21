@@ -170,7 +170,7 @@ def _checked_hosts(hosts: list[str]) -> list[str]:
     return hosts
 
 
-def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
+def add_grant(role_id: int, playbook: str, hosts: list[str], requires_approval: bool = False) -> Grant:
     hosts = _checked_hosts(hosts)
     if playbook not in {p["rel_path"] for p in git_sync.list_playbooks()}:
         raise ValueError("Unknown playbook.")
@@ -183,7 +183,7 @@ def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
     with Session(engine) as session:
         if session.get(Role, role_id) is None:
             raise ValueError("Unknown role.")
-        grant = Grant(role_id=role_id, playbook=playbook, hosts=",".join(hosts))
+        grant = Grant(role_id=role_id, playbook=playbook, hosts=",".join(hosts), requires_approval=requires_approval)
         session.add(grant)
         session.commit()
         session.refresh(grant)
@@ -199,11 +199,42 @@ def set_role_commands(role_id: int, commands: list[str]) -> list[str]:
     with Session(engine) as session:
         if session.get(Role, role_id) is None:
             raise ValueError("Unknown role.")
+        asking = set(  # saving the list again must not quietly drop "needs approval"
+            session.exec(select(RoleCommand.command).where(RoleCommand.role_id == role_id, RoleCommand.requires_approval == True)).all()  # noqa: E712
+        )
         session.exec(delete(RoleCommand).where(RoleCommand.role_id == role_id))
         for name in names:
-            session.add(RoleCommand(role_id=role_id, command=name))
+            session.add(RoleCommand(role_id=role_id, command=name, requires_approval=name in asking))
         session.commit()
     return names
+
+
+def set_commands_needing_approval(role_id: int, commands: list[str]) -> list[str]:
+    """Mark which of the role's commands wait for an admin's approval (all others run at once)."""
+    names = sorted({c.strip() for c in commands if c.strip()})
+    with Session(engine) as session:
+        if session.get(Role, role_id) is None:
+            raise ValueError("Unknown role.")
+        held = set(session.exec(select(RoleCommand.command).where(RoleCommand.role_id == role_id)).all())
+        outside = sorted(set(names) - held)
+        if outside:
+            raise ValueError(f"Not commands of this role: {', '.join(outside)}")
+        for row in session.exec(select(RoleCommand).where(RoleCommand.role_id == role_id)).all():
+            row.requires_approval = row.command in names
+            session.add(row)
+        session.commit()
+    return names
+
+
+def toggle_grant_approval(grant_id: int) -> bool:
+    with Session(engine) as session:
+        grant = session.get(Grant, grant_id)
+        if grant is None:
+            raise ValueError("Unknown grant.")
+        grant.requires_approval = not grant.requires_approval
+        session.add(grant)
+        session.commit()
+        return grant.requires_approval
 
 
 def rename_role_command(old: str, new: str) -> None:
@@ -229,6 +260,14 @@ def purge_missing_commands(library) -> None:
 
 
 command_library.on_valid_load(purge_missing_commands)
+
+
+def role_commands_needing_approval(role_id: int) -> list[str]:
+    with Session(engine) as session:
+        rows = session.exec(
+            select(RoleCommand.command).where(RoleCommand.role_id == role_id, RoleCommand.requires_approval == True)  # noqa: E712
+        ).all()
+    return sorted(rows)
 
 
 def role_commands(role_id: int | None) -> list[str]:

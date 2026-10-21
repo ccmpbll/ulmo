@@ -197,7 +197,7 @@ def test_granted_run_uses_the_runner_unchanged():
     assert len(calls) == before + 1
 
     cat = client.get("/api/v1/catalog", headers=_h(token)).json()
-    assert cat == {"runs_enabled": True, "commands": [], "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"]}]}
+    assert cat == {"runs_enabled": True, "commands": [], "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"], "requires_approval": False}]}
     assert client.get(f"/api/v1/runs/{body['id']}", headers=_h(token)).json()["triggered_by"] == "agent:runner1"
 
 
@@ -330,7 +330,7 @@ def test_admin_side():
     for method, url in [("post", "/roles"), ("post", f"/roles/{role.id}/grants"), ("post", f"/agents/{agent.id}/role"),
                         ("post", "/agent-runs/toggle"), ("post", f"/grants/1/delete"), ("post", f"/roles/{role.id}/delete")]:
         r = getattr(client, method)(url, data={"name": "x", "enable": "1"}, headers=_h(token), follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/login", f"{url}: {r.status_code}"
+        assert r.status_code == 303 and r.headers["location"].startswith("/login"), f"{url}: {r.status_code}"
     assert agents.runs_enabled()
     with Session(engine) as session:
         assert session.get(Role, role.id) is not None

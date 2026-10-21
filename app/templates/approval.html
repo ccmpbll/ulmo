@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Request {{ a.id }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ a.agent_name }} wants to run {{ a.target }}</h1><a class="btn secondary" href="/approvals">All requests</a></div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="card">
+  <p><code>{{ a.line }}</code></p>
+  <p>
+    {% if a.kind == "command" %}On <strong>{{ a.host }}</strong>.{% else %}Playbook <strong>{{ a.target }}</strong> on <strong>{{ a.host.replace(',', ', ') }}</strong>.{% endif %}
+    Asked {{ a.created_at | local_time }} by <strong>{{ a.agent_name }}</strong>.
+  </p>
+  {% if a.status == "pending" %}
+  <p class="muted">Expires {{ a.expires_at | local_time }}. Approving runs it now, exactly as shown.</p>
+  {% if locked %}<p class="error">Approving is off while ULMO_DISABLE_AUTH is set.</p>{% endif %}
+  <div class="actions form-actions">
+    <form method="post" action="/approvals/{{ a.id }}/approve"><button type="submit" {{ 'disabled' if locked }}>Approve</button></form>
+    <form method="post" action="/approvals/{{ a.id }}/deny"><button type="submit" class="danger">Deny</button></form>
+  </div>
+  {% else %}
+  <p>
+    <span class="badge {{ 'success' if a.status == 'approved' else ('failed' if a.status == 'failed' else 'cancelled') }}">{{ a.status }}</span>
+    {% if a.decided_by %}by <strong>{{ a.decided_by }}</strong> {{ a.decided_at | local_time }}{% endif %}
+  </p>
+  {% if a.status == "failed" %}<p class="error">Approved, but it could not start: {{ a.note }}</p>{% endif %}
+  {% if a.run_id %}
+  <p>{% if a.kind == "playbook" %}<a href="/runs/{{ a.run_id }}">Open run {{ a.run_id }}</a>{% else %}<a href="/activity?tab=commands">See it under Activity, command runs</a> (run {{ a.run_id }}){% endif %}</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

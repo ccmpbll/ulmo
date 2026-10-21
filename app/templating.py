@@ -17,6 +17,15 @@ templates.env.globals["AUTH_DISABLED"] = AUTH_DISABLED
 templates.env.globals["APP_VERSION"] = VERSION
 
 
+def _pending_approvals() -> int:
+    from app.services import approvals  # late: the services import the models, which import nothing from here
+
+    return approvals.pending_count()
+
+
+templates.env.globals["pending_approvals"] = _pending_approvals
+
+
 def local_time(ts: datetime | None) -> Markup:
     """Render a UTC timestamp as a <time> tag; local-time.js fills in the
     viewer's own timezone client-side, falling back to UTC text if JS is

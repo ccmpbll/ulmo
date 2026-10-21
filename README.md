@@ -66,6 +66,7 @@ GET  /api/v1/runs/{id}         one run: status, recap, log tail (ANSI stripped, 
 GET  /api/v1/catalog           what this agent may run
 POST /api/v1/runs              start a playbook: {"playbook": "playbooks/x.yml", "limit": ["web1"]}
 POST /api/v1/runs/{id}/cancel  cancel a run this agent started
+GET  /api/v1/approvals/{id}    a request of this agent waiting for approval (see Approvals)
 ```
 
 **Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
@@ -151,6 +152,19 @@ so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dro
 exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept.
 The kill switch covers commands too. Commands do not use the Ansible inventory, and playbook
 grants do not use these hosts.
+
+**Approvals.** A role can mark a command (under "Commands that need your approval") or a playbook
+grant ("Needs approval") as one that waits for you. A call to it answers `202` with
+`{"status": "pending_approval", "approval_id": N}` and nothing runs. Open **Approvals** (top bar,
+with a count of what is waiting) and approve or deny; each request has its own link, so a
+notification can open it directly, and signing in sends you back to it. Approving starts the run
+exactly as shown, after repeating every check a direct call gets, so a command that changed, a
+role that lost it or a switched-off kill switch makes it fail instead of run. The agent polls
+`GET /api/v1/approvals/{id}`: `pending`, then `approved` with a `result_url` to follow, or `denied`,
+`expired` (nobody decided in 15 minutes) or `failed`. At most 10 requests per agent wait at once.
+Only a signed-in admin can decide: an agent token cannot, and while `ULMO_DISABLE_AUTH` is set
+approving is refused. A new request sends a Pushover/ntfy notification (whatever "Notify on" says);
+set **Public URL of ulmo** under Settings -> Notifications to include the link.
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create
