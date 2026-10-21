@@ -19,6 +19,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -51,8 +52,10 @@ LIBRARY = {
     "commands": {
         "restart": {"description": "Restart", "argv": ["docker", "restart", "{container}"], "params": {"container": {"type": "enum", "values": ["sonarr", "radarr"]}}, "risk": "medium"},
         "uptime": {"description": "Uptime", "argv": ["uptime"], "risk": "low"},
+        "logs": {"description": "Log tail", "argv": ["tail", "-n", "{lines}", "/var/log/x"], "params": {"lines": {"type": "int", "min": 1, "max": 500}}},
+        "find": {"description": "Find a domain", "argv": ["pihole", "-q", "{domain}"], "params": {"domain": {"type": "regex", "pattern": "[a-z0-9.-]+", "max_length": 100}}},
     },
-    "hosts": {"frodo": {"address": "10.0.0.7", "port": 22, "user": "ansible", "ssh_key": "k", "commands": ["restart", "uptime"]}},
+    "hosts": {"frodo": {"address": "10.0.0.7", "port": 22, "user": "ansible", "ssh_key": "k", "commands": ["restart", "uptime", "logs", "find"]}},
 }
 
 
@@ -121,7 +124,7 @@ def _h(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _agent(name, asking=(), commands_=("restart", "uptime")):
+def _agent(name, asking=(), commands_=("restart", "uptime", "logs", "find")):
     role = agents.create_role(f"role-{name}")
     agents.set_role_commands(role.id, list(commands_))
     agents.set_commands_needing_approval(role.id, list(asking))
@@ -132,6 +135,14 @@ def _agent(name, asking=(), commands_=("restart", "uptime")):
 
 def _ask(token, command="restart", host="frodo", params=None):
     return client.post("/api/v1/commands?wait=0", json={"command": command, "host": host, "params": params if params is not None else {"container": "sonarr"}}, headers=_h(token))
+
+
+def _notified(count):
+    for _ in range(100):
+        if len(sent) >= count:
+            break
+        time.sleep(0.02)
+    time.sleep(0.1)
 
 
 def _wait_ssh(count):
@@ -165,7 +176,7 @@ def test_flagged_call_waits_unflagged_runs():
     assert r.status_code == 200 and r.json()["status"] == "success", "an unflagged command runs at once"
 
     cat = {c["command"]: c["requires_approval"] for c in client.get("/api/v1/catalog", headers=_h(token)).json()["commands"]}
-    assert cat == {"restart": True, "uptime": False}, cat
+    assert cat == {"restart": True, "uptime": False, "logs": False, "find": False}, cat
 
     # bad parameters are refused as before, not turned into a request
     r = _ask(token, params={"container": "nope"})
@@ -290,10 +301,11 @@ def test_expiry_cap_and_locked_while_auth_is_disabled():
     assert "already expired" in admin.post(f"/approvals/{aid}/approve", follow_redirects=True).text
     assert approvals.pending() == [a for a in approvals.pending() if a.status == "pending"]
 
-    _, capped, _ = _agent("flood", asking=["restart"])
-    for _ in range(approvals.MAX_PENDING_PER_AGENT):
-        assert _ask(capped).status_code == 202
-    r = _ask(capped)
+    _, capped, _ = _agent("flood", asking=["logs"])
+    _agent_row = None
+    for n in range(approvals.MAX_PENDING_PER_AGENT):
+        assert _ask(capped, "logs", params={"lines": n + 1}).status_code == 202
+    r = _ask(capped, "logs", params={"lines": 99})
     assert r.status_code == 429 and "waiting for approval" in r.json()["detail"]
 
     _, locked_token, _ = _agent("lockwait", asking=["restart"])
@@ -388,11 +400,8 @@ def test_notification_names_the_request():
 
     settings_store.set_many({"public_url": "https://ulmo.example.com/"})
     sent.clear()
-    aid = _ask(token).json()["approval_id"]
-    for _ in range(100):
-        if sent:
-            break
-        time.sleep(0.02)
+    aid = _ask(token, params={"container": "radarr"}).json()["approval_id"]
+    _notified(1)
     assert sent[-1][2] == f"https://ulmo.example.com/approvals/{aid}", sent[-1]
     settings_store.set_many({"public_url": ""})
 
@@ -426,6 +435,102 @@ def test_login_returns_to_the_page_and_never_to_another_site():
         assert r.status_code == 303 and r.headers["location"] == "/", f"{evil!r} -> {r.headers['location']}"
     bad = TestClient(app).post("/login", data={"username": "admin", "password": "wrong", "next": "/approvals/7"})
     assert 'name="next" value="/approvals/7"' in bad.text, "a wrong password keeps the destination"
+
+
+def test_int_and_regex_params_survive_approval():
+    _, token, _ = _agent("typed", asking=["logs", "find"])
+    before = len(ssh_calls)
+    lid = _ask(token, "logs", params={"lines": 50}).json()["approval_id"]
+    fid = _ask(token, "find", params={"domain": "example.com"}).json()["approval_id"]
+    assert client.get(f"/api/v1/approvals/{lid}", headers=_h(token)).json()["params"] == {"lines": 50}, "shown as the agent sent it"
+    admin.post(f"/approvals/{lid}/approve")
+    admin.post(f"/approvals/{fid}/approve")
+    assert _approval(lid).status == "approved" and _approval(fid).status == "approved", (_approval(lid).note, _approval(fid).note)
+    _wait_ssh(before + 2)
+    tails = sorted(c[-1] for c in ssh_calls[before:])
+    assert any(t.endswith("tail -n 50 /var/log/x") for t in tails) and any(t.endswith("pihole -q example.com") for t in tails), tails
+
+
+def test_a_retry_does_not_pile_up_requests():
+    agent, token, _ = _agent("retrier", asking=["restart"])
+    sent.clear()
+    first = _ask(token).json()["approval_id"]
+    again = _ask(token).json()
+    assert again["approval_id"] == first and again["status"] == "pending_approval", "the same request is the same approval"
+    other = _ask(token, params={"container": "radarr"}).json()["approval_id"]
+    assert other != first
+    _notified(2)
+    assert len(sent) == 2, "one notification per distinct request, none for the retry"
+    with Session(engine) as session:
+        assert len(session.exec(select(Approval).where(Approval.agent_id == agent.id)).all()) == 2
+    # once decided, the same request can be made again
+    admin.post(f"/approvals/{first}/deny")
+    assert _ask(token).json()["approval_id"] not in (first, other)
+
+
+def test_the_cap_holds_under_concurrent_requests():
+    agent, _, _ = _agent("burst", asking=["logs"])
+    gate = threading.Barrier(30)
+    results = []
+
+    def go(n):
+        gate.wait()
+        try:
+            results.append(approvals.create(agent, "command", "logs", "frodo", {"lines": n}, f"tail -n {n}")[1])
+        except approvals.TooManyPending:
+            results.append(None)
+
+    threads = [threading.Thread(target=go, args=(n + 1,)) for n in range(30)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    with Session(engine) as session:
+        waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
+    assert len(waiting) == approvals.MAX_PENDING_PER_AGENT == results.count(True), (len(waiting), results.count(True))
+
+
+def test_deleting_an_agent_removes_its_requests():
+    agent, token, _ = _agent("leaver", asking=["restart"])
+    aid = _ask(token).json()["approval_id"]
+    agents.delete_agent(agent.id)
+    assert _approval(aid) is None, "nothing left for an agent that reuses the id to inherit"
+    assert approvals.get(aid) is None
+
+
+def test_the_nav_count_is_a_read():
+    _, token, _ = _agent("counted", asking=["restart"])
+    aid = _ask(token).json()["approval_id"]
+    n = approvals.pending_count()
+    assert n >= 1
+    with Session(engine) as session:
+        row = session.get(Approval, aid)
+        row.expires_at = utcnow() - timedelta(seconds=1)
+        session.add(row)
+        session.commit()
+    assert approvals.pending_count() == n - 1, "an expired request is not counted"
+    with Session(engine) as session:
+        assert session.get(Approval, aid).status == "pending", "counting does not write; the approvals page settles it"
+    approvals.expire_stale()
+    assert _approval(aid).status == "expired"
+
+
+def test_the_refusal_comes_from_the_session_not_the_link():
+    _, token, _ = _agent("quiet", asking=["restart"])
+    aid = _ask(token).json()["approval_id"]
+    assert "FAKE-INSTRUCTION" not in admin.get(f"/approvals/{aid}?error=FAKE-INSTRUCTION").text
+    admin.post(f"/approvals/{aid}/deny")
+    admin.post(f"/approvals/{aid}/approve", follow_redirects=False)  # refused: already denied
+    shown = admin.get(f"/approvals/{aid}").text
+    assert "already denied" in shown
+    assert "already denied" not in admin.get(f"/approvals/{aid}").text, "shown once"
+
+
+def test_public_url_must_be_a_web_address():
+    settings_store.set_many({"public_url": ""})
+    r = admin.post("/settings/notifications", data={"public_url": "ulmo.example.com"}, follow_redirects=False)
+    assert r.status_code == 303 and "must+start+with" in r.headers["location"] and settings_store.get("public_url") == ""
+    r = admin.post("/settings/notifications", data={"public_url": " https://ulmo.example.com/ "}, follow_redirects=False)
+    assert settings_store.get("public_url") == "https://ulmo.example.com"
+    settings_store.set_many({"public_url": ""})
 
 
 def test_old_databases_get_the_new_columns():
@@ -466,6 +571,13 @@ def main():
     test_playbook_grants_union_and_run_through_approval()
     test_role_page_keeps_and_sets_flags()
     test_notification_names_the_request()
+    test_int_and_regex_params_survive_approval()
+    test_a_retry_does_not_pile_up_requests()
+    test_the_cap_holds_under_concurrent_requests()
+    test_deleting_an_agent_removes_its_requests()
+    test_the_nav_count_is_a_read()
+    test_the_refusal_comes_from_the_session_not_the_link()
+    test_public_url_must_be_a_web_address()
     test_page_and_nav()
     test_login_returns_to_the_page_and_never_to_another_site()
     test_old_databases_get_the_new_columns()

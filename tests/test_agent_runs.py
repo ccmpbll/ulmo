@@ -48,7 +48,7 @@ from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, Run
 from app.routers import agents as agents_router  # noqa: E402
 from app.routers import api as api_module  # noqa: E402
 from app.services import settings_store  # noqa: E402
-from app.services import agents, git_sync, inventory  # noqa: E402
+from app.services import agent_runs, agents, git_sync, inventory  # noqa: E402
 
 PLAYBOOKS = [
     {"name": "restart.yml", "rel_path": "playbooks/restart.yml"},
@@ -451,8 +451,8 @@ def test_overlapping_and_excess_runs_are_refused():
     agent, token = agents.create_agent("busybee")
     agents.assign_role(agent.id, role.id)
     before = len(calls)
-    cap = api_module.MAX_AGENT_RUNS
-    api_module.MAX_AGENT_RUNS = 2
+    cap = agent_runs.MAX_AGENT_RUNS
+    agent_runs.MAX_AGENT_RUNS = 2
     hold["on"] = True
     try:
         first = _run(token, "playbooks/restart.yml", ["web1"])
@@ -491,7 +491,7 @@ def test_overlapping_and_excess_runs_are_refused():
             session.commit()
     finally:
         hold["on"] = False
-        api_module.MAX_AGENT_RUNS = cap
+        agent_runs.MAX_AGENT_RUNS = cap
     _wait_all_done()
 
 

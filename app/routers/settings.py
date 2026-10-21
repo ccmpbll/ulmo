@@ -179,13 +179,16 @@ def update_notifications(
     notify_ntfy_url: str = Form(""),
     public_url: str = Form(""),
 ):
+    public_url = public_url.strip().rstrip("/")
+    if public_url and not public_url.lower().startswith(("http://", "https://")):
+        return RedirectResponse("/settings?error=Public+URL+must+start+with+http%3A%2F%2F+or+https%3A%2F%2F", status_code=303)
     settings_store.set_many(
         {
             "notify_on": notify_on.strip(),
             "notify_pushover_token": notify_pushover_token.strip(),
             "notify_pushover_user": notify_pushover_user.strip(),
             "notify_ntfy_url": notify_ntfy_url.strip(),
-            "public_url": public_url.strip(),
+            "public_url": public_url,
         }
     )
     return RedirectResponse("/settings?ok=Notification+settings+saved", status_code=303)

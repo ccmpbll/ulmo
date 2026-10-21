@@ -6,17 +6,22 @@ approval the run starts through the same path a direct call uses, with every che
 repeated, so a role, host or command that changed while the request waited is
 refused rather than trusted. The agent can only look at its own requests.
 """
+import json
+import threading
 from datetime import timedelta
-from typing import Callable
 
-from sqlmodel import Session, delete, select, update
+from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
 from app.models import Agent, Approval, Grant, RoleCommand, utcnow
+from app.services import agent_runs
 
 EXPIRY = timedelta(minutes=15)  # a request nobody decided on this long is dropped
 MAX_PENDING_PER_AGENT = 10  # so a stuck workflow cannot bury the real requests
 KEEP = 500  # newest approvals kept
+
+
+_create_lock = threading.Lock()  # the cap and the duplicate check look, then write
 
 
 class TooManyPending(ValueError):
@@ -54,14 +59,20 @@ def expire_stale() -> None:
         session.commit()
 
 
-def create(agent: Agent, kind: str, target: str, host: str, params: str, line: str) -> Approval:
+def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> tuple[Approval, bool]:
+    """Record a request, or return the identical one already waiting (a workflow that retries
+    must not pile up copies, each of which could run). Returns (approval, created)."""
+    params_json = json.dumps(params, sort_keys=True)
     expire_stale()
-    with Session(engine) as session:
-        pending = session.exec(select(Approval.id).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
-        if len(pending) >= MAX_PENDING_PER_AGENT:
+    with _create_lock, Session(engine) as session:
+        waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
+        for row in waiting:
+            if (row.kind, row.target, row.host, row.params) == (kind, target, host, params_json):
+                return row, False
+        if len(waiting) >= MAX_PENDING_PER_AGENT:
             raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
         row = Approval(
-            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params, line=line,
+            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line,
             expires_at=utcnow() + EXPIRY,
         )
         session.add(row)
@@ -70,7 +81,7 @@ def create(agent: Agent, kind: str, target: str, host: str, params: str, line: s
         session.exec(delete(Approval).where(Approval.id <= row.id - KEEP))
         session.commit()
         session.refresh(row)  # the commit expired it, and the caller reads it after the session closes
-        return row
+        return row, True
 
 
 def get(approval_id: int) -> Approval | None:
@@ -94,12 +105,16 @@ def recent(limit: int = 50) -> list[Approval]:
 
 
 def pending_count() -> int:
-    return len(pending())
+    """For the top bar on every page: one COUNT, and no write (an expired request is simply not counted)."""
+    with Session(engine) as session:
+        return session.exec(
+            select(func.count()).select_from(Approval).where(Approval.status == "pending", Approval.expires_at >= utcnow())
+        ).one()
 
 
-def decide(approval_id: int, approve: bool, admin: str, start: Callable[[Approval], int]) -> Approval:
-    """Record the decision, once, and on approval start the run with `start` (which returns
-    the run id or raises an error carrying `.reason`). Raises ValueError if the request is not pending."""
+def decide(approval_id: int, approve: bool, admin: str) -> Approval:
+    """Record the decision, once, and on approval start the run (agent_runs repeats every check a
+    direct call gets). Raises ValueError if the request is not pending."""
     expire_stale()
     with Session(engine) as session:
         # One conditional UPDATE: two admins (or two taps) cannot both decide the same request.
@@ -116,7 +131,7 @@ def decide(approval_id: int, approve: bool, admin: str, start: Callable[[Approva
     if not approve:
         return row
     try:
-        run_id = start(row)
+        run_id = agent_runs.start_approved(row)
         update_values = {"run_id": run_id}
     except Exception as exc:  # noqa: BLE001 - whatever stopped it is shown to the admin
         update_values = {"status": "failed", "note": str(getattr(exc, "reason", exc))[:300]}

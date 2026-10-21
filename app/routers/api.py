@@ -1,6 +1,5 @@
 import json
 import re
-import shlex
 import threading
 import time
 from datetime import datetime, timezone
@@ -12,8 +11,8 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_agent
-from app.models import Agent, Approval, CommandRun, RunHistory, utcnow
-from app.services import agents, approvals, command_library, commands, git_sync, inventory, notifier, playbook_tags, runner
+from app.models import Agent, Approval, CommandRun, RunHistory
+from app.services import agent_runs, agents, approvals, command_library, commands, git_sync, inventory, notifier, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -98,12 +97,8 @@ def run_detail(run_id: int):
     return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}
 
 
-MAX_AGENT_RUNS = 5  # agent playbook runs going at once, across all agents
-MAX_COMMAND_RUNS = 5  # command runs going at once, across all agents
-MAX_COMMANDS_PER_HOST = 2
 DEFAULT_WAIT = 20  # seconds POST /commands waits for the result before answering "still running"
 MAX_WAIT = 60
-_start_lock = threading.Lock()  # makes "any conflicting run?" and "start it" one step
 
 
 class RunRequest(BaseModel):
@@ -115,87 +110,6 @@ class RunRequest(BaseModel):
 def _deny(request: Request, agent: Agent, status: int, reason: str):
     request.state.audit = (agent.name, reason)  # picked up by the audit middleware
     raise HTTPException(status, reason)
-
-
-class Refused(Exception):
-    """A request that may not start, with the HTTP status to answer it with. Raised by the
-    helpers below so a direct call and an approved request go through the same checks."""
-
-    def __init__(self, status: int, reason: str):
-        super().__init__(reason)
-        self.status, self.reason = status, reason
-
-
-def precheck_run(agent: Agent, playbook: str, limit: list[str]) -> None:
-    if not agents.runs_enabled():
-        raise Refused(503, "agent runs are switched off")
-    reason = agents.check_run(agent, playbook, limit)
-    if reason:
-        raise Refused(403, reason)
-
-
-def launch_run(agent: Agent, playbook: str, limit: list[str]) -> RunHistory:
-    with _start_lock:
-        busy = agents.running_conflict(playbook, limit)
-        if busy:
-            raise Refused(409, f"run {busy.id} of this playbook is still running on overlapping hosts")
-        if agents.running_agent_runs() >= MAX_AGENT_RUNS:
-            raise Refused(429, f"{MAX_AGENT_RUNS} agent runs are already in progress")
-        try:
-            record = runner.start_run(playbook, triggered_by=f"agent:{agent.name}", limit=",".join(limit))
-        except ValueError:  # granted, but the playbook has since left the repo
-            raise Refused(404, "playbook no longer exists")
-        agents.record_agent_run(record.id, agent.id)
-    return record
-
-
-def precheck_command(agent: Agent, command: str, host: str, params: dict):
-    """Everything that can refuse a command call before it starts; returns (template, host, values)."""
-    if not agents.runs_enabled():
-        raise Refused(503, "agent runs are switched off")
-    reason = agents.check_command(agent, command, host)
-    if reason:
-        raise Refused(403, reason)
-    library = command_library.load()[0]
-    template, library_host = library.commands.get(command), library.hosts.get(host)
-    if template is None or library_host is None:  # edited away since the check above
-        raise Refused(403, "that command or host was just changed; try again")
-    try:
-        values = command_library.validate_params(template, params)
-    except ValueError as exc:
-        raise Refused(400, str(exc))
-    return template, library_host, values
-
-
-def launch_command(agent: Agent, template, host, values) -> CommandRun:
-    with _start_lock:
-        if commands.running() >= MAX_COMMAND_RUNS or commands.running(host.name) >= MAX_COMMANDS_PER_HOST:
-            raise Refused(429, "too many commands are already running")
-        try:
-            return commands.start(template, host, values, f"agent:{agent.name}", agent.id)
-        except commands.CommandError as exc:
-            raise Refused(502, str(exc))
-
-
-def command_line(template, values) -> str:
-    return shlex.join(command_library.build_argv(template, values))
-
-
-def start_approved(approval: Approval) -> int:
-    """Start what an admin just approved, repeating every check a direct call gets: the agent,
-    its role, the host and the command may all have changed while it waited."""
-    with Session(engine) as session:
-        agent = session.get(Agent, approval.agent_id)
-    if agent is None or not agent.enabled or (agent.expires_at is not None and agent.expires_at <= utcnow().replace(tzinfo=None)):
-        raise Refused(403, "the agent is disabled, expired or deleted")
-    if approval.kind == "command":
-        template, host, values = precheck_command(agent, approval.target, approval.host, json.loads(approval.params))
-        if command_line(template, values) != approval.line:
-            raise Refused(409, "the command changed since it was requested")
-        return launch_command(agent, template, host, values).id
-    limit = approval.host.split(",")
-    precheck_run(agent, approval.target, limit)
-    return launch_run(agent, approval.target, limit).id
 
 
 def _approval_json(a: Approval) -> dict:
@@ -212,12 +126,14 @@ def _approval_json(a: Approval) -> dict:
 
 
 def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> dict:
+    """`params` is what the agent sent: approving validates it again, exactly as a direct call would."""
     try:
-        approval = approvals.create(agent, kind, target, host, json.dumps(params), line)
+        approval, created = approvals.create(agent, kind, target, host, params, line)
     except approvals.TooManyPending as exc:
         _deny(request, agent, 429, str(exc))
-    request.state.audit = (agent.name, f"requested approval {approval.id}: {line}")
-    threading.Thread(target=notifier.notify_approval, args=(approval,), daemon=True).start()
+    request.state.audit = (agent.name, f"{'requested' if created else 'repeated'} approval {approval.id}: {line}")
+    if created:  # a retry of a request that is already waiting must not notify again
+        threading.Thread(target=notifier.notify_approval, args=(approval,), daemon=True).start()
     response.status_code = 202
     return {"status": "pending_approval", "approval_id": approval.id, "expires_at": _iso(approval.expires_at), "poll": f"/api/v1/approvals/{approval.id}"}
 
@@ -252,12 +168,12 @@ def catalog(agent: Agent = Depends(require_agent)):
 @router.post("/runs", status_code=202)
 def start_run(body: RunRequest, request: Request, response: Response, agent: Agent = Depends(require_agent)):
     try:
-        precheck_run(agent, body.playbook, body.limit)
+        agent_runs.precheck_run(agent, body.playbook, body.limit)
         if approvals.playbook_needs(agent, body.playbook, body.limit):
             line = f"ansible-playbook {body.playbook} --limit {','.join(body.limit)}"
             return _request_approval(request, response, agent, "playbook", body.playbook, ",".join(body.limit), {}, line)
-        record = launch_run(agent, body.playbook, body.limit)
-    except Refused as exc:
+        record = agent_runs.launch_run(agent, body.playbook, body.limit)
+    except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)
     request.state.audit = (agent.name, f"started run {record.id}: {body.playbook} on {record.limit}")
     return _run_json(record)
@@ -317,11 +233,11 @@ def start_command(
     the role marks as needing approval answers 202 "pending_approval" instead and runs
     only once an admin approves it: poll GET /approvals/{id}."""
     try:
-        template, host, values = precheck_command(agent, body.command, body.host, body.params)
+        template, host, values = agent_runs.precheck_command(agent, body.command, body.host, body.params)
         if template.id in approvals.commands_needing(agent):
-            return _request_approval(request, response, agent, "command", template.id, host.name, values, command_line(template, values))
-        run = launch_command(agent, template, host, values)
-    except Refused as exc:
+            return _request_approval(request, response, agent, "command", template.id, host.name, body.params, agent_runs.command_line(template, values))
+        run = agent_runs.launch_command(agent, template, host, values)
+    except agent_runs.Refused as exc:
         _deny(request, agent, exc.status, exc.reason)
     request.state.audit = (agent.name, f"started command {run.id}: {template.id} on {body.host}")
     deadline = time.monotonic() + wait

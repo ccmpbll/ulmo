@@ -3,7 +3,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.routers.api import start_approved
 from app.services import agents, approvals
 from app.templating import templates
 
@@ -21,30 +20,33 @@ def approvals_page(request: Request):
 
 
 @router.get("/approvals/{approval_id}", response_class=HTMLResponse)
-def approval_page(request: Request, approval_id: int, error: str = ""):
+def approval_page(request: Request, approval_id: int):
     approval = approvals.get(approval_id)
     if approval is None:
         return templates.TemplateResponse(request, "approvals.html", {"pending": approvals.pending(), "recent": approvals.recent(), "error": "No such request."}, status_code=404)
-    return templates.TemplateResponse(request, "approval.html", {"a": approval, "error": error, "locked": AUTH_DISABLED})
+    # The reason for a refused decision comes from the session, not the URL, so a link cannot put its own text on this page.
+    return templates.TemplateResponse(request, "approval.html", {"a": approval, "error": request.session.pop("approval_error", ""), "locked": AUTH_DISABLED})
 
 
-def _decide(approval_id: int, approve: bool, user):
+def _decide(request: Request, approval_id: int, approve: bool, user):
     if approve and AUTH_DISABLED:
-        return RedirectResponse(f"/approvals/{approval_id}?error=" + LOGIN_REQUIRED.replace(" ", "+"), status_code=303)
+        request.session["approval_error"] = LOGIN_REQUIRED
+        return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
     try:
-        row = approvals.decide(approval_id, approve, user.username, start_approved)
+        row = approvals.decide(approval_id, approve, user.username)
     except ValueError as exc:
-        return RedirectResponse(f"/approvals/{approval_id}?error={str(exc).replace(' ', '+')}", status_code=303)
+        request.session["approval_error"] = str(exc)
+        return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
     detail = f"{row.agent_name}: {row.line} on {row.host}" + (f" (could not start: {row.note})" if row.status == "failed" else "")
     agents.admin_audit(user.username, "approve request" if approve else "deny request", f"request {row.id}, {detail}")
     return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
 
 
 @router.post("/approvals/{approval_id}/approve")
-def approve(approval_id: int, user=Depends(require_login)):
-    return _decide(approval_id, True, user)
+def approve(request: Request, approval_id: int, user=Depends(require_login)):
+    return _decide(request, approval_id, True, user)
 
 
 @router.post("/approvals/{approval_id}/deny")
-def deny(approval_id: int, user=Depends(require_login)):
-    return _decide(approval_id, False, user)
+def deny(request: Request, approval_id: int, user=Depends(require_login)):
+    return _decide(request, approval_id, False, user)

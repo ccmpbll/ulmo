@@ -12,6 +12,7 @@ from app.models import (
     Agent,
     AgentAudit,
     AgentRun,
+    Approval,
     CommandRun,
     Grant,
     Role,
@@ -118,6 +119,7 @@ def delete_agent(agent_id: int) -> None:
         if agent is not None:
             # SQLite reuses the id of a deleted last row; a new agent must not inherit old runs.
             session.exec(delete(AgentRun).where(AgentRun.agent_id == agent_id))
+            session.exec(delete(Approval).where(Approval.agent_id == agent_id))
             session.exec(update(CommandRun).where(CommandRun.agent_id == agent_id).values(agent_id=None))
             session.delete(agent)
             session.commit()

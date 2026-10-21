@@ -161,7 +161,7 @@ notification can open it directly, and signing in sends you back to it. Approvin
 exactly as shown, after repeating every check a direct call gets, so a command that changed, a
 role that lost it or a switched-off kill switch makes it fail instead of run. The agent polls
 `GET /api/v1/approvals/{id}`: `pending`, then `approved` with a `result_url` to follow, or `denied`,
-`expired` (nobody decided in 15 minutes) or `failed`. At most 10 requests per agent wait at once.
+`expired` (nobody decided in 15 minutes) or `failed`. At most 10 requests per agent wait at once, and asking again for something already waiting returns the same approval instead of a new one.
 Only a signed-in admin can decide: an agent token cannot, and while `ULMO_DISABLE_AUTH` is set
 approving is refused. A new request sends a Pushover/ntfy notification (whatever "Notify on" says);
 set **Public URL of ulmo** under Settings -> Notifications to include the link.
