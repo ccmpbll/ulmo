@@ -34,7 +34,7 @@
         <td>{{ a.created_at | local_time }}</td>
         <td>{{ a.agent_name }}</td>
         <td><a href="/approvals/{{ a.id }}">{{ a.target }}</a><br /><code class="muted">{{ a.line }}</code>{% if a.kind == "command" %} <span class="muted">on {{ a.host }}</span>{% endif %}</td>
-        <td><span class="badge {{ 'success' if a.status == 'approved' else ('failed' if a.status == 'failed' else 'cancelled') }}">{{ a.status }}</span>{% if a.decided_by %}<br /><span class="muted">{{ a.decided_by }}</span>{% endif %}</td>
+        <td><span class="badge {{ a.badge }}">{{ a.status }}</span>{% if a.decided_by %}<br /><span class="muted">{{ a.decided_by }}</span>{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="4" class="muted">No decisions yet.</td></tr>

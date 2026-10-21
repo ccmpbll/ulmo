@@ -23,7 +23,7 @@ def approvals_page(request: Request):
 def approval_page(request: Request, approval_id: int):
     approval = approvals.get(approval_id)
     if approval is None:
-        return templates.TemplateResponse(request, "approvals.html", {"pending": approvals.pending(), "recent": approvals.recent(), "error": "No such request."}, status_code=404)
+        return RedirectResponse("/approvals", status_code=303)
     # The reason for a refused decision comes from the session, not the URL, so a link cannot put its own text on this page.
     return templates.TemplateResponse(request, "approval.html", {"a": approval, "error": request.session.pop("approval_error", ""), "locked": AUTH_DISABLED})
 

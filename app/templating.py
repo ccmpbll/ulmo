@@ -7,6 +7,7 @@ from markupsafe import Markup, escape
 
 from app.auth import current_user
 from app.config import AUTH_DISABLED, VERSION
+from app.services import approvals
 
 templates_dir = Path(__file__).parent / "templates"
 static_dir = Path(__file__).parent / "static"
@@ -17,13 +18,7 @@ templates.env.globals["AUTH_DISABLED"] = AUTH_DISABLED
 templates.env.globals["APP_VERSION"] = VERSION
 
 
-def _pending_approvals() -> int:
-    from app.services import approvals  # late: the services import the models, which import nothing from here
-
-    return approvals.pending_count()
-
-
-templates.env.globals["pending_approvals"] = _pending_approvals
+templates.env.globals["pending_approvals"] = approvals.pending_count
 
 
 def local_time(ts: datetime | None) -> Markup:

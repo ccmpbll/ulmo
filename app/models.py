@@ -141,6 +141,10 @@ class Approval(SQLModel, table=True):
     decided_at: Optional[datetime] = None
     decided_by: str = ""
 
+    @property
+    def badge(self) -> str:
+        return {"approved": "success", "failed": "failed"}.get(self.status, "cancelled")
+
 
 class AdminAudit(SQLModel, table=True):
     """Changes made on the Agents page (agents, roles, grants, kill switch).

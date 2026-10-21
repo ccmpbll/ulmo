@@ -264,14 +264,6 @@ def purge_missing_commands(library) -> None:
 command_library.on_valid_load(purge_missing_commands)
 
 
-def role_commands_needing_approval(role_id: int) -> list[str]:
-    with Session(engine) as session:
-        rows = session.exec(
-            select(RoleCommand.command).where(RoleCommand.role_id == role_id, RoleCommand.requires_approval == True)  # noqa: E712
-        ).all()
-    return sorted(rows)
-
-
 def role_commands(role_id: int | None) -> list[str]:
     if role_id is None:
         return []

@@ -137,6 +137,10 @@ def _ask(token, command="restart", host="frodo", params=None):
     return client.post("/api/v1/commands?wait=0", json={"command": command, "host": host, "params": params if params is not None else {"container": "sonarr"}}, headers=_h(token))
 
 
+def _asking(role):
+    return sorted(approvals.commands_needing(SimpleNamespace(role_id=role.id)))
+
+
 def _notified(count):
     for _ in range(100):
         if len(sent) >= count:
@@ -302,7 +306,6 @@ def test_expiry_cap_and_locked_while_auth_is_disabled():
     assert approvals.pending() == [a for a in approvals.pending() if a.status == "pending"]
 
     _, capped, _ = _agent("flood", asking=["logs"])
-    _agent_row = None
     for n in range(approvals.MAX_PENDING_PER_AGENT):
         assert _ask(capped, "logs", params={"lines": n + 1}).status_code == 202
     r = _ask(capped, "logs", params={"lines": 99})
@@ -366,11 +369,11 @@ def test_playbook_grants_union_and_run_through_approval():
 
 def test_role_page_keeps_and_sets_flags():
     _, _, role = _agent("flags", asking=["restart"])
-    assert agents.role_commands_needing_approval(role.id) == ["restart"]
+    assert _asking(role) == ["restart"]
     agents.set_role_commands(role.id, ["restart", "uptime"])  # saving the list again
-    assert agents.role_commands_needing_approval(role.id) == ["restart"]
+    assert _asking(role) == ["restart"]
     agents.set_role_commands(role.id, ["uptime"])
-    assert agents.role_commands_needing_approval(role.id) == []
+    assert _asking(role) == []
     try:
         agents.set_commands_needing_approval(role.id, ["restart"])
     except ValueError as exc:
@@ -379,11 +382,11 @@ def test_role_page_keeps_and_sets_flags():
         raise AssertionError("flagged a command the role does not have")
 
     r = admin.post(f"/roles/{role.id}/approval-commands", data={"commands": ["uptime"]}, follow_redirects=False)
-    assert r.status_code == 303 and agents.role_commands_needing_approval(role.id) == ["uptime"]
+    assert r.status_code == 303 and _asking(role) == ["uptime"]
     assert "Commands that need your approval" in admin.get("/agents").text
     r = client.post(f"/roles/{role.id}/approval-commands", data={"commands": []}, headers=_h(_agent("sneaky")[1]), follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/login")
-    assert agents.role_commands_needing_approval(role.id) == ["uptime"]
+    assert _asking(role) == ["uptime"]
 
 
 def test_notification_names_the_request():
@@ -414,7 +417,7 @@ def test_page_and_nav():
     assert "Approvals <span" in admin.get("/agents").text, "the nav shows how many are waiting"
     detail = admin.get(f"/approvals/{aid}").text
     assert "Approve" in detail and "Deny" in detail
-    assert admin.get("/approvals/999999").status_code == 404
+    assert admin.get("/approvals/999999", follow_redirects=False).headers["location"] == "/approvals", "an unknown request goes back to the list"
 
 
 def test_login_returns_to_the_page_and_never_to_another_site():

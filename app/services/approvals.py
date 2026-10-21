@@ -96,11 +96,11 @@ def pending() -> list[Approval]:
         return list(session.exec(select(Approval).where(Approval.status == "pending").order_by(Approval.id)).all())
 
 
-def recent(limit: int = 50) -> list[Approval]:
+def recent() -> list[Approval]:
     expire_stale()
     with Session(engine) as session:
         return list(
-            session.exec(select(Approval).where(Approval.status != "pending").order_by(Approval.id.desc()).limit(limit)).all()
+            session.exec(select(Approval).where(Approval.status != "pending").order_by(Approval.id.desc()).limit(50)).all()
         )
 
 
