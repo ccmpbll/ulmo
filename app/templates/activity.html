@@ -3,44 +3,46 @@
 {% macro url(tab, page=1, extra={}) -%}
 /activity?tab={{ tab }}&page={{ page }}{% for k, v in extra.items() %}&{{ k }}={{ v | urlencode }}{% endfor %}
 {%- endmacro %}
+{% macro took(r) -%}
+{%- if r.finished_at -%}
+{%- set secs = (r.finished_at - r.started_at).total_seconds() -%}
+{%- if secs < 120 %}{{ secs | round(1) }} s{% else %}{{ (secs / 60) | round(1) }} min{% endif -%}
+{%- else -%}-{%- endif -%}
+{%- endmacro %}
 {% block content %}
 <div class="page-header"><h1>Activity</h1></div>
 <div class="actions tabs">
-  <a class="btn {{ '' if tab == 'requests' else 'secondary' }}" href="/activity?tab=requests">API requests</a>
-  <a class="btn {{ '' if tab == 'changes' else 'secondary' }}" href="/activity?tab=changes">Changes</a>
-  <a class="btn {{ '' if tab == 'runs' else 'secondary' }}" href="/activity?tab=runs">Command runs</a>
+  {% for key, label in tabs %}<a class="btn {{ '' if tab == key else 'secondary' }}" href="/activity?tab={{ key }}">{{ label }}</a>{% endfor %}
 </div>
 
 <div class="card">
   <form method="get" action="/activity" class="filters">
     <input type="hidden" name="tab" value="{{ tab }}" />
     <div class="form-grid">
-      {% if tab == "requests" %}
-      <label>Agent
-        <select name="agent">
+      {% if tab == "playbooks" %}
+      <label>Playbook
+        <select name="playbook">
           <option value="">any</option>
-          {% for n in choices.agents %}<option value="{{ n }}" {{ 'selected' if values.agent == n }}>{{ n }}</option>{% endfor %}
-          <option value="(unknown)" {{ 'selected' if values.agent == '(unknown)' }}>(no valid token)</option>
+          {% for n in choices.playbooks %}<option value="{{ n }}" {{ 'selected' if values.playbook == n }}>{{ n }}</option>{% endfor %}
         </select>
       </label>
-      <label>Show
-        <select name="problems">
-          <option value="">everything</option>
-          <option value="1" {{ 'selected' if values.problems }}>refused or failed only</option>
-        </select>
-      </label>
-      {% elif tab == "changes" %}
-      <label>Who
-        <select name="admin">
-          <option value="">anyone</option>
-          {% for n in choices.admins %}<option value="{{ n }}" {{ 'selected' if values.admin == n }}>{{ n }}</option>{% endfor %}
-        </select>
-      </label>
-      {% else %}
       <label>Started by
-        <select name="agent">
+        <select name="by">
           <option value="">anyone</option>
-          {% for n in choices.who %}<option value="{{ n }}" {{ 'selected' if values.agent == n }}>{{ n }}</option>{% endfor %}
+          {% for n in choices.who %}<option value="{{ n }}" {{ 'selected' if values.by == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">any</option>
+          {% for n in choices.statuses %}<option value="{{ n }}" {{ 'selected' if values.status == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      {% elif tab == "commands" %}
+      <label>Started by
+        <select name="by">
+          <option value="">anyone</option>
+          {% for n in choices.who %}<option value="{{ n }}" {{ 'selected' if values.by == n }}>{{ n }}</option>{% endfor %}
         </select>
       </label>
       <label>Host
@@ -55,6 +57,40 @@
           {% for n in choices.statuses %}<option value="{{ n }}" {{ 'selected' if values.status == n }}>{{ n }}</option>{% endfor %}
         </select>
       </label>
+      {% elif tab == "syncs" %}
+      <label>Started by
+        <select name="by">
+          <option value="">anyone</option>
+          {% for n in choices.who %}<option value="{{ n }}" {{ 'selected' if values.by == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">any</option>
+          {% for n in choices.statuses %}<option value="{{ n }}" {{ 'selected' if values.status == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      {% elif tab == "requests" %}
+      <label>Agent
+        <select name="agent">
+          <option value="">any</option>
+          {% for n in choices.agents %}<option value="{{ n }}" {{ 'selected' if values.agent == n }}>{{ n }}</option>{% endfor %}
+          <option value="(unknown)" {{ 'selected' if values.agent == '(unknown)' }}>(no valid token)</option>
+        </select>
+      </label>
+      <label>Show
+        <select name="problems">
+          <option value="">everything</option>
+          <option value="1" {{ 'selected' if values.problems }}>refused or failed only</option>
+        </select>
+      </label>
+      {% else %}
+      <label>Who
+        <select name="admin">
+          <option value="">anyone</option>
+          {% for n in choices.admins %}<option value="{{ n }}" {{ 'selected' if values.admin == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
       {% endif %}
     </div>
     <div class="actions">
@@ -67,7 +103,54 @@
 
 <div class="card">
   <table>
-    {% if tab == "requests" %}
+    {% if tab == "playbooks" %}
+    <thead><tr><th>Started</th><th>Playbook</th><th>Status</th><th>Started by</th><th>Took</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.started_at | local_time }}</td>
+        <td>{{ r.playbook }}{% if r.tags or r.limit %}<br /><span class="muted">{% if r.tags %}tags: {{ r.tags }}{% endif %}{% if r.tags and r.limit %} · {% endif %}{% if r.limit %}limit: {{ r.limit }}{% endif %}</span>{% endif %}</td>
+        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td>{{ r.triggered_by }}</td>
+        <td class="muted">{{ took(r) }}</td>
+        <td class="actions-cell"><a class="btn secondary" href="/runs/{{ r.id }}">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No playbook runs{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% elif tab == "commands" %}
+    <thead><tr><th>When</th><th>Started by</th><th>Host</th><th>Command</th><th>Status</th><th>Took</th></tr></thead>
+    <tbody>
+      {% for c in rows %}
+      <tr>
+        <td>{{ c.started_at | local_time }}</td>
+        <td>{{ c.triggered_by }}</td>
+        <td>{{ c.host }}</td>
+        <td>{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
+        <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
+        <td class="muted">{{ took(c) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No command runs{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% elif tab == "syncs" %}
+    <thead><tr><th>Started</th><th>Status</th><th>Started by</th><th>Took</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.started_at | local_time }}</td>
+        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td>{{ r.triggered_by }}</td>
+        <td class="muted">{{ took(r) }}</td>
+        <td class="actions-cell"><a class="btn secondary" href="/logs/{{ r.id }}">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No syncs{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% elif tab == "requests" %}
     <thead><tr><th>When</th><th>Agent</th><th>Request</th><th>Result</th></tr></thead>
     <tbody>
       {% for e in rows %}
@@ -81,29 +164,13 @@
       <tr><td colspan="4" class="muted">No requests{{ ' match' if filters }}.</td></tr>
       {% endfor %}
     </tbody>
-    {% elif tab == "changes" %}
+    {% else %}
     <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
     <tbody>
       {% for c in rows %}
       <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
       {% else %}
       <tr><td colspan="3" class="muted">No changes{{ ' match' if filters }}.</td></tr>
-      {% endfor %}
-    </tbody>
-    {% else %}
-    <thead><tr><th>When</th><th>Started by</th><th>Host</th><th>Command</th><th>Status</th><th>Took</th></tr></thead>
-    <tbody>
-      {% for c in rows %}
-      <tr>
-        <td>{{ c.started_at | local_time }}</td>
-        <td>{{ c.triggered_by }}</td>
-        <td>{{ c.host }}</td>
-        <td>{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
-        <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
-        <td class="muted">{% if c.finished_at %}{{ ((c.finished_at - c.started_at).total_seconds()) | round(1) }} s{% else %}-{% endif %}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="muted">No command runs{{ ' match' if filters }}.</td></tr>
       {% endfor %}
     </tbody>
     {% endif %}

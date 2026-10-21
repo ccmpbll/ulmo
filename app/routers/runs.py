@@ -15,11 +15,9 @@ from app.templating import templates
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
-@router.get("/runs", response_class=HTMLResponse)
-def run_history(request: Request):
-    with Session(engine) as session:
-        runs = session.exec(select(RunHistory).order_by(RunHistory.started_at.desc())).all()
-    return templates.TemplateResponse(request, "runs.html", {"runs": runs})
+@router.get("/runs")
+def run_history():
+    return RedirectResponse("/activity?tab=playbooks", status_code=303)
 
 
 @router.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -27,7 +25,7 @@ def run_detail(request: Request, run_id: int):
     with Session(engine) as session:
         run = session.get(RunHistory, run_id)
     if run is None:
-        return RedirectResponse("/runs", status_code=303)
+        return RedirectResponse("/activity?tab=playbooks", status_code=303)
     log, log_pos = runner.read_log(run_id)
     recap = runner.get_recap(run_id)
     return templates.TemplateResponse(

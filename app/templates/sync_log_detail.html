@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Sync <span class="badge {{ log.status }}">{{ log.status }}</span></h1>
-  <a class="btn secondary" href="/logs">Back to sync logs</a>
+  <a class="btn secondary" href="/activity?tab=syncs">Back to activity</a>
 </div>
 <p class="muted">
   triggered by {{ log.triggered_by }} &middot; started {{ log.started_at | local_time }}
