@@ -16,13 +16,13 @@
   <h2>Hosts</h2>
   <div class="card">
     <table>
-      <thead><tr><th>Host</th><th>Connects as</th><th>Key</th><th>Offers</th><th></th></tr></thead>
+      <thead><tr><th>Host</th><th>Connects as</th><th>Signs in with</th><th>Offers</th><th></th></tr></thead>
       <tbody>
         {% for h in hosts %}
         <tr>
           <td>{{ h.name }}</td>
           <td>{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
-          <td class="muted">{{ h.ssh_key or 'ssh default' }}</td>
+          <td class="muted">{% if h.auth == 'password' %}password{% if h.name not in password_hosts %} <span class="error">(none saved)</span>{% endif %}{% else %}{{ h.ssh_key or 'ssh default' }}{% endif %}</td>
           <td class="muted">
             {% if h.commands | length > 4 %}
             <details><summary>{{ h.commands | length }} commands</summary>{{ h.commands | join(', ') }}</details>
@@ -53,13 +53,24 @@
         <label>Address<input type="text" name="address" required value="{{ editing_host.address if editing_host else '' }}" placeholder="10.42.11.10" /></label>
         <label>Port<input type="number" name="port" min="1" max="65535" value="{{ editing_host.port if editing_host else 22 }}" /></label>
         <label>User<input type="text" name="user" required value="{{ editing_host.user if editing_host else '' }}" placeholder="root" /></label>
+        <label>Sign in with
+          <select name="auth">
+            <option value="key" {{ 'selected' if not editing_host or editing_host.auth != 'password' }}>SSH key (recommended)</option>
+            <option value="password" {{ 'selected' if editing_host and editing_host.auth == 'password' }}>Username and password</option>
+          </select>
+        </label>
         <label>SSH key (uploaded under Settings)
           <select name="ssh_key">
             <option value="">ssh default</option>
             {% for k in keys %}<option value="{{ k }}" {{ 'selected' if editing_host and editing_host.ssh_key == k }}>{{ k }}</option>{% endfor %}
           </select>
         </label>
+        <label>Password
+          <input type="password" name="password" autocomplete="new-password" maxlength="256"
+                 placeholder="{{ 'saved: leave blank to keep it' if editing_host and editing_host.name in password_hosts else '' }}" />
+        </label>
       </div>
+      <p class="muted">Only the one you choose under <em>Sign in with</em> is used. A password is kept in ulmo's database (never in <code>commands.yml</code>, its download or its saved copies) and handed to ssh through its environment, not the command line. Prefer a key where you can: the host must allow password logins, and anyone who can read ulmo's data volume can read the password, as with keys.</p>
       <div class="subhead">Commands this host offers</div>
       {{ checklist("host-commands", "commands", command_items, editing_host.commands if editing_host else [], "No commands yet. Add one below, then come back and choose which hosts offer it.") }}
       <div class="actions form-actions">
