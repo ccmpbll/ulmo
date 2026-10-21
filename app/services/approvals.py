@@ -9,6 +9,7 @@ refused rather than trusted. The agent can only look at its own requests.
 import json
 import threading
 from datetime import timedelta
+from typing import Callable
 
 from sqlmodel import Session, delete, func, select, update
 
@@ -59,20 +60,35 @@ def expire_stale() -> None:
         session.commit()
 
 
-def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> tuple[Approval, bool]:
+def _key(row: Approval) -> tuple:
+    return (row.kind, row.target, row.host, row.params)
+
+
+def clean_note(note: str | None) -> str:
+    """The agent's own words, made safe to show next to Approve: no control, zero-width or
+    direction-override characters (they could make the text read differently from what was sent),
+    and whitespace collapsed."""
+    return " ".join("".join(c for c in (note or "") if c.isprintable() or c.isspace()).split())
+
+
+def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str, agent_note: str = "", before_new: Callable[[], None] | None = None) -> tuple[Approval, bool]:
     """Record a request, or return the identical one already waiting (a workflow that retries
-    must not pile up copies, each of which could run). Returns (approval, created)."""
+    must not pile up copies, each of which could run). `before_new` runs only when a new row
+    is about to be made (the hourly allowance goes there, so a retry costs nothing).
+    Returns (approval, created)."""
     params_json = json.dumps(params, sort_keys=True)
     expire_stale()
     with _create_lock, Session(engine) as session:
         waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
-        for row in waiting:
-            if (row.kind, row.target, row.host, row.params) == (kind, target, host, params_json):
-                return row, False
+        same = next((row for row in waiting if _key(row) == (kind, target, host, params_json)), None)
+        if same is not None:
+            return same, False
         if len(waiting) >= MAX_PENDING_PER_AGENT:
             raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
+        if before_new is not None:
+            before_new()
         row = Approval(
-            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line,
+            agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line, agent_note=agent_note,
             expires_at=utcnow() + EXPIRY,
         )
         session.add(row)

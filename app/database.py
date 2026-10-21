@@ -9,7 +9,8 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 # already exist — this project doesn't use Alembic, so patch them by hand.
 _ADDED_COLUMNS = {
     "runhistory": [("tags", "TEXT"), ("limit", "TEXT")],
-    "agent": [("role_id", "INTEGER")],
+    "agent": [("role_id", "INTEGER"), ("max_per_hour", "INTEGER")],
+    "approval": [("agent_note", "TEXT DEFAULT ''")],
     "grant": [("requires_approval", "BOOLEAN DEFAULT 0")],
     "rolecommand": [("requires_approval", "BOOLEAN DEFAULT 0")],
 }

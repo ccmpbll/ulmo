@@ -51,6 +51,8 @@ def notify_approval(approval: Approval) -> None:
     url = f"{base}/approvals/{approval.id}" if base else ""
     title = f"ulmo: {approval.agent_name} needs approval"
     message = f"{approval.agent_name} wants to run: {approval.line}" + (f" on {approval.host}" if approval.kind == "command" else "")
+    if approval.agent_note:
+        message += f"\n{approval.agent_name} says: {approval.agent_note[:300]}"
     pushover_token = settings.get("notify_pushover_token", "").strip()
     pushover_user = settings.get("notify_pushover_user", "").strip()
     ntfy_url = settings.get("notify_ntfy_url", "").strip()

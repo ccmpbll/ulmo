@@ -254,6 +254,7 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .decision-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-weight: 600; }
 .decision code { display: block; overflow-wrap: anywhere; font-size: 0.82rem; }
 .decision-meta { margin-top: 6px; font-size: 0.82rem; }
+.decision-note { margin-top: 6px; overflow-wrap: anywhere; }
 .panel-head { flex-wrap: wrap; }
 .panel code, .card > p code { overflow-wrap: anywhere; }
 
@@ -274,4 +275,16 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .logout-form .who { display: none; }
   .logout-form button { padding: 5px 12px; font-size: 0.85rem; }
   .container { padding: 16px 14px; }
+
+  /* A table marked "stack" becomes one block per row, each cell labelled by its column */
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  table.stack td { border: none; padding: 4px 0; }
+  table.stack td[data-label]:not([data-label=""])::before {
+    content: attr(data-label); display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+  }
+  table.stack td.actions-cell { white-space: normal; }
+  table.stack td.actions-cell .actions { justify-content: flex-start; flex-wrap: wrap; }
 }
+.usage { display: block; margin-top: 4px; font-size: 0.78rem; }

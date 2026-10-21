@@ -1,16 +1,18 @@
 import hashlib
 import re
 import secrets
+import threading
 from datetime import timedelta
 
 from sqlalchemy.exc import OperationalError
-from sqlmodel import Session, delete, select, update
+from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
 from app.models import (
     AdminAudit,
     Agent,
     AgentAudit,
+    AgentRequest,
     AgentRun,
     Approval,
     CommandRun,
@@ -30,6 +32,8 @@ ADMIN_AUDIT_KEEP = 5000  # newest admin changes kept
 AUDIT_PATH_MAX = 200
 AUDIT_DETAIL_MAX = 300  # detail can carry agent-supplied text (denial reasons)
 LAST_USED_REFRESH = timedelta(minutes=1)
+DEFAULT_MAX_PER_HOUR = 60
+MAX_PER_HOUR = 100000
 
 
 def hash_token(token: str) -> str:
@@ -39,7 +43,7 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None) -> tuple[Agent, str]:
+def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
     """Create an agent and return it with its plaintext token (the only time
     the token exists outside the caller's hands)."""
     name = name.strip()
@@ -47,6 +51,7 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         raise ValueError("Name must be 1-40 characters: letters, digits, '.', '_' or '-'.")
     if expires_days is not None and not 1 <= expires_days <= MAX_EXPIRY_DAYS:
         raise ValueError(f"Expiry must be between 1 and {MAX_EXPIRY_DAYS} days.")
+    _check_limit(max_per_hour)
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with Session(engine) as session:
@@ -57,6 +62,7 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         agent = Agent(
             name=name,
             role_id=role_id,
+            max_per_hour=max_per_hour,
             token_hash=hash_token(token),
             expires_at=utcnow() + timedelta(days=expires_days) if expires_days else None,
         )
@@ -64,6 +70,55 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
         session.commit()
         session.refresh(agent)
         return agent, token
+
+
+def _check_limit(value: int | None) -> None:
+    if value is not None and not 0 <= value <= MAX_PER_HOUR:
+        raise ValueError(f"The hourly limit must be between 0 (no limit) and {MAX_PER_HOUR}.")
+
+
+def set_hourly_limit(agent_id: int, value: int | None) -> None:
+    _check_limit(value)
+    with Session(engine) as session:
+        agent = session.get(Agent, agent_id)
+        if agent is None:
+            raise ValueError("Unknown agent.")
+        agent.max_per_hour = value
+        session.add(agent)
+        session.commit()
+
+
+def hourly_limit(agent: Agent) -> int:
+    """Requests per hour this agent may make; 0 means no limit."""
+    return DEFAULT_MAX_PER_HOUR if agent.max_per_hour is None else agent.max_per_hour
+
+
+_admit_lock = threading.Lock()  # counting and recording are one step, so a burst cannot all see "one left"
+HOUR = timedelta(hours=1)
+
+
+def _used(session: Session, agent_id: int, since) -> int:
+    return session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent_id, AgentRequest.at >= since)).one()
+
+
+def requests_last_hour(agent: Agent) -> int:
+    with Session(engine) as session:
+        return _used(session, agent.id, utcnow() - HOUR)
+
+
+def admit(agent: Agent) -> bool:
+    """Let one more request through if the agent is within its hourly allowance, and count it.
+    Called for new requests only: an approval an admin gives was counted when it was asked for."""
+    limit = hourly_limit(agent)
+    since = utcnow() - HOUR
+    with _admit_lock, Session(engine) as session:
+        session.exec(delete(AgentRequest).where(AgentRequest.at < since))  # everyone's, so the table stays small
+        if limit and _used(session, agent.id, since) >= limit:
+            session.commit()
+            return False
+        session.add(AgentRequest(agent_id=agent.id))
+        session.commit()
+        return True
 
 
 def authenticate(token: str) -> tuple[Agent | None, str]:
@@ -120,6 +175,7 @@ def delete_agent(agent_id: int) -> None:
             # SQLite reuses the id of a deleted last row; a new agent must not inherit old runs.
             session.exec(delete(AgentRun).where(AgentRun.agent_id == agent_id))
             session.exec(delete(Approval).where(Approval.agent_id == agent_id))
+            session.exec(delete(AgentRequest).where(AgentRequest.agent_id == agent_id))
             session.exec(update(CommandRun).where(CommandRun.agent_id == agent_id).values(agent_id=None))
             session.delete(agent)
             session.commit()

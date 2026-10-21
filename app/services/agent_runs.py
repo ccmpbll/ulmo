@@ -28,6 +28,13 @@ class Refused(Exception):
         self.status, self.reason = status, reason
 
 
+def admit(agent: Agent) -> None:
+    """Count a new request against the agent's hourly allowance, or refuse it. An approval an admin
+    gives is not counted again: it was counted when it was asked for."""
+    if not agents.admit(agent):
+        raise Refused(429, f"rate limit: {agents.hourly_limit(agent)} requests per hour")
+
+
 def precheck_run(agent: Agent, playbook: str, limit: list[str]) -> None:
     if not agents.runs_enabled():
         raise Refused(503, "agent runs are switched off")

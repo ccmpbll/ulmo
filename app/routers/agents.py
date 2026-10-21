@@ -44,6 +44,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "hosts": inventory.list_hosts(),
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
+            "default_per_hour": agents.DEFAULT_MAX_PER_HOUR,
+            "used_last_hour": {a.id: agents.requests_last_hour(a) for a in rows},
             "error": error,
             "new_token": new_token,
         },
@@ -57,8 +59,15 @@ def _back():
     return RedirectResponse("/agents", status_code=303)
 
 
-def _role_id(value: str) -> int | None:
-    return int(value) if value.strip() else None
+def _whole_number(value: str, what: str) -> int | None:
+    """A form number that may be left blank (None); anything else must be a whole number."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{what} must be a whole number.") from None
 
 
 @router.get("/agents", response_class=HTMLResponse)
@@ -72,14 +81,16 @@ def create_agent(
     name: str = Form(...),
     expires_days: str = Form(""),
     role_id: str = Form(""),
+    max_per_hour: str = Form(""),
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
         # Without a login anyone who can reach this page could mint a token.
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        days = int(expires_days) if expires_days.strip() else None
-        agent, token = agents.create_agent(name, days, _role_id(role_id))
+        agent, token = agents.create_agent(
+            name, _whole_number(expires_days, "Expiry"), _whole_number(role_id, "Role"), _whole_number(max_per_hour, "The hourly limit")
+        )
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
@@ -97,6 +108,19 @@ def toggle_agent(request: Request, agent_id: int, user=Depends(require_login)):
     return _back()
 
 
+@router.post("/agents/{agent_id}/limit")
+def set_agent_limit(request: Request, agent_id: int, max_per_hour: str = Form(""), user=Depends(require_login)):
+    # A higher limit is a widening, so it is locked like the rest while auth is disabled.
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        agents.set_hourly_limit(agent_id, _whole_number(max_per_hour, "The hourly limit"))
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "set agent limit", f"agent id {agent_id}: {max_per_hour.strip() or 'default'} per hour")
+    return _back()
+
+
 @router.post("/agents/{agent_id}/delete")
 def delete_agent(agent_id: int, user=Depends(require_login)):
     agents.delete_agent(agent_id)
@@ -109,7 +133,7 @@ def set_agent_role(request: Request, agent_id: int, role_id: str = Form(""), use
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        agents.assign_role(agent_id, _role_id(role_id))
+        agents.assign_role(agent_id, _whole_number(role_id, "Role"))
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "set agent role", f"agent id {agent_id} -> role id {role_id or 'none'}")

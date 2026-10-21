@@ -162,9 +162,21 @@ exactly as shown, after repeating every check a direct call gets, so a command t
 role that lost it or a switched-off kill switch makes it fail instead of run. The agent polls
 `GET /api/v1/approvals/{id}`: `pending`, then `approved` with a `result_url` to follow, or `denied`,
 `expired` (nobody decided in 15 minutes) or `failed`. At most 10 requests per agent wait at once, and asking again for something already waiting returns the same approval instead of a new one.
+A request can carry a short `note` (up to 500 characters, in the same JSON body), for example
+what the sweep found; it is shown on the Approvals page, labelled as the agent's words and
+escaped, stripped of control and direction-override characters, and included in the notification. It is ignored when the call needs no approval, and a
+repeat of a request that is already waiting keeps the first note.
 Only a signed-in admin can decide: an agent token cannot, and while `ULMO_DISABLE_AUTH` is set
 approving is refused. A new request sends a Pushover/ntfy notification (whatever "Notify on" says);
 set **Public URL of ulmo** under Settings -> Notifications to include the link.
+
+**Rate limit.** Each agent may make a limited number of requests per hour: playbook runs, commands
+and approval requests together, each counted once when it is accepted (an approval you give is not
+counted again, and neither is a retry of a request that is already waiting). A request refused for
+bad parameters or missing permission costs nothing. The default is 60; set another number on the
+agent (0 is no limit), and the Agents page shows how many it has used in the last hour. Past the
+limit, a new request answers `429 rate limit: N requests per hour`. Raising a limit is locked while
+`ULMO_DISABLE_AUTH` is set.
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create
