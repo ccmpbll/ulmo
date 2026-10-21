@@ -292,7 +292,7 @@ def test_old_list_pages_redirect_and_detail_pages_stay():
 
     nav = admin.get("/activity").text.split("</header>")[0]
     assert ">Run History<" not in nav and ">Sync Logs<" not in nav, "both live under Activity now"
-    assert '<a href="/activity">Activity</a>' in nav
+    assert '<a href="/activity" class="active" aria-current="page">Activity</a>' in nav, "the page you are on is marked"
 
 
 def test_history_is_pruned():

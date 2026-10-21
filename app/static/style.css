@@ -34,6 +34,9 @@ a:hover { text-decoration: underline; }
 .topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
 .topbar .version { font-size: 0.7rem; color: var(--muted); margin-left: 6px; }
 .topbar nav { display: flex; flex-wrap: wrap; gap: 4px 16px; flex: 1; }
+.topbar nav a.active { color: var(--text); font-weight: 600; }
+.nav-toggle { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.menu-btn { display: none; }
 .logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
 .logout-form .who { color: var(--muted); }
 
@@ -254,13 +257,21 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .panel-head { flex-wrap: wrap; }
 .panel code, .card > p code { overflow-wrap: anywhere; }
 
-/* Phones: brand and log out on one line, the links below in two compact rows */
+/* Phones: brand, a Menu button and Log out on one line; the links open below as a list */
 @media (max-width: 640px) {
-  .topbar { padding: 8px 14px; gap: 4px 12px; }
+  .topbar { padding: 8px 14px; gap: 0 12px; }
   .topbar .brand { font-size: 1rem; }
-  .topbar nav { order: 3; flex: 1 0 100%; gap: 2px 14px; font-size: 0.9rem; }
-  .logout-form { margin-left: auto; }
+  .menu-btn {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 5px 12px;
+    background: #2a2e38; color: var(--text); border-radius: 6px; font-size: 0.85rem; cursor: pointer;
+  }
+  .nav-toggle:focus-visible + .menu-btn { outline: 2px solid var(--accent); }
+  .nav-toggle:checked + .menu-btn { background: var(--accent); color: #fff; }
+  .topbar nav { display: none; order: 3; flex: 1 0 100%; flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: 8px; }
+  .nav-toggle:checked ~ nav { display: flex; }
+  .topbar nav a { padding: 12px 2px; border-top: 1px solid var(--border); font-size: 1rem; }
+  .topbar nav a.active { color: var(--accent); }
   .logout-form .who { display: none; }
-  .logout-form button { padding: 4px 10px; font-size: 0.8rem; }
+  .logout-form button { padding: 5px 12px; font-size: 0.85rem; }
   .container { padding: 16px 14px; }
 }

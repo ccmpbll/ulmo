@@ -13,14 +13,15 @@
   {% if user %}
   <header class="topbar">
     <a class="brand" href="/">ulmo</a><span class="version">{{ APP_VERSION }}</span>
+    {% set waiting = pending_approvals() %}
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Show the menu" />
+    <label for="nav-toggle" class="menu-btn">Menu{% if waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</label>
+    {% set path = request.url.path %}
     <nav>
-      <a href="/">Playbooks</a>
-      <a href="/inventory">Inventory</a>
-      <a href="/agents">Agents</a>
-      <a href="/approvals">Approvals{% set waiting = pending_approvals() %}{% if waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</a>
-      <a href="/commands">Commands</a>
-      <a href="/activity">Activity</a>
-      <a href="/settings">Settings</a>
+      {% for href, label in [("/", "Playbooks"), ("/inventory", "Inventory"), ("/agents", "Agents"), ("/approvals", "Approvals"), ("/commands", "Commands"), ("/activity", "Activity"), ("/settings", "Settings")] %}
+      {% set here = (path == "/" or path.startswith(("/runs", "/playbooks"))) if href == "/" else path.startswith(href) %}
+      <a href="{{ href }}"{% if here %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/approvals" and waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</a>
+      {% endfor %}
     </nav>
     {% if AUTH_DISABLED %}
     <span class="who muted">auth disabled</span>
