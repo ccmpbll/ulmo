@@ -520,7 +520,7 @@ def test_saved_copies_say_what_changed():
     assert admin.get("/commands/history/20990101T000000000000Z").status_code == 404
     _, token = agents.create_agent("viewer-intruder")
     r = client.get(f"/commands/history/{versions[0]['id']}", headers={"Authorization": f"Bearer {token}"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
 
     command_admin.AUTH_DISABLED = True
     try:
@@ -750,7 +750,7 @@ def test_page_is_admin_only_and_locked_without_login():
         ("get", "/commands/download", None), ("post", "/commands/history/x/restore", {}),
     ]:
         r = getattr(client, method)(url, headers=h, **({"data": data} if data is not None else {}), follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/login", f"{url}: {r.status_code}"
+        assert r.status_code == 303 and r.headers["location"].startswith("/login"), f"{url}: {r.status_code}"
     assert "x" not in cl.load()[0].commands and "h" not in cl.load()[0].hosts
 
     command_admin.AUTH_DISABLED = True

@@ -48,7 +48,7 @@ from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, Run
 from app.routers import agents as agents_router  # noqa: E402
 from app.routers import api as api_module  # noqa: E402
 from app.services import settings_store  # noqa: E402
-from app.services import agents, git_sync, inventory  # noqa: E402
+from app.services import agent_runs, agents, git_sync, inventory  # noqa: E402
 
 PLAYBOOKS = [
     {"name": "restart.yml", "rel_path": "playbooks/restart.yml"},
@@ -197,7 +197,7 @@ def test_granted_run_uses_the_runner_unchanged():
     assert len(calls) == before + 1
 
     cat = client.get("/api/v1/catalog", headers=_h(token)).json()
-    assert cat == {"runs_enabled": True, "commands": [], "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"]}]}
+    assert cat == {"runs_enabled": True, "commands": [], "playbooks": [{"playbook": "playbooks/restart.yml", "hosts": ["web1", "web2"], "requires_approval": False}]}
     assert client.get(f"/api/v1/runs/{body['id']}", headers=_h(token)).json()["triggered_by"] == "agent:runner1"
 
 
@@ -330,7 +330,7 @@ def test_admin_side():
     for method, url in [("post", "/roles"), ("post", f"/roles/{role.id}/grants"), ("post", f"/agents/{agent.id}/role"),
                         ("post", "/agent-runs/toggle"), ("post", f"/grants/1/delete"), ("post", f"/roles/{role.id}/delete")]:
         r = getattr(client, method)(url, data={"name": "x", "enable": "1"}, headers=_h(token), follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/login", f"{url}: {r.status_code}"
+        assert r.status_code == 303 and r.headers["location"].startswith("/login"), f"{url}: {r.status_code}"
     assert agents.runs_enabled()
     with Session(engine) as session:
         assert session.get(Role, role.id) is not None
@@ -451,8 +451,8 @@ def test_overlapping_and_excess_runs_are_refused():
     agent, token = agents.create_agent("busybee")
     agents.assign_role(agent.id, role.id)
     before = len(calls)
-    cap = api_module.MAX_AGENT_RUNS
-    api_module.MAX_AGENT_RUNS = 2
+    cap = agent_runs.MAX_AGENT_RUNS
+    agent_runs.MAX_AGENT_RUNS = 2
     hold["on"] = True
     try:
         first = _run(token, "playbooks/restart.yml", ["web1"])
@@ -491,7 +491,7 @@ def test_overlapping_and_excess_runs_are_refused():
             session.commit()
     finally:
         hold["on"] = False
-        api_module.MAX_AGENT_RUNS = cap
+        agent_runs.MAX_AGENT_RUNS = cap
     _wait_all_done()
 
 

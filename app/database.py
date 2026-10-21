@@ -10,6 +10,8 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 _ADDED_COLUMNS = {
     "runhistory": [("tags", "TEXT"), ("limit", "TEXT")],
     "agent": [("role_id", "INTEGER")],
+    "grant": [("requires_approval", "BOOLEAN DEFAULT 0")],
+    "rolecommand": [("requires_approval", "BOOLEAN DEFAULT 0")],
 }
 
 
@@ -22,11 +24,11 @@ def _apply_column_migrations() -> None:
     with engine.connect() as conn:
         for table, columns in _ADDED_COLUMNS.items():
             existing = {
-                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")
+                row[1] for row in conn.exec_driver_sql(f'PRAGMA table_info("{table}")')
             }
             for name, sql_type in columns:
                 if name not in existing:
                     # Quote the column name — "limit" (used by RunHistory.limit) is a
                     # reserved SQL keyword and breaks unquoted ALTER TABLE syntax.
-                    conn.exec_driver_sql(f'ALTER TABLE {table} ADD COLUMN "{name}" {sql_type}')
+                    conn.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {sql_type}')
         conn.commit()

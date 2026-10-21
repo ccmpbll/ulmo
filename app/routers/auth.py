@@ -18,6 +18,11 @@ from app.templating import templates
 router = APIRouter()
 
 
+def _safe_next(value: str) -> str:
+    """Where to go after signing in: a path on this site, never another site."""
+    return value if value.startswith("/") and not value.startswith(("//", "/\\")) and value.isprintable() else "/"
+
+
 @router.get("/setup", response_class=HTMLResponse)
 def setup_form(request: Request):
     if AUTH_DISABLED:
@@ -52,27 +57,27 @@ def setup_submit(
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request):
+def login_form(request: Request, next: str = ""):
     if AUTH_DISABLED:
         return RedirectResponse("/", status_code=303)
     if not any_user_exists():
         return RedirectResponse("/setup", status_code=303)
     if current_user(request):
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+        return RedirectResponse(_safe_next(next), status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"error": None, "next": _safe_next(next)})
 
 
 @router.post("/login", response_class=HTMLResponse)
-def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("")):
     if AUTH_DISABLED:
         return RedirectResponse("/", status_code=303)
     user = get_user_by_username(username.strip())
     if user is None or not verify_password(password, user.password_hash):
         return templates.TemplateResponse(
-            request, "login.html", {"error": "Invalid username or password."}
+            request, "login.html", {"error": "Invalid username or password.", "next": _safe_next(next)}
         )
     request.session["user_id"] = user.id
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 @router.post("/logout")

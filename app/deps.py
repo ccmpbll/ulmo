@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import HTTPException, Request
 
 from app.auth import current_user
@@ -8,7 +10,10 @@ from app.services import agents
 def require_login(request: Request):
     user = current_user(request)
     if user is None:
-        raise HTTPException(status_code=303, headers={"Location": "/login"})
+        # A page opened from a link (a notification) comes back to itself after signing in.
+        dest = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        back = f"/login?next={quote(dest, safe='')}" if request.method == "GET" and dest != "/" else "/login"
+        raise HTTPException(status_code=303, headers={"Location": back})
     return user
 
 

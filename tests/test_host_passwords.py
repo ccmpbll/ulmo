@@ -230,7 +230,7 @@ def test_saving_rules():
     # An agent token reaches none of it.
     _, token = agents.create_agent("pw-intruder")
     r = client.post("/commands/hosts", data=_host_form(name="evil", password="x"), headers={"Authorization": f"Bearer {token}"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login" and host_secrets.get("evil") is None
+    assert r.status_code == 303 and r.headers["location"].startswith("/login") and host_secrets.get("evil") is None
     assert host_secrets.hosts_with_password() <= {"nopw"} | {"gandalf"}
 
 

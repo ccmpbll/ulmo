@@ -25,14 +25,15 @@ a:hover { text-decoration: underline; }
 .topbar {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 8px 24px;
+  flex-wrap: wrap;  /* a phone shows every link instead of cutting the row off */
   padding: 12px 24px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 .topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
 .topbar .version { font-size: 0.7rem; color: var(--muted); margin-left: 6px; }
-.topbar nav { display: flex; gap: 16px; flex: 1; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 4px 16px; flex: 1; }
 .logout-form { display: flex; align-items: center; gap: 10px; margin: 0; }
 .logout-form .who { color: var(--muted); }
 

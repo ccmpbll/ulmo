@@ -17,6 +17,7 @@
       <a href="/">Playbooks</a>
       <a href="/inventory">Inventory</a>
       <a href="/agents">Agents</a>
+      <a href="/approvals">Approvals{% set waiting = pending_approvals() %}{% if waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</a>
       <a href="/commands">Commands</a>
       <a href="/activity">Activity</a>
       <a href="/settings">Settings</a>

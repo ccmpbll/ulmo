@@ -11,8 +11,8 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_agent
-from app.models import Agent, CommandRun, RunHistory
-from app.services import agents, command_library, commands, git_sync, inventory, playbook_tags, runner
+from app.models import Agent, Approval, CommandRun, RunHistory
+from app.services import agent_runs, agents, approvals, command_library, commands, git_sync, inventory, notifier, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -97,12 +97,8 @@ def run_detail(run_id: int):
     return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}
 
 
-MAX_AGENT_RUNS = 5  # agent playbook runs going at once, across all agents
-MAX_COMMAND_RUNS = 5  # command runs going at once, across all agents
-MAX_COMMANDS_PER_HOST = 2
 DEFAULT_WAIT = 20  # seconds POST /commands waits for the result before answering "still running"
 MAX_WAIT = 60
-_start_lock = threading.Lock()  # makes "any conflicting run?" and "start it" one step
 
 
 class RunRequest(BaseModel):
@@ -116,39 +112,69 @@ def _deny(request: Request, agent: Agent, status: int, reason: str):
     raise HTTPException(status, reason)
 
 
+def _approval_json(a: Approval) -> dict:
+    out = {
+        "id": a.id, "status": a.status, "kind": a.kind, "target": a.target, "host": a.host, "line": a.line,
+        "created_at": _iso(a.created_at), "expires_at": _iso(a.expires_at), "decided_at": _iso(a.decided_at),
+        "run_id": a.run_id, "note": a.note,
+    }
+    if a.kind == "command":
+        out["params"] = json.loads(a.params)
+    if a.run_id:
+        out["result_url"] = f"/api/v1/{'commands' if a.kind == 'command' else 'runs'}/{a.run_id}"
+    return out
+
+
+def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str) -> dict:
+    """`params` is what the agent sent: approving validates it again, exactly as a direct call would."""
+    try:
+        approval, created = approvals.create(agent, kind, target, host, params, line)
+    except approvals.TooManyPending as exc:
+        _deny(request, agent, 429, str(exc))
+    request.state.audit = (agent.name, f"{'requested' if created else 'repeated'} approval {approval.id}: {line}")
+    if created:  # a retry of a request that is already waiting must not notify again
+        threading.Thread(target=notifier.notify_approval, args=(approval,), daemon=True).start()
+    response.status_code = 202
+    return {"status": "pending_approval", "approval_id": approval.id, "expires_at": _iso(approval.expires_at), "poll": f"/api/v1/approvals/{approval.id}"}
+
+
+@router.get("/approvals/{approval_id}")
+def approval_detail(approval_id: int, request: Request, agent: Agent = Depends(require_agent)):
+    """An agent sees only its own requests: the status, and once approved the run to poll."""
+    approval = approvals.get(approval_id)
+    if approval is None or approval.agent_id != agent.id:
+        _deny(request, agent, 404, "Approval not found")
+    return _approval_json(approval)
+
+
 @router.get("/catalog")
 def catalog(agent: Agent = Depends(require_agent)):
     """What this agent may run, so it can discover it instead of guessing."""
     library = command_library.load()[0]
+    needing = approvals.commands_needing(agent)
     return {
         "runs_enabled": agents.runs_enabled(),
-        "playbooks": [{"playbook": g.playbook, "hosts": g.hosts.split(",")} for g in agents.grants_for(agent)],
+        "playbooks": [
+            {"playbook": g.playbook, "hosts": g.hosts.split(","), "requires_approval": g.requires_approval}
+            for g in agents.grants_for(agent)
+        ],
         "commands": [
-            {**library.commands[name].schema(), "hosts": hosts} for name, hosts in agents.commands_for(agent).items()
+            {**library.commands[name].schema(), "hosts": hosts, "requires_approval": name in needing}
+            for name, hosts in agents.commands_for(agent).items()
         ],
     }
 
 
 @router.post("/runs", status_code=202)
-def start_run(body: RunRequest, request: Request, agent: Agent = Depends(require_agent)):
-    if not agents.runs_enabled():
-        _deny(request, agent, 503, "agent runs are switched off")
-    reason = agents.check_run(agent, body.playbook, body.limit)
-    if reason:
-        _deny(request, agent, 403, reason)
-    with _start_lock:
-        busy = agents.running_conflict(body.playbook, body.limit)
-        if busy:
-            _deny(request, agent, 409, f"run {busy.id} of this playbook is still running on overlapping hosts")
-        if agents.running_agent_runs() >= MAX_AGENT_RUNS:
-            _deny(request, agent, 429, f"{MAX_AGENT_RUNS} agent runs are already in progress")
-        try:
-            record = runner.start_run(
-                body.playbook, triggered_by=f"agent:{agent.name}", limit=",".join(body.limit)
-            )
-        except ValueError:  # granted, but the playbook has since left the repo
-            _deny(request, agent, 404, "playbook no longer exists")
-        agents.record_agent_run(record.id, agent.id)
+def start_run(body: RunRequest, request: Request, response: Response, agent: Agent = Depends(require_agent)):
+    try:
+        agent_runs.precheck_run(agent, body.playbook, body.limit)
+        if approvals.playbook_needs(agent, body.playbook, body.limit):
+            line = f"ansible-playbook {body.playbook} --limit {','.join(body.limit)}"
+            return _request_approval(request, response, agent, "playbook", body.playbook, ",".join(body.limit), {}, line)
+        record = agent_runs.launch_run(agent, body.playbook, body.limit)
+    except agent_runs.Refused as exc:
+        _deny(request, agent, exc.status, exc.reason)
     request.state.audit = (agent.name, f"started run {record.id}: {body.playbook} on {record.limit}")
     return _run_json(record)
 
@@ -203,27 +229,16 @@ def start_command(
 ):
     """Run a library command on one host over SSH. Waits up to `wait` seconds for it
     to finish and, if it does, answers 200 with the status and output. Otherwise 202
-    ("running"): poll GET /commands/{id}. The command keeps running either way."""
-    if not agents.runs_enabled():
-        _deny(request, agent, 503, "agent runs are switched off")
-    reason = agents.check_command(agent, body.command, body.host)
-    if reason:
-        _deny(request, agent, 403, reason)
-    library = command_library.load()[0]
-    template, host = library.commands.get(body.command), library.hosts.get(body.host)
-    if template is None or host is None:  # edited away since the check above
-        _deny(request, agent, 403, "that command or host was just changed; try again")
+    ("running"): poll GET /commands/{id}. The command keeps running either way. A command
+    the role marks as needing approval answers 202 "pending_approval" instead and runs
+    only once an admin approves it: poll GET /approvals/{id}."""
     try:
-        values = command_library.validate_params(template, body.params)
-    except ValueError as exc:
-        _deny(request, agent, 400, str(exc))
-    with _start_lock:
-        if commands.running() >= MAX_COMMAND_RUNS or commands.running(body.host) >= MAX_COMMANDS_PER_HOST:
-            _deny(request, agent, 429, "too many commands are already running")
-        try:
-            run = commands.start(template, host, values, f"agent:{agent.name}", agent.id)
-        except commands.CommandError as exc:
-            _deny(request, agent, 502, str(exc))
+        template, host, values = agent_runs.precheck_command(agent, body.command, body.host, body.params)
+        if template.id in approvals.commands_needing(agent):
+            return _request_approval(request, response, agent, "command", template.id, host.name, body.params, agent_runs.command_line(template, values))
+        run = agent_runs.launch_command(agent, template, host, values)
+    except agent_runs.Refused as exc:
+        _deny(request, agent, exc.status, exc.reason)
     request.state.audit = (agent.name, f"started command {run.id}: {template.id} on {body.host}")
     deadline = time.monotonic() + wait
     while run.status == "running" and time.monotonic() < deadline:

@@ -42,7 +42,7 @@ from app.main import app  # noqa: E402
 from app.models import AdminAudit, Agent, CommandRun, RoleCommand, utcnow  # noqa: E402
 from app.routers import agents as agents_router  # noqa: E402
 from app.routers import api as api_module  # noqa: E402
-from app.services import agents, command_library as cl, commands  # noqa: E402
+from app.services import agent_runs, agents, command_library as cl, commands  # noqa: E402
 
 SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 for key in ("unraid-key", "ansible-ed25519"):
@@ -458,8 +458,8 @@ def test_kill_switch_and_caps():
     FakePopen.behavior = {"hang": True}
     hang = cl.load()[0].commands["hang"]
     hang.timeout = 60  # keep the runs "running" while we count them
-    saved = (api_module.MAX_COMMAND_RUNS, api_module.MAX_COMMANDS_PER_HOST)
-    api_module.MAX_COMMAND_RUNS, api_module.MAX_COMMANDS_PER_HOST = 3, 2
+    saved = (agent_runs.MAX_COMMAND_RUNS, agent_runs.MAX_COMMANDS_PER_HOST)
+    agent_runs.MAX_COMMAND_RUNS, agent_runs.MAX_COMMANDS_PER_HOST = 3, 2
     held = []
     try:
         for _ in range(2):
@@ -472,7 +472,7 @@ def test_kill_switch_and_caps():
         held.append(r.json()["id"])
         assert _post(token, "hang", "frodo").status_code == 429, "global cap"
     finally:
-        api_module.MAX_COMMAND_RUNS, api_module.MAX_COMMANDS_PER_HOST = saved
+        agent_runs.MAX_COMMAND_RUNS, agent_runs.MAX_COMMANDS_PER_HOST = saved
         for proc in FakePopen.instances:
             proc.killed.set()
         hang.timeout = 1
@@ -633,7 +633,7 @@ def test_agents_page_roles_ui():
 
     _, token = agents.create_agent("cmd-intruder")
     r = client.post(f"/roles/{role.id}/commands", data={"commands": ["restart"]}, headers=_h(token), follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
     assert agents.role_commands(role.id) == ["logs"]
 
 

@@ -152,9 +152,9 @@ def test_api_ignores_the_cookie_plane():
     # With login enforced, an agent token does not open an admin page either.
     _, token = agents.create_agent("not-admin")
     r = client.get("/agents", headers=_bearer(token), follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login", r.status_code
+    assert r.status_code == 303 and r.headers["location"].startswith("/login"), r.status_code
     r = client.post("/agents", data={"name": "sneaky"}, headers=_bearer(token), follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
     with Session(engine) as session:
         assert session.exec(select(Agent).where(Agent.name == "sneaky")).first() is None
 
