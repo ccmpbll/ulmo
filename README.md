@@ -109,8 +109,11 @@ instead of hanging ulmo.
 
 The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
 command a set of sample values would produce, without running anything) and hosts through a form
-with a **Test connection** button. Every change validates the whole file, keeps the previous copy
-(the number kept is a setting, 20 by default) with **Restore**, refuses to save over a change made
+with a **Test connection** button. A command can be renamed even while it is in use: the hosts that
+offer it and the roles that hold it follow the new name in the same step (anything outside ulmo that
+calls it by the old name, such as n8n, has to be updated). Every change validates the whole file,
+keeps the previous copy (the number kept is a setting, 20 by default), lists each copy with what
+changed after it, lets you **View** what restoring it would undo, and **Restore** it, refuses to save over a change made
 elsewhere, and is written to the change log (with what the command now runs). A hand edit that no longer parses keeps the last good
 version in use and shows the error.
 

@@ -7,7 +7,9 @@
   <form method="post" action="/commands/save">
     <input type="hidden" name="base" value="{{ base }}" />
     <input type="hidden" name="is_new" value="{{ '1' if is_new else '' }}" />
-    <label>Name<input type="text" name="name" required maxlength="60" value="{{ name }}" {{ 'readonly' if not is_new }} placeholder="restart-container" /></label>
+    <input type="hidden" name="original" value="{{ original if not is_new else '' }}" />
+    <label>Name<input type="text" name="name" required maxlength="60" value="{{ name }}" placeholder="restart-container" /></label>
+    {% if not is_new %}<p class="muted">You can rename it. The hosts that offer it and the roles that use it follow the new name; anything outside ulmo that calls it by the old name (n8n, scripts) must be updated.</p>{% endif %}
     <label>Definition (YAML)
       <textarea name="text" rows="14" spellcheck="false" style="font-family: monospace; width: 100%;">{{ text }}</textarea>
     </label>

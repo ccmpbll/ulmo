@@ -205,6 +205,13 @@ def set_role_commands(role_id: int, commands: list[str]) -> list[str]:
     return names
 
 
+def rename_role_command(old: str, new: str) -> None:
+    """A command renamed on purpose keeps the roles that held it."""
+    with Session(engine) as session:
+        session.exec(update(RoleCommand).where(RoleCommand.command == old).values(command=new))
+        session.commit()
+
+
 def purge_missing_commands(library) -> None:
     """A command that is gone from the library must leave every role, or a new
     command later given the same name would silently be allowed to them. Runs

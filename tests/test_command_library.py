@@ -439,6 +439,184 @@ def test_saved_copies_have_readable_times():
     assert '<time class="local-time"' in page.split("Saved copies")[1], "times go through the local_time filter"
 
 
+def test_yaml_keeps_the_way_you_write_it():
+    _reset()
+    text = "description: Disk usage\nrisk: low\nargv: [df, -h]\nparams: {}\n"
+    base = cl.current_version()
+    assert _form(admin, "/commands/save", name="disk-usage", text="description: Disk usage\nrisk: low\nargv: [df, -h]\n", base=base, is_new="1").status_code == 303
+    editor = admin.get("/commands/edit?name=disk-usage").text
+    assert "argv: [df, -h]" in editor and "- df" not in editor, editor
+    assert "description: Disk usage" in editor and "risk: low" in editor
+    on_disk = cl.LIBRARY_PATH.read_text()
+    assert "argv: [df, -h]" in on_disk and "- df" not in on_disk, on_disk
+
+    # Parameters stay readable too, and the text survives a trip through the editor unchanged.
+    cl.save_command("restart", RESTART)
+    cl.save_host("gandalf", GANDALF)
+    text = cl.LIBRARY_PATH.read_text()
+    assert "values: [sonarr, radarr]" in text and "commands: [restart]" in text, text
+    assert yaml.safe_load(text)["commands"]["restart"] == RESTART
+    again = cl.dump_yaml(yaml.safe_load(text))
+    assert again == text, "dumping what we dumped must not change it"
+    assert cl.dump_yaml(cl.command_body("restart")) == cl.dump_yaml(RESTART)
+    # Long descriptions are not folded across lines.
+    long_desc = "word " * 60
+    cl.save_command("wordy", {"description": long_desc.strip(), "argv": ["uptime"]})
+    assert long_desc.strip() in cl.LIBRARY_PATH.read_text()
+    # Awkward strings are still quoted so they read back the same.
+    cl.save_command("tricky", {"description": "yes", "argv": ["echo", "no", "on", "{x}", "- dash", "a: b"], "params": {"x": {"type": "enum", "values": ["1", "true", "null"]}}})
+    assert cl.load()[0].commands["tricky"].argv == ["echo", "no", "on", "{x}", "- dash", "a: b"]
+    assert cl.load()[0].commands["tricky"].params["x"]["values"] == ["1", "true", "null"]
+
+
+def test_saved_copies_say_what_changed():
+    old = {"commands": {"a": {"description": "x", "argv": ["uptime"]}}, "hosts": {}}
+    def d(new, o=old):
+        return cl.describe_changes(yaml.safe_dump(o), yaml.safe_dump(new))
+    assert d(old) == "no change to commands or hosts"
+    assert d({"commands": {"a": {"description": "x", "argv": ["uptime"]}, "b": {"description": "y", "argv": ["df"]}}, "hosts": {}}) == "added command b"
+    assert d({"commands": {}, "hosts": {}}) == "removed command a"
+    assert d({"commands": {"a": {"description": "changed", "argv": ["uptime"]}}, "hosts": {}}) == "changed command a"
+    assert d({"commands": {"c": {"description": "x", "argv": ["uptime"]}}, "hosts": {}}) == "renamed command a to c"
+    assert d({"commands": {"a": old["commands"]["a"]}, "hosts": {"h": {"address": "x", "user": "u"}}}) == "added host h"
+    many = {"commands": {n: {"description": n, "argv": ["uptime"]} for n in "abcdef"}, "hosts": {}}
+    assert d(many) == "added command b; added command c; added command d; and 3 more"
+    assert "could not read" in cl.describe_changes("a: [broken", yaml.safe_dump(old))
+
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_host("gandalf", GANDALF)
+    cl.save_host("gandalf", {**GANDALF, "port": 2222})
+    cl.save_command("restart", {**RESTART, "description": "edited"})
+    cl.save_command("restart", {**RESTART, "description": "edited"}, rename_from=None)
+    versions = cl.list_versions()
+    changes = [v["change"] for v in versions]
+    assert changes[0] == "no change to commands or hosts" or changes[0] == "changed command restart", changes
+    assert "changed command restart" in changes and "changed host gandalf" in changes and "added host gandalf" in changes, changes
+    assert changes[-1] == "added host gandalf", "no copy is kept of the file that did not exist yet, so the oldest is after the first save"
+
+    # The page lists the summaries and links to a viewer.
+    page = admin.get("/commands").text
+    assert "added host gandalf" in page and "changed command restart" in page
+    assert f'/commands/history/{versions[0]["id"]}"' in page
+
+    # The viewer shows what restoring would undo, and the whole copy.
+    oldest = versions[-1]
+    r = admin.get(f"/commands/history/{oldest['id']}")
+    assert r.status_code == 200 and "What restoring it would change" in r.text
+    diff = cl.diff_with_current(oldest["id"])
+    assert any(line.startswith("-") and "gandalf" in line for line in diff), diff
+    assert any(line.startswith("-") and "gandalf" in line for line in r.text.replace("&#34;", '"').splitlines()) or "gandalf" in r.text
+    mid = next(v for v in versions if v["change"] == "added host gandalf")
+    body = admin.get(f"/commands/history/{mid['id']}").text
+    assert "- " in body and "gandalf" in body, "the host that was added later shows as something restore would remove"
+    assert "Restore this copy" in body and "disabled" not in body.split("Restore this copy")[0].rsplit("<button", 1)[1]
+    r = _form(admin, f"/commands/history/{mid['id']}/restore", base=cl.current_version())
+    assert r.status_code == 303 and "gandalf" not in cl.load()[0].hosts
+
+    # Bad ids are 404, never a file read.
+    for bad in ("..%2fcommands", "nope", "20990101T000000000000Z", "../../etc/hostname"):
+        assert admin.get(f"/commands/history/{bad}").status_code in (404, 405), bad
+    assert admin.get("/commands/history/20990101T000000000000Z").status_code == 404
+    _, token = agents.create_agent("viewer-intruder")
+    r = client.get(f"/commands/history/{versions[0]['id']}", headers={"Authorization": f"Bearer {token}"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+
+    command_admin.AUTH_DISABLED = True
+    try:
+        assert "disabled" in admin.get(f"/commands/history/{versions[0]['id']}").text, "restore button is greyed out while login is disabled"
+    finally:
+        command_admin.AUTH_DISABLED = False
+
+
+def test_rename_a_command_in_use():
+    _reset()
+    cl.save_command("restart", RESTART)
+    cl.save_command("logs", LOGS)
+    cl.save_host("gandalf", {**GANDALF, "commands": ["restart", "logs"]})
+    cl.save_host("frodo", {"address": "10.0.0.2", "user": "ansible", "commands": ["logs"]})
+    cl.load()
+    role = agents.create_role("rename-role")
+    agents.set_role_commands(role.id, ["restart", "logs"])
+    agent, token = agents.create_agent("rename-agent")
+    agents.assign_role(agent.id, role.id)
+    base = cl.current_version()
+    text = yaml.safe_dump(RESTART, sort_keys=False)
+
+    # Rename through the page: library key, hosts and roles all follow, in one step.
+    r = _form(admin, "/commands/save", name="restart-container", text=text, base=base, original="restart")
+    assert r.status_code == 303 and "Renamed" in r.headers["location"], r.headers.get("location")
+    library = cl.load()[0]
+    assert "restart" not in library.commands and "restart-container" in library.commands
+    assert list(library.commands) == ["restart-container", "logs"], "order is kept"
+    assert library.hosts["gandalf"].commands == ["restart-container", "logs"] and library.hosts["frodo"].commands == ["logs"]
+    assert agents.role_commands(role.id) == ["logs", "restart-container"]
+    with Session(engine) as session:
+        agent = session.get(type(agent), agent.id)
+    assert agents.check_command(agent, "restart-container", "gandalf") == ""
+    assert "no permission" in agents.check_command(agent, "restart", "gandalf"), "the old name no longer works"
+    assert not cl.load()[1]
+    with Session(engine) as session:
+        entry = [a for a in session.exec(select(AdminAudit).where(AdminAudit.action == "rename command")).all()][-1]
+    assert "restart -> restart-container" in entry.detail
+
+    # The editor opens under the new name; renaming and editing can happen together.
+    assert "restart-container" in admin.get("/commands/edit?name=restart-container").text
+    edited = yaml.safe_dump({**RESTART, "description": "Restart it"}, sort_keys=False)
+    r = _form(admin, "/commands/save", name="bounce", text=edited, base=cl.current_version(), original="restart-container")
+    assert r.status_code == 303
+    assert cl.load()[0].commands["bounce"].description == "Restart it" and cl.load()[0].hosts["gandalf"].commands == ["bounce", "logs"]
+    assert agents.role_commands(role.id) == ["bounce", "logs"]
+    summaries = " | ".join(v["change"] for v in cl.list_versions())
+    assert "renamed command restart to restart-container" in summaries, summaries
+    assert "added command bounce; removed command restart-container" in summaries, "renamed AND edited reads as a replacement"
+
+    # Refusals leave everything exactly as it was.
+    before = (cl.LIBRARY_PATH.read_text(), agents.role_commands(role.id))
+    for kwargs, contains in [
+        (dict(name="logs", original="bounce", text=edited), "already exists"),
+        (dict(name="bad name!", original="bounce", text=edited), "command name"),
+        (dict(name="", original="bounce", text=edited), None),
+        (dict(name="ghost2", original="no-such", text=edited), "no such command"),
+    ]:
+        r = _form(admin, "/commands/save", base=cl.current_version(), **kwargs)
+        assert r.status_code in (400, 422), (kwargs, r.status_code)
+        if contains:
+            assert contains in r.text, (kwargs, r.text[:300])
+    r = _form(admin, "/commands/save", name="stale-rename", text=edited, base="stale", original="bounce")
+    assert r.status_code == 400 and "changed since" in r.text
+    assert (cl.LIBRARY_PATH.read_text(), agents.role_commands(role.id)) == before
+
+    # If the file cannot be written after the roles were moved, the roles move back.
+    real = os.replace
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    os.replace = boom
+    try:
+        try:
+            _form(admin, "/commands/save", name="never", text=edited, base=cl.current_version(), original="bounce")
+        except OSError:
+            pass
+    finally:
+        os.replace = real
+    assert agents.role_commands(role.id) == ["bounce", "logs"], "role entries must follow the file, not run ahead of it"
+    assert "bounce" in cl.load()[0].commands and "never" not in cl.load()[0].commands
+
+    # Hand-renaming in the file is not a rename: roles lose it (nothing says it is the same command).
+    cl.LIBRARY_PATH.write_text(cl.LIBRARY_PATH.read_text().replace("bounce", "hand-renamed"))
+    assert not cl.load()[1] and "hand-renamed" in cl.load()[0].commands
+    assert agents.role_commands(role.id) == ["logs"]
+
+    # Locked while login is disabled.
+    command_admin.AUTH_DISABLED = True
+    try:
+        r = _form(admin, "/commands/save", name="locked-name", text=edited, base=cl.current_version(), original="hand-renamed")
+        assert r.status_code == 400 and "ULMO_DISABLE_AUTH" in r.text
+    finally:
+        command_admin.AUTH_DISABLED = False
+    assert "locked-name" not in cl.load()[0].commands
+
+
 # --- the page ---------------------------------------------------------------------------------
 
 
@@ -461,7 +639,7 @@ def test_commands_page():
 
     # The saved command opens for editing, and changes round-trip.
     r = admin.get("/commands/edit?name=restart")
-    assert r.status_code == 200 and "docker" in r.text and "readonly" in r.text
+    assert r.status_code == 200 and "docker" in r.text and "readonly" not in r.text, "the name can be changed"
     assert admin.get("/commands/edit?name=ghost").status_code == 400
 
     # Errors keep the text and say why; nothing is written.
@@ -535,7 +713,7 @@ def test_commands_page():
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and "gandalf" in r.text
     versions = cl.list_versions()
     assert versions
-    assert admin.get(f"/commands/history/{versions[0]['id']}").status_code in (404, 405), "no per-copy download route"
+    assert admin.get(f"/commands/history/{versions[0]['id']}").status_code == 200, "a saved copy can be viewed"
     before = cl.current_version()
     r = _form(admin, f"/commands/history/{versions[-1]['id']}/restore", base=before)
     assert r.status_code == 303 and cl.current_version() != before
@@ -624,6 +802,9 @@ def main():
     test_restore_recovers_from_an_unreadable_file()
     test_saved_copies_have_readable_times()
     test_commands_page()
+    test_yaml_keeps_the_way_you_write_it()
+    test_saved_copies_say_what_changed()
+    test_rename_a_command_in_use()
     test_preview_shows_what_the_host_receives()
     test_page_is_admin_only_and_locked_without_login()
     test_history_setting()

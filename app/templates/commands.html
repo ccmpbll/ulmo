@@ -88,14 +88,16 @@
 <div class="settings-section">
   <h2>Saved copies</h2>
   <div class="card">
-    <p class="muted">Every change keeps the previous copy. The number kept is set under Settings.</p>
+    <p class="muted">Every change keeps the copy it replaced. Each line says what the change after that copy was; open one to see what restoring it would undo. The number kept is set under Settings.</p>
     <table>
+      <thead><tr><th>Copy from</th><th>What changed after it</th><th></th></tr></thead>
       <tbody>
         {% for v in versions %}
         <tr>
           <td>{{ v.at | local_time }}</td>
-          <td class="muted">{{ v.bytes }} bytes</td>
+          <td class="muted">{{ v.change or '(not summarised)' }}</td>
           <td>
+            <a href="/commands/history/{{ v.id }}">View</a>
             <form method="post" action="/commands/history/{{ v.id }}/restore" style="display:inline" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">
               <input type="hidden" name="base" value="{{ base }}" />
               <button type="submit" class="secondary">Restore</button>
@@ -103,7 +105,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td class="muted">No saved copies yet.</td></tr>
+        <tr><td colspan="3" class="muted">No saved copies yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
