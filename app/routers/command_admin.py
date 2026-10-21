@@ -3,13 +3,9 @@ import shlex
 import yaml
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
-from sqlalchemy.orm import defer
-from sqlmodel import Session, select
 
 from app.config import AUTH_DISABLED
-from app.database import engine
 from app.deps import require_login
-from app.models import CommandRun
 from app.services import agents, command_library, commands, ssh_keys
 from app.templating import templates
 
@@ -19,7 +15,6 @@ from app.templating import templates
 # can run (and where) is the same kind of change as granting it.
 router = APIRouter(dependencies=[Depends(require_login)])
 
-RECENT = 5  # rows in the "recent runs" table here; the Activity page has the rest
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could change what agents can run."
 STARTER = """description: What this does, in a sentence
 risk: low
@@ -34,8 +29,6 @@ timeout: 30
 
 def _page(request: Request, error: str | None = None, ok: str | None = None, host: str = "", status_code: int | None = None):
     library, load_error = command_library.load()
-    with Session(engine) as session:
-        runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(RECENT)).all()
     return templates.TemplateResponse(
         request,
         "commands.html",
@@ -53,7 +46,6 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
             "load_error": load_error,
             "versions": command_library.list_versions(),
             "base": command_library.current_version(),
-            "runs": runs,
             "error": error,
             "ok": ok,
             "locked": AUTH_DISABLED,

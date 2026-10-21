@@ -6,7 +6,7 @@
      filter values give an empty list rather than an error or an injection.
   3. It is login-only and read-only, escapes what it shows, and never shows command output
      (nor even reads the output column).
-  4. The Agents and Commands pages show only the newest five and link here.
+  4. The Agents and Commands pages no longer carry their own copies of these logs.
   5. The change log is bounded like the request log.
 
 Run directly: python3 tests/test_activity.py
@@ -148,19 +148,24 @@ def test_security_and_privacy():
     assert reads and not any("commandrun.output" in s for s in reads), reads
 
 
-def test_teasers_and_nav():
+def test_other_pages_do_not_repeat_the_logs():
     agents_page = admin.get("/agents").text
-    sections = agents_page.split("Recent changes")[1]
-    changes_block = sections.split("Recent API requests")[0]
-    requests_block = sections.split("Recent API requests")[1]
-    assert changes_block.count("<tr><td>") == 5, "only the newest five changes"
-    assert len([r for r in re.findall(r"<tr>(.*?)</tr>", requests_block, re.S) if "colspan" not in r and "<th>" not in r]) == 5
-    assert 'href="/activity?tab=changes"' in agents_page and 'href="/activity?tab=requests"' in agents_page
     commands_page = admin.get("/commands").text
-    runs_block = commands_page.split("Recent command runs")[1]
-    assert len([r for r in re.findall(r"<tr>(.*?)</tr>", runs_block, re.S) if "colspan" not in r and "<th>" not in r]) == 5
-    assert 'href="/activity?tab=runs"' in commands_page
-    assert '<a href="/activity">Activity</a>' in agents_page, "in the top bar"
+    for title in ("Recent changes", "Recent API requests", "Recent command runs"):
+        assert title not in agents_page and title not in commands_page, f"{title!r} lives on the Activity page now"
+    assert '<a href="/activity">Activity</a>' in agents_page and '<a href="/activity">Activity</a>' in commands_page, "reachable from the top bar"
+
+    # And those pages no longer read the log tables at all.
+    statements = []
+    spy = lambda conn, cursor, statement, *a: statements.append(statement)
+    event.listen(engine, "before_cursor_execute", spy)
+    try:
+        admin.get("/agents")
+        admin.get("/commands")
+    finally:
+        event.remove(engine, "before_cursor_execute", spy)
+    touched = [s for s in statements if re.search(r"FROM (agentaudit|adminaudit|commandrun)", s)]
+    assert not touched, touched
 
 
 def test_change_log_is_bounded():
@@ -186,7 +191,7 @@ def main():
     test_views_and_paging()
     test_filters()
     test_security_and_privacy()
-    test_teasers_and_nav()
+    test_other_pages_do_not_repeat_the_logs()
     test_change_log_is_bounded()
     print("OK: the Activity page pages, filters, escapes and hides command output.")
 

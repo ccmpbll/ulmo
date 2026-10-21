@@ -574,7 +574,7 @@ def test_admin_changes_are_audited():
     for expected in ("create role", "add grant", "create agent", "set agent role", "agent runs off", "agent runs on"):
         assert expected in actions, f"{expected!r} not audited: {actions}"
     assert who == {"admin"}
-    assert "set agent role" in admin.get("/agents").text
+    assert "set agent role" in admin.get("/activity?tab=changes").text
 
     # An API flood prunes AgentAudit but never the admin trail.
     keep = agents.AUDIT_KEEP

@@ -128,29 +128,4 @@
     </table>
   </div>
 </div>
-
-<div class="settings-section">
-  <div class="section-head">
-    <h2 style="border: 0; padding: 0; margin: 0;">Recent command runs</h2>
-    <a class="btn secondary" href="/activity?tab=runs">See all</a>
-  </div>
-  <div class="card">
-    <table>
-      <thead><tr><th>When</th><th>Who</th><th>Host</th><th>Command</th><th>Status</th></tr></thead>
-      <tbody>
-        {% for c in runs %}
-        <tr>
-          <td>{{ c.started_at | local_time }}</td>
-          <td>{{ c.triggered_by }}</td>
-          <td>{{ c.host }}</td>
-          <td><code>{{ c.line }}</code></td>
-          <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" class="muted">No command runs yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
 {% endblock %}
