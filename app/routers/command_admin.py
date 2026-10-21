@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.services import agents, command_library, commands, ssh_keys
+from app.services import agents, command_library, commands, host_secrets, ssh_keys
 from app.templating import templates
 
 # The Commands page: hosts, the command library, history. Cookie-session login
@@ -43,6 +43,7 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
             "offered_by": {n: library.hosts_offering(n) for n in library.commands},
             "editing_host": library.hosts.get(host),
             "keys": [k["filename"] for k in ssh_keys.list_keys()],
+            "password_hosts": host_secrets.hosts_with_password(),
             "load_error": load_error,
             "versions": command_library.list_versions(),
             "base": command_library.current_version(),
@@ -157,6 +158,8 @@ def save_host(
     port: str = Form("22"),
     user_name: str = Form("", alias="user"),
     ssh_key: str = Form(""),
+    auth: str = Form("key"),
+    password: str = Form(""),
     offered: list[str] = Form([], alias="commands"),
     original: str = Form(""),
     base: str = Form(""),
@@ -170,13 +173,26 @@ def save_host(
             raise ValueError("A host cannot be renamed: add a new one and delete this one.")
         if not original and name in command_library.load()[0].hosts:
             raise ValueError(f"A host named {name!r} already exists.")
+        if auth not in command_library.AUTH_MODES:
+            raise ValueError("Sign in with an SSH key or a password.")
         body = {"address": address.strip(), "port": int(port) if port.strip().isdigit() else port, "user": user_name.strip(), "commands": sorted(set(offered))}
-        if ssh_key:
+        if auth == "password":
+            body["auth"] = "password"
+            # A new password host needs a password; when editing, a blank field keeps the saved one.
+            if password or not host_secrets.get(name):
+                host_secrets.check(password)
+        elif ssh_key:
             body["ssh_key"] = ssh_key
         command_library.save_host(name, body, base)
+        if auth == "password":
+            if password:
+                host_secrets.set_password(name, password)
+        else:
+            host_secrets.clear(name)  # no longer needed, so no longer kept
     except ValueError as exc:
         return _page(request, error=str(exc), host=original)
-    agents.admin_audit(user.username, "save host", f"{name} ({address.strip()}): {', '.join(sorted(set(offered))) or 'no commands'}")
+    how = "password" if auth == "password" else (f"key {ssh_key}" if ssh_key else "ssh default")
+    agents.admin_audit(user.username, "save host", f"{name} ({address.strip()}, {how}): {', '.join(sorted(set(offered))) or 'no commands'}")
     return RedirectResponse(f"/commands?ok=Saved+host+{name}", status_code=303)
 
 
@@ -188,6 +204,7 @@ def delete_host(request: Request, name: str, user=Depends(require_login)):
         command_library.delete_host(name)
     except ValueError as exc:
         return _page(request, error=f"Cannot delete {name}: {exc}")
+    host_secrets.clear(name)
     agents.admin_audit(user.username, "delete host", name)
     return RedirectResponse(f"/commands?ok=Deleted+host+{name}", status_code=303)
 

@@ -55,6 +55,7 @@ form label {
   font-size: 0.85rem;
   color: var(--muted);
 }
+form label[hidden] { display: none; }  /* display:block above would beat the hidden attribute */
 form input, form select, form textarea {
   display: block;
   width: 100%;

@@ -76,6 +76,14 @@ class AgentAudit(SQLModel, table=True):
     detail: str = ""  # why a 401/403/503 happened, or what a run request started
 
 
+class HostPassword(SQLModel, table=True):
+    """The password for a command host that signs in with a password. Kept here, never in
+    commands.yml, so it is not in that file's download or its saved copies."""
+
+    host: str = Field(primary_key=True)
+    password: str
+
+
 class RoleCommand(SQLModel, table=True):
     """A command (by name, from the command library) a role may use. Which
     hosts it can run on comes from the hosts that offer it, not from here."""

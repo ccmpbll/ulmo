@@ -56,7 +56,8 @@ MAX_TOKEN_CHARS = 500
 MAX_VALUE_CHARS = 200
 MATCH_BUDGET = 0.25  # seconds a regex parameter may spend matching one value
 COMMAND_KEYS = {"description", "argv", "params", "timeout", "sudo", "risk"}
-HOST_KEYS = {"address", "port", "user", "ssh_key", "commands"}
+HOST_KEYS = {"address", "port", "user", "auth", "ssh_key", "commands"}
+AUTH_MODES = ("key", "password")
 PARAM_KEYS = {
     "enum": {"type", "values"},
     "int": {"type", "min", "max"},
@@ -94,6 +95,7 @@ class Host:
     user: str = ""
     ssh_key: str = ""
     commands: list[str] = field(default_factory=list)
+    auth: str = "key"  # "password": the password is kept in the database, never in the file
 
 
 @dataclass
@@ -282,13 +284,18 @@ def parse_host(name: str, data, command_names: set[str]) -> Host:
     key = data.get("ssh_key", "")
     if key and not (isinstance(key, str) and KEY_NAME_RE.match(key) and key not in (".", "..")):
         _bad("ssh_key must be the name of an uploaded key file, not a path")
+    auth = data.get("auth", "key")
+    if auth not in AUTH_MODES:
+        _bad("auth must be key or password")
+    if auth == "password" and key:
+        _bad("a host signs in with a key or a password, not both")
     commands = data.get("commands") or []
     if not isinstance(commands, list) or not all(isinstance(c, str) for c in commands) or len(set(commands)) != len(commands):
         _bad("commands must be a list of unique command names")
     unknown = sorted(set(commands) - command_names)
     if unknown:
         _bad(f"commands that do not exist: {', '.join(unknown)}")
-    return Host(name, address, port, user, key or "", list(commands))
+    return Host(name, address, port, user, key or "", list(commands), auth)
 
 
 # --- the file ----------------------------------------------------------------------

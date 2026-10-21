@@ -7,7 +7,9 @@ single literal word. Nothing an agent supplies is interpreted by a local shell
 come from the host entry in the library, not from the request.
 """
 import json
+import os
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -18,7 +20,7 @@ from sqlmodel import Session, delete, select, update
 from app.config import SSH_STORAGE_DIR
 from app.database import engine
 from app.models import CommandRun, utcnow
-from app.services import command_library
+from app.services import command_library, host_secrets
 
 OUTPUT_CAP = 64 * 1024
 CONNECT_TIMEOUT = 10
@@ -40,24 +42,44 @@ def remote_command(argv: list[str], timeout: int) -> str:
 
 
 def ssh_command(host: command_library.Host, argv: list[str], timeout: int) -> list[str]:
-    key = SSH_STORAGE_DIR / host.ssh_key if host.ssh_key else None
-    if key is not None and not key.is_file():
-        raise CommandError(f"{host.name}: SSH key {host.ssh_key!r} has not been uploaded (Settings -> SSH Key)")
-    cmd = [
-        "ssh", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={CONNECT_TIMEOUT}",
+    common = [
+        "-o", f"ConnectTimeout={CONNECT_TIMEOUT}",
         "-o", "StrictHostKeyChecking=accept-new", "-o", "LogLevel=ERROR",  # no "added to known hosts" banner in the output
         "-p", str(host.port),
     ]
+    target = [f"{host.user}@{host.address}", "--", remote_command(argv, timeout)]
+    if host.auth == "password":
+        if not shutil.which("sshpass"):
+            raise CommandError(f"{host.name}: password sign-in needs sshpass, which is not installed here")
+        # sshpass -e reads the password from the environment (see ssh_env); it is never in the arguments.
+        return [
+            "sshpass", "-e", "ssh", "-o", "BatchMode=no", "-o", "PreferredAuthentications=password,keyboard-interactive",
+            "-o", "PubkeyAuthentication=no", "-o", "NumberOfPasswordPrompts=1", *common, *target,
+        ]
+    key = SSH_STORAGE_DIR / host.ssh_key if host.ssh_key else None
+    if key is not None and not key.is_file():
+        raise CommandError(f"{host.name}: SSH key {host.ssh_key!r} has not been uploaded (Settings -> SSH Key)")
+    cmd = ["ssh", "-o", "BatchMode=yes", *common]
     if key is not None:
         cmd += ["-i", str(key), "-o", "IdentitiesOnly=yes"]
-    return cmd + [f"{host.user}@{host.address}", "--", remote_command(argv, timeout)]
+    return cmd + target
+
+
+def ssh_env(host: command_library.Host) -> dict | None:
+    """The environment for the ssh process: the password for a password host, nothing extra otherwise."""
+    if host.auth != "password":
+        return None
+    password = host_secrets.get(host.name)
+    if password is None:
+        raise CommandError(f"{host.name}: no password has been saved for this host (Commands -> Edit host)")
+    return {**os.environ, "SSHPASS": password}
 
 
 def start(template: command_library.Template, host: command_library.Host, values: dict[str, str], triggered_by: str, agent_id: int | None) -> CommandRun:
     """Record the run and execute it in a background thread. Raises CommandError
     before anything is recorded if ssh cannot even be set up for the host."""
     argv = command_library.build_argv(template, values)
-    cmd = ssh_command(host, argv, template.timeout)
+    cmd, env = ssh_command(host, argv, template.timeout), ssh_env(host)
     with Session(engine) as session:
         run = CommandRun(
             command=template.id, host=host.name, params=json.dumps(values), line=shlex.join(argv),
@@ -66,15 +88,15 @@ def start(template: command_library.Template, host: command_library.Host, values
         session.add(run)
         session.commit()
         session.refresh(run)
-    threading.Thread(target=_execute, args=(run.id, cmd, template.timeout + KILL_GRACE), daemon=True).start()
+    threading.Thread(target=_execute, args=(run.id, cmd, template.timeout + KILL_GRACE, env), daemon=True).start()
     return run
 
 
-def _run(cmd: list[str], timeout: float, cap: int) -> tuple[int, bytes, bool, bool]:
+def _run(cmd: list[str], timeout: float, cap: int, env: dict | None = None) -> tuple[int, bytes, bool, bool]:
     """Run ssh, keep at most `cap` bytes of output, and kill it after `timeout`
     seconds. Returns (exit code, output, output was cut, we killed it). Output past
     the cap is drained and dropped so the real exit code is known."""
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
     killed = threading.Event()
 
     def _kill():
@@ -100,21 +122,23 @@ def _run(cmd: list[str], timeout: float, cap: int) -> tuple[int, bytes, bool, bo
 def probe(host: command_library.Host) -> tuple[bool, str]:
     """Try the connection with a harmless command (the Test connection button)."""
     try:
-        cmd = ssh_command(host, ["echo", "ulmo-ok"], 10)
+        cmd, env = ssh_command(host, ["echo", "ulmo-ok"], 10), ssh_env(host)
     except CommandError as exc:
         return False, str(exc)
     try:
-        rc, raw, _, _ = _run(cmd, CONNECT_TIMEOUT + 15, 2000)
+        rc, raw, _, _ = _run(cmd, CONNECT_TIMEOUT + 15, 2000, env)
     except Exception as exc:  # noqa: BLE001
         return False, f"could not run ssh: {exc}"
     out = raw.decode("utf-8", errors="replace").strip()
+    if host.auth == "password" and rc == 5:  # sshpass: the server asked for the password again
+        return False, "the password was rejected (or this account is not allowed to sign in with a password)"
     return rc == 0 and "ulmo-ok" in out, out or f"ssh exited with {rc}"
 
 
-def _execute(run_id: int, cmd: list[str], local_timeout: float) -> None:
+def _execute(run_id: int, cmd: list[str], local_timeout: float, env: dict | None = None) -> None:
     status, rc, output = "error", None, ""
     try:
-        rc, raw, cut, killed = _run(cmd, local_timeout, OUTPUT_CAP)
+        rc, raw, cut, killed = _run(cmd, local_timeout, OUTPUT_CAP, env)
         output = raw.decode("utf-8", errors="replace") + ("\n[output truncated]" if cut else "")
         # 124/137 are what the host's `timeout` returns when it ends the command.
         if killed or rc in (124, 137):

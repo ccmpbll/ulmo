@@ -105,6 +105,14 @@ hosts:
     commands: [logs]
 ```
 
+A host signs in with an SSH key (the default, and the better choice) or with a username and
+password (`auth: password`, picked on the host form). The password is kept in ulmo's database, never
+in `commands.yml`, the download, the saved copies, the pages, the change log or run output; it is
+handed to `ssh` through `sshpass -e` in the child's environment, not on the command line. Anyone who
+can read `./data` can read it, so use a key where you can, and an account that is not root. Leaving
+the password blank when editing keeps the saved one; switching a host back to a key or deleting it
+removes the password.
+
 Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
 (must match in full; may not start with `-` unless `allow_leading_dash: true`). Every match has a short
 time budget, so a pattern that is slow on some value (for example `(a|aa)+$`) rejects that value
