@@ -11,11 +11,14 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - Lists playbooks from the synced repo with inline tag (`--tags`) and host (`--limit`)
   selection; live colorized log streaming, cancel, and a configurable run timeout (default 60 min)
 - Live per-task progress and a structured Play Recap on completion
+- One **Activity** page for playbook runs, command runs, git syncs, API requests and changes: newest first,
+  paged, filterable. History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
+  goes with it; runs in progress are never touched), 500 command runs and 5,000 each of requests and changes.
 - View playbook/inventory YAML, syntax highlighted (read-only)
 - Per-playbook cron schedules, independent of the git sync schedule
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
-- "Sync from Git" installs collections from the repo's `requirements.yaml`; Sync Logs tab shows
-  full output
+- "Sync from Git" installs collections from the repo's `requirements.yaml`; each sync's full output is
+  under Activity -> Syncs
 - Settings backup/restore as YAML
 - JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles and grants that
   say which playbooks on which hosts an agent may run, a kill switch, and an audit log (see below)
@@ -69,7 +72,7 @@ that playbook; matching is exact, so wildcards, groups and `a:b` patterns are re
 reads a name as a host *or* a group, so a host that shares its name with a group cannot be
 granted or used, and everything is refused while the inventory cannot be read. Runs go through
 the same code as the Run button (same `ansible-runner` call, no extra variables or check mode)
-and show up in Run History as `agent:<name>`.
+and show up under Activity -> Playbook runs as `agent:<name>`.
 
 Guard rails: a run is refused (409) while another run of the same playbook is going on any of
 the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at

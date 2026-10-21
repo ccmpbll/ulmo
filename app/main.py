@@ -10,7 +10,7 @@ from app.config import SECRET_KEY, SECURE_COOKIES
 from app.database import init_db
 from app.routers import activity, agents, api, auth, command_admin, inventory, logs, playbooks, runs, settings
 from app.services import agents as agent_service
-from app.services import commands, git_sync, runner, scheduler, ssh_keys
+from app.services import commands, git_sync, retention, runner, scheduler, ssh_keys
 
 
 @asynccontextmanager
@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
     runner.reconcile_orphaned_runs()
     commands.settle_stale(timedelta(0), "ulmo restarted while this was running")
     git_sync.reconcile_orphaned_syncs()
+    retention.prune()
     ssh_keys.ensure_symlinks()
     scheduler.start()
     yield

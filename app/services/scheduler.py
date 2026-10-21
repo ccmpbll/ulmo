@@ -4,13 +4,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlmodel import Session, select
 
-from app.services import git_sync, settings_store
+from app.services import git_sync, retention, settings_store
 
 logger = logging.getLogger("ulmo.scheduler")
 
 scheduler = BackgroundScheduler()
 GIT_SYNC_JOB_ID = "git-sync"
 PLAYBOOK_JOB_PREFIX = "playbook:"
+RETENTION_JOB_ID = "retention"
 
 
 def _run_scheduled_sync() -> None:
@@ -108,8 +109,13 @@ def reap_orphaned_schedules() -> None:
         session.commit()
 
 
+def schedule_retention() -> None:
+    scheduler.add_job(retention.prune, "interval", hours=6, id=RETENTION_JOB_ID, replace_existing=True)
+
+
 def start() -> None:
     if not scheduler.running:
         scheduler.start()
+    schedule_retention()
     reschedule()
     reschedule_all_playbooks()
