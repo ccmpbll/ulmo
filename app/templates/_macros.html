@@ -1,0 +1,19 @@
+{#
+  A scrollable list of checkboxes, with a filter box once there are many.
+  items: list of (value, detail) pairs; selected: the values to tick.
+#}
+{% macro checklist(id, field, items, selected, empty="Nothing to choose from yet.") %}
+{% if items | length > 6 %}
+<input type="search" class="check-filter" data-filter="#{{ id }}" placeholder="Filter {{ items | length }} items" aria-label="Filter the list" />
+{% endif %}
+<div class="checklist" id="{{ id }}">
+  {% for value, detail in items %}
+  <label class="check-item">
+    <input type="checkbox" name="{{ field }}" value="{{ value }}" {{ 'checked' if value in selected }} />
+    <span><span class="name">{{ value }}</span>{% if detail %}<span class="meta">{{ detail }}</span>{% endif %}</span>
+  </label>
+  {% else %}
+  <p class="empty" style="padding: 0 12px;">{{ empty }}</p>
+  {% endfor %}
+</div>
+{% endmacro %}

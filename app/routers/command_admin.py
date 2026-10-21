@@ -41,6 +41,10 @@ def _page(request: Request, error: str | None = None, ok: str | None = None, hos
         {
             "library": library,
             "commands": sorted(library.commands.values(), key=lambda t: t.id),
+            "command_items": [
+                (t.id, t.description + (f" · risk {t.risk}" if t.risk else ""))
+                for t in sorted(library.commands.values(), key=lambda t: t.id)
+            ],
             "hosts": sorted(library.hosts.values(), key=lambda h: h.name),
             "offered_by": {n: library.hosts_offering(n) for n in library.commands},
             "editing_host": library.hosts.get(host),

@@ -770,6 +770,55 @@ def test_page_is_admin_only_and_locked_without_login():
     assert cl.current_version() == base, "nothing may change while login is disabled"
 
 
+def test_checklist_pieces():
+    css = Path("app/static/style.css").read_text()
+    assert ".check-item[hidden]" in css and "display: none" in css.split(".check-item[hidden]")[1].split("}")[0], \
+        "a rule that keeps filtered rows hidden (display:flex on .check-item would otherwise win)"
+    for needed in (".actions", ".checklist", ".panel", ".form-grid"):
+        assert needed in css, needed
+    import re
+    assert re.search(r"a\.btn[^{]*\{[^}]*display:\s*inline-block", css), "links styled as buttons must be laid out like buttons"
+    base = admin.get("/commands").text
+    assert '/static/filter.js?v=' in base, "the filter script is loaded on every page"
+    assert admin.get("/static/filter.js").status_code == 200
+    node = shutil.which("node")
+    if node:  # the script must at least parse (this environment has no browser to run it in)
+        import subprocess
+        assert subprocess.run([node, "--check", "app/static/filter.js"], capture_output=True).returncode == 0
+    # A long list of commands gets a filter box; a short one does not.
+    _reset()
+    for i in range(8):
+        cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
+    page = admin.get("/commands").text
+    assert 'data-filter="#host-commands"' in page and 'placeholder="Filter 8 items"' in page
+    _reset()
+    cl.save_command("only", {"description": "d", "argv": ["uptime"]})
+    assert "data-filter=" not in admin.get("/commands").text
+    # Actions are buttons, not bare links.
+    cl.save_host("h", {"address": "10.0.0.1", "user": "root", "commands": ["only"]})
+    page = admin.get("/commands").text
+    for label in ("Edit", "New command", "Download commands.yml"):
+        assert f'class="btn' in page and label in page
+    import re
+    assert not re.findall(r'<a href="/commands[^"]*">(?:Edit|View|New command|Back|Cancel)</a>', page), "no plain-link actions"
+    # The other pages' actions are buttons too: the editor, and a saved copy's page.
+    editor = admin.get("/commands/edit?name=only").text
+    assert editor.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Cancel"
+    cl.save_command("only", {"description": "d2", "argv": ["uptime"]})
+    version = cl.list_versions()[0]["id"]
+    viewer = admin.get(f"/commands/history/{version}").text
+    assert viewer.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Back"
+    for html in (editor, viewer):
+        assert not re.findall(r'<a href="/commands"[^>]*>(?:Back|Cancel|Back to commands)</a>', html), "no plain-link Back/Cancel"
+    # A long Offers list is folded; a short one is shown.
+    cl.save_host("busy", {"address": "10.0.0.2", "user": "root", "commands": ["only"]})
+    for i in range(8):
+        cl.save_command(f"x{i}", {"description": "d", "argv": ["uptime"]})
+    cl.save_host("busy", {"address": "10.0.0.2", "user": "root", "commands": [f"x{i}" for i in range(8)]})
+    page = admin.get("/commands").text
+    assert "<summary>8 commands</summary>" in page
+
+
 def test_history_setting():
     r = admin.post("/settings", data={"git_repo_url": "", "git_branch": "main", "playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml",
                                       "requirements_path": "", "git_sync_cron": "", "extra_args": "", "recent_runs_count": "5",
@@ -807,6 +856,7 @@ def main():
     test_rename_a_command_in_use()
     test_preview_shows_what_the_host_receives()
     test_page_is_admin_only_and_locked_without_login()
+    test_checklist_pieces()
     test_history_setting()
     print("OK: the command library validates strictly, versions every change, and is edited safely from the Commands page.")
 

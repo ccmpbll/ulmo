@@ -55,7 +55,7 @@ form label {
   font-size: 0.85rem;
   color: var(--muted);
 }
-form input, form select {
+form input, form select, form textarea {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -75,6 +75,10 @@ button, .btn {
   font-size: 0.9rem;
   cursor: pointer;
 }
+a.btn, summary.btn { display: inline-block; text-decoration: none; color: #fff; line-height: 1.2; }
+a.btn:hover { text-decoration: none; }
+summary.btn { list-style: none; }
+summary.btn::-webkit-details-marker { display: none; }
 button.secondary, .btn.secondary { background: #2a2e38; }
 button.danger, .btn.danger { background: var(--red); }
 button, .btn { transition: opacity 0.15s ease, transform 0.15s ease; }
@@ -195,3 +199,41 @@ pre.log {
 .settings-section h2 { font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 
 .user-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+
+/* Rows of buttons (and links that are buttons) */
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions form { margin: 0; }
+.form-actions { margin-top: 20px; }
+td.actions-cell { white-space: nowrap; }
+td.actions-cell .actions { flex-wrap: nowrap; justify-content: flex-end; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.section-head h3, .section-head h2 { margin: 0; }
+
+/* Forms: fields side by side where there is room */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+.subhead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 20px 0 8px; }
+
+/* A list of things to tick: scrolls and filters instead of growing without end */
+.checklist { border: 1px solid var(--border); border-radius: 8px; background: #11141a; max-height: 260px; overflow-y: auto; }
+.check-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; margin: 0; border-bottom: 1px solid var(--border); cursor: pointer; color: var(--text); font-size: 0.9rem; }
+.check-item[hidden] { display: none; }  /* without this, display:flex above would beat the hidden attribute */
+.check-item:last-child { border-bottom: none; }
+.check-item:hover { background: rgba(255, 255, 255, 0.03); }
+.check-item:has(input:checked) { background: rgba(79, 140, 255, 0.1); }
+.check-item input[type="checkbox"] { display: inline-block; width: auto; margin: 3px 0 0; flex: none; }
+.check-item .name { display: block; font-weight: 600; }
+.check-item .meta { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+.check-filter { margin: 0 0 8px; }
+
+/* A role (or other grouped thing) on its own panel inside a card */
+.panel { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; background: rgba(255, 255, 255, 0.015); }
+.panel:last-of-type { margin-bottom: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.panel-head h3 { margin: 0; font-size: 1.05rem; }
+.panel details { margin: 12px 0 0; }
+.panel details > form { margin-top: 12px; }
+.empty { color: var(--muted); margin: 8px 0; }
+td details summary { cursor: pointer; color: var(--text); }
+td details[open] summary { margin-bottom: 4px; }
+pre.diff { background: #11141a; border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.5; resize: vertical; }

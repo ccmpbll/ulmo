@@ -603,7 +603,9 @@ def test_agents_page_roles_ui():
     r = admin.post(f"/roles/{role.id}/commands", data={"commands": ["restart", "logs"]}, follow_redirects=False)
     assert r.status_code == 303 and agents.role_commands(role.id) == ["logs", "restart"]
     page = admin.get("/agents").text
-    assert "Commands this role may use (2)" in page and "runs on gandalf" in page
+    assert 'value="restart" checked' in page and 'value="logs" checked' in page, "the role's commands are ticked"
+    assert 'value="say" checked' not in page.split(f'id="role-commands-{role.id}"')[1].split("</form>")[0], "and the others are not"
+    assert "runs on gandalf" in page
     assert "frodo, gandalf" in page, "where logs runs"
 
     r = admin.post(f"/roles/{role.id}/commands", data={"commands": ["ghost"]})

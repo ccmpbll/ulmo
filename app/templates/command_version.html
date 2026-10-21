@@ -1,25 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Saved copy - ulmo{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Saved copy from {{ version.at | local_time if version else '' }}</h1></div>
+<div class="page-header">
+  <h1>Saved copy from {{ version.at | local_time if version else '' }}</h1>
+  <a class="btn secondary" href="/commands">Back to commands</a>
+</div>
 <p class="muted">{% if version %}What changed after this copy was made: {{ version.change or 'not summarised' }}.{% endif %}</p>
 <div class="card">
-  <h3>What restoring it would change</h3>
+  <div class="section-head"><h3>What restoring it would change</h3></div>
   {% if diff %}
-  <pre>{% for line in diff %}<span style="{% if line.startswith('+') and not line.startswith('+++') %}color: var(--green){% elif line.startswith('-') and not line.startswith('---') %}color: var(--red){% else %}opacity: .7{% endif %}">{{ line }}</span>
+  <pre class="diff">{% for line in diff %}<span style="{% if line.startswith('+') and not line.startswith('+++') %}color: var(--green){% elif line.startswith('-') and not line.startswith('---') %}color: var(--red){% else %}opacity: .7{% endif %}">{{ line }}</span>
 {% endfor %}</pre>
   <p class="muted">Lines starting with <code>-</code> are in the current library and would go away; lines starting with <code>+</code> are in this copy and would come back.</p>
   {% else %}
-  <p class="muted">Identical to the current library.</p>
+  <p class="empty">Identical to the current library.</p>
   {% endif %}
   <form method="post" action="/commands/history/{{ version.id if version else '' }}/restore" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">
     <input type="hidden" name="base" value="{{ base }}" />
-    <button type="submit" class="secondary" {{ 'disabled' if locked or not version }}>Restore this copy</button>
-    <a href="/commands">Back</a>
+    <div class="actions form-actions">
+      <button type="submit" {{ 'disabled' if locked or not version }}>Restore this copy</button>
+      <a class="btn secondary" href="/commands">Back</a>
+    </div>
   </form>
 </div>
 <div class="card">
-  <h3>The whole copy</h3>
-  <pre>{{ text }}</pre>
+  <div class="section-head"><h3>The whole copy</h3></div>
+  <pre class="diff">{{ text }}</pre>
 </div>
 {% endblock %}
