@@ -702,6 +702,11 @@ def test_limit_is_set_by_admins_only():
     assert "must be a whole number" in admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "many"}).text
     assert "invalid literal" not in admin.post("/agents", data={"name": "badexp", "expires_days": "soon"}).text
     assert admin.post("/agents", data={"name": "badlimit", "max_per_hour": "-5"}).status_code == 400
+    role = agents.create_role("form-role")
+    assert admin.post("/agents", data={"name": "withrole", "role_id": str(role.id)}).status_code == 200
+    with Session(engine) as session:
+        assert session.exec(select(Agent).where(Agent.name == "withrole")).first().role_id == role.id, "the role chosen on the form is kept"
+    assert "Role must be a whole number" in admin.post("/agents", data={"name": "junkrole", "role_id": "x"}).text
     with Session(engine) as session:
         assert session.get(Agent, agent.id).max_per_hour is None
         audit = session.exec(select(AdminAudit).where(AdminAudit.action == "set agent limit")).all()

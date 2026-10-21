@@ -94,23 +94,26 @@ def hourly_limit(agent: Agent) -> int:
 
 
 _admit_lock = threading.Lock()  # counting and recording are one step, so a burst cannot all see "one left"
+HOUR = timedelta(hours=1)
+
+
+def _used(session: Session, agent_id: int, since) -> int:
+    return session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent_id, AgentRequest.at >= since)).one()
 
 
 def requests_last_hour(agent: Agent) -> int:
-    since = utcnow() - timedelta(hours=1)
     with Session(engine) as session:
-        return session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent.id, AgentRequest.at >= since)).one()
+        return _used(session, agent.id, utcnow() - HOUR)
 
 
 def admit(agent: Agent) -> bool:
     """Let one more request through if the agent is within its hourly allowance, and count it.
     Called for new requests only: an approval an admin gives was counted when it was asked for."""
     limit = hourly_limit(agent)
-    since = utcnow() - timedelta(hours=1)
+    since = utcnow() - HOUR
     with _admit_lock, Session(engine) as session:
         session.exec(delete(AgentRequest).where(AgentRequest.at < since))  # everyone's, so the table stays small
-        used = session.exec(select(func.count()).select_from(AgentRequest).where(AgentRequest.agent_id == agent.id)).one()
-        if limit and used >= limit:
+        if limit and _used(session, agent.id, since) >= limit:
             session.commit()
             return False
         session.add(AgentRequest(agent_id=agent.id))

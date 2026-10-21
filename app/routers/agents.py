@@ -46,7 +46,6 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "runs_enabled": agents.runs_enabled(),
             "default_per_hour": agents.DEFAULT_MAX_PER_HOUR,
             "used_last_hour": {a.id: agents.requests_last_hour(a) for a in rows},
-            "limit_of": {a.id: agents.hourly_limit(a) for a in rows},
             "error": error,
             "new_token": new_token,
         },
@@ -58,10 +57,6 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
 
 def _back():
     return RedirectResponse("/agents", status_code=303)
-
-
-def _role_id(value: str) -> int | None:
-    return int(value) if value.strip() else None
 
 
 def _whole_number(value: str, what: str) -> int | None:
@@ -94,7 +89,7 @@ def create_agent(
         return _page(request, error=LOGIN_REQUIRED)
     try:
         agent, token = agents.create_agent(
-            name, _whole_number(expires_days, "Expiry"), _role_id(role_id), _whole_number(max_per_hour, "The hourly limit")
+            name, _whole_number(expires_days, "Expiry"), _whole_number(role_id, "Role"), _whole_number(max_per_hour, "The hourly limit")
         )
     except ValueError as exc:
         return _page(request, error=str(exc))
@@ -138,7 +133,7 @@ def set_agent_role(request: Request, agent_id: int, role_id: str = Form(""), use
     if AUTH_DISABLED:
         return _page(request, error=LOGIN_REQUIRED)
     try:
-        agents.assign_role(agent_id, _role_id(role_id))
+        agents.assign_role(agent_id, _whole_number(role_id, "Role"))
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "set agent role", f"agent id {agent_id} -> role id {role_id or 'none'}")

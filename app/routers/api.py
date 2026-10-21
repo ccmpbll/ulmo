@@ -128,10 +128,8 @@ def _approval_json(a: Approval) -> dict:
 
 def _request_approval(request: Request, response: Response, agent: Agent, kind: str, target: str, host: str, params: dict, line: str, note: str | None) -> dict:
     """`params` is what the agent sent: approving validates it again, exactly as a direct call would."""
-    if approvals.find_pending(agent, kind, target, host, params) is None:  # a retry of a waiting request costs nothing
-        agent_runs.admit(agent)
     try:
-        approval, created = approvals.create(agent, kind, target, host, params, line, approvals.clean_note(note))
+        approval, created = approvals.create(agent, kind, target, host, params, line, approvals.clean_note(note), before_new=lambda: agent_runs.admit(agent))
     except approvals.TooManyPending as exc:
         _deny(request, agent, 429, str(exc))
     request.state.audit = (agent.name, f"{'requested' if created else 'repeated'} approval {approval.id}: {line}")

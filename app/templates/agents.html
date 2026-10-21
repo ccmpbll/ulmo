@@ -56,7 +56,8 @@
               <input type="number" name="max_per_hour" min="0" max="100000" value="{{ a.max_per_hour if a.max_per_hour is not none }}" placeholder="{{ default_per_hour }}" style="width: 5.5rem; margin: 0;" aria-label="Requests per hour for {{ a.name }}" />
               <button type="submit" class="secondary">Save</button>
             </form>
-            <span class="muted usage">{{ used_last_hour[a.id] }} used in the last hour{% if limit_of[a.id] %} of {{ limit_of[a.id] }}{% endif %}</span>
+            {% set lim = default_per_hour if a.max_per_hour is none else a.max_per_hour %}
+            <span class="muted usage">{{ used_last_hour[a.id] }} used in the last hour{% if lim %} of {{ lim }}{% endif %}</span>
           </td>
           <td class="actions-cell" data-label="">
             <div class="actions">
