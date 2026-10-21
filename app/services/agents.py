@@ -11,14 +11,14 @@ from app.models import (
     Agent,
     AgentAudit,
     AgentRun,
-    CommandGrant,
     CommandRun,
     Grant,
     Role,
+    RoleCommand,
     RunHistory,
     utcnow,
 )
-from app.services import command_templates, git_sync, inventory, settings_store
+from app.services import command_library, git_sync, inventory, settings_store
 
 TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -151,7 +151,7 @@ def delete_role(role_id: int) -> None:
     with Session(engine) as session:
         session.exec(update(Agent).where(Agent.role_id == role_id).values(role_id=None))
         session.exec(delete(Grant).where(Grant.role_id == role_id))
-        session.exec(delete(CommandGrant).where(CommandGrant.role_id == role_id))
+        session.exec(delete(RoleCommand).where(RoleCommand.role_id == role_id))
         session.exec(delete(Role).where(Role.id == role_id))
         session.commit()
 
@@ -188,44 +188,61 @@ def add_grant(role_id: int, playbook: str, hosts: list[str]) -> Grant:
         return grant
 
 
-def add_command_grant(role_id: int, template: str, hosts: list[str]) -> CommandGrant:
-    hosts = _checked_hosts(hosts)
-    if template not in command_templates.load()[0]:
-        raise ValueError("Unknown command template.")
+def set_role_commands(role_id: int, commands: list[str]) -> list[str]:
+    """Replace the set of library commands a role may use. Returns the new set."""
+    names = sorted({c.strip() for c in commands if c.strip()})
+    unknown = sorted(set(names) - set(command_library.load()[0].commands))
+    if unknown:
+        raise ValueError(f"Not in the command library: {', '.join(unknown)}")
     with Session(engine) as session:
         if session.get(Role, role_id) is None:
             raise ValueError("Unknown role.")
-        grant = CommandGrant(role_id=role_id, template=template, hosts=",".join(hosts))
-        session.add(grant)
+        session.exec(delete(RoleCommand).where(RoleCommand.role_id == role_id))
+        for name in names:
+            session.add(RoleCommand(role_id=role_id, command=name))
         session.commit()
-        session.refresh(grant)
-        return grant
+    return names
 
 
-def delete_command_grant(grant_id: int) -> None:
+def forget_command(name: str) -> None:
+    """A deleted command must leave every role, or a new command later given the
+    same name would silently be allowed to them."""
     with Session(engine) as session:
-        session.exec(delete(CommandGrant).where(CommandGrant.id == grant_id))
+        session.exec(delete(RoleCommand).where(RoleCommand.command == name))
         session.commit()
 
 
-def command_grants_for(agent: Agent) -> list[CommandGrant]:
-    if agent.role_id is None:
+def role_commands(role_id: int | None) -> list[str]:
+    if role_id is None:
         return []
     with Session(engine) as session:
-        return list(session.exec(select(CommandGrant).where(CommandGrant.role_id == agent.role_id)).all())
+        rows = session.exec(select(RoleCommand.command).where(RoleCommand.role_id == role_id)).all()
+    return sorted(rows)
 
 
-def check_command(agent: Agent, template: str, host: str) -> str:
-    """Why this agent may not run `template` on `host`, or "" if it may."""
-    mine = [g for g in command_grants_for(agent) if g.template == template]
-    if not mine:
-        return f"no grant for command {template!r}"
-    if host not in {h for g in mine for h in g.hosts.split(",")}:
-        return f"host not granted: {host}"
-    if template not in command_templates.load()[0]:
-        return "that command template is not loaded"
-    if host not in set(inventory.list_hosts()):
-        return "not an inventory host"
+def commands_for(agent: Agent) -> dict[str, list[str]]:
+    """What this agent can run: command name -> hosts that offer it, for the
+    commands its role includes that still exist."""
+    library = command_library.load()[0]
+    out = {}
+    for name in role_commands(agent.role_id):
+        if name in library.commands:
+            out[name] = library.hosts_offering(name)
+    return out
+
+
+def check_command(agent: Agent, command: str, host: str) -> str:
+    """Why this agent may not run `command` on `host`, or "" if it may. Both
+    must hold: the role includes the command AND the host offers it."""
+    if command not in role_commands(agent.role_id):
+        return f"no permission for command {command!r}"
+    library = command_library.load()[0]
+    if command not in library.commands:
+        return "that command no longer exists"
+    if host not in library.hosts:
+        return f"unknown host: {host}"
+    if command not in library.hosts[host].commands:
+        return f"{host} does not offer {command}"
     return ""
 
 

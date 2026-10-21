@@ -76,23 +76,23 @@ class AgentAudit(SQLModel, table=True):
     detail: str = ""  # why a 401/403/503 happened, or what a run request started
 
 
-class CommandGrant(SQLModel, table=True):
-    """Lets a role run one command template on specific inventory hosts."""
+class RoleCommand(SQLModel, table=True):
+    """A command (by name, from the command library) a role may use. Which
+    hosts it can run on comes from the hosts that offer it, not from here."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
     role_id: int = Field(index=True)
-    template: str  # template id (file name without extension)
-    hosts: str  # comma-separated inventory host names
+    command: str
 
 
 class CommandRun(SQLModel, table=True):
-    """One execution of a command template over SSH."""
+    """One execution of a library command over SSH."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    template: str
+    command: str  # name in the command library
     host: str
     params: str = "{}"  # JSON of the validated values
-    command: str = ""  # the argument list that ran, shell-quoted, for display
+    line: str = ""  # the argument list that ran, shell-quoted, for display
     status: str = "running"  # running | success | failed | timeout | error
     return_code: Optional[int] = None
     output: str = ""  # combined stdout/stderr, capped

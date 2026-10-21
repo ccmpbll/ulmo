@@ -77,36 +77,57 @@ once (429). **Agent runs** on the page is a kill switch: when off, no agent can 
 (reading and cancelling still work); it is deliberately not part of Settings backup/restore.
 Every change made on the Agents page is listed under **Recent changes**.
 
-**Running commands over SSH.** A *command template* is a fixed command with typed blanks, kept as
-a YAML file in the synced repo (`ulmo/templates/<id>.yml`, edit it there and Sync):
+**Running commands over SSH.** This is a separate construct from Ansible: its own hosts and its
+own commands, managed on the **Commands** page and stored in one file, `commands.yml` in the data
+volume (hand-editable too). A *command* is a fixed command line with typed blanks, and each
+*host* lists the commands it offers:
 
 ```yaml
-description: Show container logs
-argv: [docker, logs, "--tail={n}", "{container}"]
-params:
-  n: {type: int, min: 1, max: 500}
-  container: {type: regex, pattern: "[a-z0-9_-]+", max_length: 40}
-timeout: 30          # seconds, 1-300
-sudo: false          # run as `sudo -n ...`
-risk: low            # label shown to humans: low | medium | high
-ssh_user: ansible    # optional; default is the host's ansible user from the inventory
-ssh_key: my-key      # optional; a key uploaded under Settings -> SSH Key
+commands:
+  logs:
+    description: Show container logs
+    argv: [docker, logs, "--tail={n}", "{container}"]
+    params:
+      n: {type: int, min: 1, max: 500}
+      container: {type: regex, pattern: "[a-z0-9_-]+", max_length: 40}
+    timeout: 30          # seconds, 1-300
+    sudo: false          # run as `sudo -n ...`
+    risk: low            # label shown to humans: low | medium | high
+hosts:
+  gandalf:
+    address: 10.42.11.10
+    port: 22
+    user: root
+    ssh_key: unraid-key  # a key uploaded under Settings -> SSH Key
+    commands: [logs]
 ```
 
 Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
-(must match in full; may not start with `-` unless `allow_leading_dash: true`; patterns that repeat a repeated group, like `(a+)+`, are refused because they can take exponential time). The agent names
-a template, a host and values; ulmo checks every value, builds the argument list itself, and
-sends it to the host as one shell-quoted string, so a value is always a single literal argument
-and never shell syntax. Host address, port, user and key come from the inventory. A role gets a
-*command grant* (template plus hosts) next to its playbook grants.
+(must match in full; may not start with `-` unless `allow_leading_dash: true`; patterns that
+repeat a repeated group, like `(a+)+`, are refused because they can take exponential time).
+
+The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
+command a set of sample values would produce, without running anything) and hosts through a form
+with a **Test connection** button. Every change validates the whole file, keeps the previous copy
+(the number kept is a setting, 20 by default) with **Restore**, refuses to save over a change made
+elsewhere, and is written to the change log. A hand edit that no longer parses keeps the last good
+version in use and shows the error.
+
+A role lists which commands an agent may use (Agents page). A call is allowed only when the role
+includes the command **and** the chosen host offers it. The agent names a command, a host and
+values; ulmo checks every value, builds the argument list itself, and sends it to the host as one
+shell-quoted string, so a value is always a single literal argument and never shell syntax.
 
 ```
-POST /api/v1/commands          {"template": "logs", "host": "frodo", "params": {"n": 100, "container": "sonarr"}}
+POST /api/v1/commands          {"command": "logs", "host": "gandalf", "params": {"n": 100, "container": "sonarr"}}
 GET  /api/v1/commands/{id}     status, return code, output (capped at 64 KB); only the agent's own runs
 ```
 
-The host runs the command under its own `timeout` (coreutils or busybox must be installed there), so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept. The kill switch covers commands too. A template
-file that fails to parse is listed on the Agents page and keeps its last good version.
+The host runs the command under its own `timeout` (coreutils or busybox must be installed there),
+so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real
+exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept.
+The kill switch covers commands too. Commands do not use the Ansible inventory, and playbook
+grants do not use these hosts.
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create

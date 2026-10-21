@@ -55,6 +55,7 @@ def update_settings(
     extra_args: str = Form(""),
     recent_runs_count: str = Form("5"),
     run_timeout_minutes: str = Form("60"),
+    command_history_keep: str = Form("20"),
 ):
     try:
         recent_runs_count_int = int(recent_runs_count.strip())
@@ -72,6 +73,15 @@ def update_settings(
     except ValueError:
         return RedirectResponse(
             "/settings?error=Run+timeout+must+be+0+or+a+positive+number", status_code=303
+        )
+
+    try:
+        command_history_keep_int = int(command_history_keep.strip())
+        if not 1 <= command_history_keep_int <= 500:
+            raise ValueError
+    except ValueError:
+        return RedirectResponse(
+            "/settings?error=Saved+command+library+copies+must+be+a+number+from+1+to+500", status_code=303
         )
 
     git_sync_cron = git_sync_cron.strip()
@@ -95,6 +105,7 @@ def update_settings(
             "extra_args": extra_args.strip(),
             "recent_runs_count": str(recent_runs_count_int),
             "run_timeout_minutes": str(run_timeout_minutes_int),
+            "command_history_keep": str(command_history_keep_int),
         }
     )
     scheduler.reschedule(git_sync_cron.strip())

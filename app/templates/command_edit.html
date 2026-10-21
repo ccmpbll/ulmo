@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ 'New command' if is_new else 'Edit ' ~ name }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ 'New command' if is_new else 'Edit ' ~ name }}</h1></div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="card">
+  <form method="post" action="/commands/save">
+    <input type="hidden" name="base" value="{{ base }}" />
+    <input type="hidden" name="is_new" value="{{ '1' if is_new else '' }}" />
+    <label>Name<input type="text" name="name" required maxlength="60" value="{{ name }}" {{ 'readonly' if not is_new }} placeholder="restart-container" /></label>
+    <label>Definition (YAML)
+      <textarea name="text" rows="14" spellcheck="false" style="font-family: monospace; width: 100%;">{{ text }}</textarea>
+    </label>
+    <p class="muted">Placeholders such as <code>{container}</code> in <code>argv</code> must be declared under <code>params</code> as <code>enum</code> (allowed values), <code>int</code> (min and max) or <code>regex</code> (must match in full; may not start with <code>-</code> unless <code>allow_leading_dash: true</code>).</p>
+    <label>Try it: sample values, one <code>name=value</code> per line (nothing is run)
+      <textarea name="samples" rows="3" spellcheck="false" style="font-family: monospace; width: 100%;">{{ samples }}</textarea>
+    </label>
+    {% if preview %}<p class="{{ 'ok' if preview.ok else 'error' }}"><code>{{ preview.text }}</code></p>{% endif %}
+    <button type="submit" formaction="/commands/preview" class="secondary">Preview</button>
+    <button type="submit">Save</button>
+    <a href="/commands">Cancel</a>
+  </form>
+</div>
+{% endblock %}
