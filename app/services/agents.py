@@ -25,6 +25,7 @@ TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 MAX_EXPIRY_DAYS = 3650
 AUDIT_KEEP = 5000  # newest audit rows kept; unauthenticated callers can write rows too
+ADMIN_AUDIT_KEEP = 5000  # newest admin changes kept
 AUDIT_PATH_MAX = 200
 AUDIT_DETAIL_MAX = 300  # detail can carry agent-supplied text (denial reasons)
 LAST_USED_REFRESH = timedelta(minutes=1)
@@ -356,5 +357,9 @@ def running_agent_runs() -> int:
 
 def admin_audit(admin: str, action: str, detail: str = "") -> None:
     with Session(engine) as session:
-        session.add(AdminAudit(admin=admin, action=action, detail=detail[:AUDIT_DETAIL_MAX]))
+        row = AdminAudit(admin=admin, action=action, detail=detail[:AUDIT_DETAIL_MAX])
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        session.exec(delete(AdminAudit).where(AdminAudit.id <= row.id - ADMIN_AUDIT_KEEP))
         session.commit()

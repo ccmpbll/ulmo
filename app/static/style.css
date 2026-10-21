@@ -201,6 +201,8 @@ pre.log {
 .user-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
 
 /* Rows of buttons (and links that are buttons) */
+.tabs { margin-bottom: 16px; }
+.filters .form-grid { margin-bottom: 4px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .actions form { margin: 0; }
 .form-actions { margin-top: 20px; }

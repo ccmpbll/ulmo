@@ -19,6 +19,7 @@ from app.templating import templates
 # can run (and where) is the same kind of change as granting it.
 router = APIRouter(dependencies=[Depends(require_login)])
 
+RECENT = 5  # rows in the "recent runs" table here; the Activity page has the rest
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could change what agents can run."
 STARTER = """description: What this does, in a sentence
 risk: low
@@ -34,7 +35,7 @@ timeout: 30
 def _page(request: Request, error: str | None = None, ok: str | None = None, host: str = "", status_code: int | None = None):
     library, load_error = command_library.load()
     with Session(engine) as session:
-        runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(20)).all()
+        runs = session.exec(select(CommandRun).options(defer(CommandRun.output)).order_by(CommandRun.id.desc()).limit(RECENT)).all()
     return templates.TemplateResponse(
         request,
         "commands.html",

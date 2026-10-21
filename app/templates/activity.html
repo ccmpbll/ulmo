@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Activity - ulmo{% endblock %}
+{% macro url(tab, page=1, extra={}) -%}
+/activity?tab={{ tab }}&page={{ page }}{% for k, v in extra.items() %}&{{ k }}={{ v | urlencode }}{% endfor %}
+{%- endmacro %}
+{% block content %}
+<div class="page-header"><h1>Activity</h1></div>
+<div class="actions tabs">
+  <a class="btn {{ '' if tab == 'requests' else 'secondary' }}" href="/activity?tab=requests">API requests</a>
+  <a class="btn {{ '' if tab == 'changes' else 'secondary' }}" href="/activity?tab=changes">Changes</a>
+  <a class="btn {{ '' if tab == 'runs' else 'secondary' }}" href="/activity?tab=runs">Command runs</a>
+</div>
+
+<div class="card">
+  <form method="get" action="/activity" class="filters">
+    <input type="hidden" name="tab" value="{{ tab }}" />
+    <div class="form-grid">
+      {% if tab == "requests" %}
+      <label>Agent
+        <select name="agent">
+          <option value="">any</option>
+          {% for n in choices.agents %}<option value="{{ n }}" {{ 'selected' if values.agent == n }}>{{ n }}</option>{% endfor %}
+          <option value="(unknown)" {{ 'selected' if values.agent == '(unknown)' }}>(no valid token)</option>
+        </select>
+      </label>
+      <label>Show
+        <select name="problems">
+          <option value="">everything</option>
+          <option value="1" {{ 'selected' if values.problems }}>refused or failed only</option>
+        </select>
+      </label>
+      {% elif tab == "changes" %}
+      <label>Who
+        <select name="admin">
+          <option value="">anyone</option>
+          {% for n in choices.admins %}<option value="{{ n }}" {{ 'selected' if values.admin == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      {% else %}
+      <label>Started by
+        <select name="agent">
+          <option value="">anyone</option>
+          {% for n in choices.who %}<option value="{{ n }}" {{ 'selected' if values.agent == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Host
+        <select name="host">
+          <option value="">any</option>
+          {% for n in choices.hosts %}<option value="{{ n }}" {{ 'selected' if values.host == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">any</option>
+          {% for n in choices.statuses %}<option value="{{ n }}" {{ 'selected' if values.status == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+    </div>
+    <div class="actions">
+      <button type="submit" class="secondary">Apply</button>
+      {% if filters %}<a class="btn secondary" href="/activity?tab={{ tab }}">Reset</a>{% endif %}
+      <span class="muted" style="margin-left: auto;">{% if total %}Showing {{ first }} to {{ last }} of {{ total }}{% else %}Nothing to show{% endif %}</span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <table>
+    {% if tab == "requests" %}
+    <thead><tr><th>When</th><th>Agent</th><th>Request</th><th>Result</th></tr></thead>
+    <tbody>
+      {% for e in rows %}
+      <tr>
+        <td>{{ e.at | local_time }}</td>
+        <td>{{ e.agent_name or '-' }}</td>
+        <td>{{ e.method }} {{ e.path }}</td>
+        <td><span class="badge {{ 'success' if e.status_code < 400 else 'failed' }}">{{ e.status_code }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No requests{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% elif tab == "changes" %}
+    <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
+    <tbody>
+      {% for c in rows %}
+      <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No changes{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% else %}
+    <thead><tr><th>When</th><th>Started by</th><th>Host</th><th>Command</th><th>Status</th><th>Took</th></tr></thead>
+    <tbody>
+      {% for c in rows %}
+      <tr>
+        <td>{{ c.started_at | local_time }}</td>
+        <td>{{ c.triggered_by }}</td>
+        <td>{{ c.host }}</td>
+        <td>{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
+        <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
+        <td class="muted">{% if c.finished_at %}{{ ((c.finished_at - c.started_at).total_seconds()) | round(1) }} s{% else %}-{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No command runs{{ ' match' if filters }}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% endif %}
+  </table>
+  {% if pages > 1 %}
+  <div class="actions form-actions">
+    {% if page > 1 %}<a class="btn secondary" href="{{ url(tab, page - 1, filters) }}">Newer</a>{% endif %}
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn secondary" href="{{ url(tab, page + 1, filters) }}">Older</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

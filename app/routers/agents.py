@@ -14,6 +14,7 @@ from app.templating import templates
 # recorded in AdminAudit.
 router = APIRouter(dependencies=[Depends(require_login)])
 
+RECENT = 5  # rows in the "recent" tables here; the Activity page has the rest
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could widen what agents may do."
 
 
@@ -22,8 +23,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         rows = session.exec(select(Agent).order_by(Agent.name)).all()
         roles = session.exec(select(Role).order_by(Role.name)).all()
         grants = session.exec(select(Grant).order_by(Grant.playbook)).all()
-        audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
-        changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(20)).all()
+        audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(RECENT)).all()
+        changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(RECENT)).all()
         role_commands = session.exec(select(RoleCommand)).all()
     library = command_library.load()[0]
     return templates.TemplateResponse(
