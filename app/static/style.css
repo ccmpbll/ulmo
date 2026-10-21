@@ -244,3 +244,12 @@ td details summary { cursor: pointer; color: var(--text); }
 td details[open] summary { margin-bottom: 4px; }
 pre.diff { background: #11141a; border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
 textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.5; resize: vertical; }
+
+/* Approvals: a list that reads on a phone, where a table runs off the screen */
+.decision { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.decision:last-child { border-bottom: none; padding-bottom: 0; }
+.decision-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-weight: 600; }
+.decision code { display: block; overflow-wrap: anywhere; font-size: 0.82rem; }
+.decision-meta { margin-top: 6px; font-size: 0.82rem; }
+.panel-head { flex-wrap: wrap; }
+.panel code, .card > p code { overflow-wrap: anywhere; }
