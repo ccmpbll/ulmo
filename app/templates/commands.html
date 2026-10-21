@@ -49,10 +49,10 @@
       <input type="hidden" name="base" value="{{ base }}" />
       <input type="hidden" name="original" value="{{ editing_host.name if editing_host else '' }}" />
       <div class="form-grid">
-        <label>Name<input type="text" name="name" required maxlength="60" value="{{ editing_host.name if editing_host else '' }}" {{ 'readonly' if editing_host }} placeholder="gandalf" /></label>
-        <label>Address<input type="text" name="address" required value="{{ editing_host.address if editing_host else '' }}" placeholder="10.42.11.10" /></label>
+        <label>Name<input type="text" name="name" required maxlength="60" value="{{ editing_host.name if editing_host else '' }}" {{ 'readonly' if editing_host }} /></label>
+        <label>Address<input type="text" name="address" required value="{{ editing_host.address if editing_host else '' }}" /></label>
         <label>Port<input type="number" name="port" min="1" max="65535" value="{{ editing_host.port if editing_host else 22 }}" /></label>
-        <label>User<input type="text" name="user" required value="{{ editing_host.user if editing_host else '' }}" placeholder="root" /></label>
+        <label>User<input type="text" name="user" required value="{{ editing_host.user if editing_host else '' }}" /></label>
       </div>
       {% set use_pw = editing_host and editing_host.auth == 'password' %}
       <div class="form-grid">

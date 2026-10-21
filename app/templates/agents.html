@@ -68,7 +68,7 @@
     <div class="section-head"><h3>Create an agent</h3></div>
     <form method="post" action="/agents">
       <div class="form-grid">
-        <label>Name<input type="text" name="name" required maxlength="40" placeholder="n8n" /></label>
+        <label>Name<input type="text" name="name" required maxlength="40" /></label>
         <label>Role
           <select name="role_id">
             <option value="">none (read only)</option>
@@ -149,7 +149,7 @@
     <div class="panel">
       <div class="panel-head"><h3>New role</h3></div>
       <form method="post" action="/roles">
-        <label>Name<input type="text" name="name" required maxlength="40" placeholder="remediation" /></label>
+        <label>Name<input type="text" name="name" required maxlength="40" /></label>
         <div class="actions form-actions"><button type="submit" class="secondary">Create role</button></div>
       </form>
     </div>
