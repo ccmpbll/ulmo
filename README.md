@@ -120,9 +120,14 @@ values; ulmo checks every value, builds the argument list itself, and sends it t
 shell-quoted string, so a value is always a single literal argument and never shell syntax.
 
 ```
-POST /api/v1/commands          {"command": "logs", "host": "gandalf", "params": {"n": 100, "container": "sonarr"}}
-GET  /api/v1/commands/{id}     status, return code, output (capped at 64 KB); only the agent's own runs
+POST /api/v1/commands[?wait=20]  {"command": "logs", "host": "gandalf", "params": {"n": 100, "container": "sonarr"}}
+GET  /api/v1/commands/{id}       status, return code, output (capped at 64 KB); only the agent's own runs
 ```
+
+`POST` waits for the result: up to `wait` seconds (default 20, `0` to 60). If the command finishes
+in time the answer is `200` with the status, return code and output; if not it is `202` with
+`"status": "running"` and you poll `GET /commands/{id}`. The command keeps running either way.
+Use `?wait=0` to fire and forget.
 
 The host runs the command under its own `timeout` (coreutils or busybox must be installed there),
 so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real
