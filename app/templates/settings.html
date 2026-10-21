@@ -40,7 +40,7 @@
     <form method="post" action="/settings/ssh-key" enctype="multipart/form-data">
       <label>Key name (matches the filename in <code>ansible_ssh_private_key_file</code> — leave
         blank to use the uploaded file's name)
-        <input type="text" name="filename" placeholder="ansible-ed25519" />
+        <input type="text" name="filename" />
       </label>
       <label>Upload a file
         <input type="file" name="key_file" />
