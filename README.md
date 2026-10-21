@@ -4,7 +4,8 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/docker.yml) ![Tests](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/tests.yml) ![Docker Image Size](https://img.shields.io/docker/image-size/ccmpbll/ulmo/latest) ![Docker Pulls](https://img.shields.io/docker/pulls/ccmpbll/ulmo.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
-A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync.
+A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync,
+plus an API that lets scripts and AI agents run allowlisted playbooks and SSH commands under tight limits.
 
 ## Features
 
@@ -20,8 +21,10 @@ A small web dashboard for running Ansible playbooks from a git repo, with manual
 - "Sync from Git" installs collections from the repo's `requirements.yaml`; each sync's full output is
   under Activity -> Syncs
 - Settings backup/restore as YAML
-- JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles and grants that
-  say which playbooks on which hosts an agent may run, a kill switch, and an audit log (see below)
+- **Commands**: a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer
+  them, edited in the UI with saved copies. A host signs in with an SSH key or a password (see below)
+- JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles that say which
+  playbooks on which hosts, and which commands, an agent may run, a kill switch, and an audit log (see below)
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -157,7 +160,8 @@ Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
-**Settings → SSH Key** — paste the private key(s) used to connect to managed hosts. Symlinked
+**Settings → SSH Keys** (first section on the page) — paste the private key(s) used to connect to managed
+hosts, for Ansible and for the Commands page. Symlinked
 into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the common
 `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` inventory convention, so no
 inventory changes are needed. Set `ULMO_SSH_LINK_HOMES` if yours points elsewhere. Keys must be
@@ -177,9 +181,10 @@ unencrypted. A private git remote needing its own key can mount one directly in
 
 ## Data
 
-Everything lives under `./data` (db, synced repo, SSH keys, run logs, installed collections) —
-back that whole directory up. Settings backup/restore covers everything except SSH keys and user
-accounts.
+Everything lives under `./data` (db, synced repo, SSH keys, command library, run logs, installed collections) —
+back that whole directory up (it also holds `commands.yml` and the passwords of password hosts).
+Settings backup/restore covers settings only: not SSH keys, user accounts, agents and roles, the
+command library or host passwords.
 
 ## Development
 
