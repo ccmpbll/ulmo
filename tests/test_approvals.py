@@ -414,7 +414,11 @@ def test_page_and_nav():
     aid = _ask(token).json()["approval_id"]
     page = admin.get("/approvals").text
     assert "shown wants to run restart" in page and "docker restart sonarr" in page and f"/approvals/{aid}/approve" in page
-    assert "Approvals <span" in admin.get("/agents").text, "the nav shows how many are waiting"
+    agents_page = admin.get("/agents").text
+    assert "Approvals <span" in agents_page, "the nav shows how many are waiting"
+    assert '<label for="nav-toggle" class="menu-btn">Menu <span' in agents_page, "so does the phone menu button"
+    assert 'href="/agents" class="active"' in agents_page and 'href="/approvals" class="active"' not in agents_page
+    assert 'href="/approvals" class="active"' in page
     detail = admin.get(f"/approvals/{aid}").text
     assert "Approve" in detail and "Deny" in detail
     assert admin.get("/approvals/999999", follow_redirects=False).headers["location"] == "/approvals", "an unknown request goes back to the list"
