@@ -37,6 +37,9 @@
       <label>Run timeout, minutes (0 = no timeout)
         <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
       </label>
+      <label>Saved copies of the command library to keep (for Restore)
+        <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
+      </label>
       <button type="submit">Save settings</button>
     </form>
   </div>

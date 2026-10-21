@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_agent
 from app.models import Agent, CommandRun, RunHistory
-from app.services import agents, command_templates, commands, git_sync, inventory, playbook_tags, runner
+from app.services import agents, command_library, commands, git_sync, inventory, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -117,14 +117,12 @@ def _deny(request: Request, agent: Agent, status: int, reason: str):
 @router.get("/catalog")
 def catalog(agent: Agent = Depends(require_agent)):
     """What this agent may run, so it can discover it instead of guessing."""
-    templates, _ = command_templates.load()
+    library = command_library.load()[0]
     return {
         "runs_enabled": agents.runs_enabled(),
         "playbooks": [{"playbook": g.playbook, "hosts": g.hosts.split(",")} for g in agents.grants_for(agent)],
         "commands": [
-            {**templates[g.template].schema(), "hosts": g.hosts.split(",")}
-            for g in agents.command_grants_for(agent)
-            if g.template in templates
+            {**library.commands[name].schema(), "hosts": hosts} for name, hosts in agents.commands_for(agent).items()
         ],
     }
 
@@ -171,7 +169,7 @@ def cancel_run(run_id: int, request: Request, agent: Agent = Depends(require_age
 
 
 class CommandRequest(BaseModel):
-    template: str = Field(max_length=60)
+    command: str = Field(max_length=60)
     host: str = Field(max_length=100)
     params: dict = Field(default_factory=dict, max_length=20)
 
@@ -179,10 +177,10 @@ class CommandRequest(BaseModel):
 def _command_json(run: CommandRun, with_output: bool = False) -> dict:
     out = {
         "id": run.id,
-        "template": run.template,
+        "command": run.command,
         "host": run.host,
         "params": json.loads(run.params),
-        "command": run.command,
+        "line": run.line,
         "status": run.status,
         "return_code": run.return_code,
         "started_at": _iso(run.started_at),
@@ -195,24 +193,25 @@ def _command_json(run: CommandRun, with_output: bool = False) -> dict:
 
 @router.post("/commands", status_code=202)
 def start_command(body: CommandRequest, request: Request, agent: Agent = Depends(require_agent)):
-    """Run a command template on one host over SSH. Poll GET /commands/{id}."""
+    """Run a library command on one host over SSH. Poll GET /commands/{id}."""
     if not agents.runs_enabled():
         _deny(request, agent, 503, "agent runs are switched off")
-    reason = agents.check_command(agent, body.template, body.host)
+    reason = agents.check_command(agent, body.command, body.host)
     if reason:
         _deny(request, agent, 403, reason)
-    template = command_templates.load()[0].get(body.template)
-    if template is None:  # removed by a sync since the check above
-        _deny(request, agent, 403, "that command template is not loaded")
+    library = command_library.load()[0]
+    template, host = library.commands.get(body.command), library.hosts.get(body.host)
+    if template is None or host is None:  # edited away since the check above
+        _deny(request, agent, 403, "that command or host was just changed; try again")
     try:
-        values = command_templates.validate_params(template, body.params)
+        values = command_library.validate_params(template, body.params)
     except ValueError as exc:
         _deny(request, agent, 400, str(exc))
     with _start_lock:
         if commands.running() >= MAX_COMMAND_RUNS or commands.running(body.host) >= MAX_COMMANDS_PER_HOST:
             _deny(request, agent, 429, "too many commands are already running")
         try:
-            run = commands.start(template, body.host, values, f"agent:{agent.name}", agent.id)
+            run = commands.start(template, host, values, f"agent:{agent.name}", agent.id)
         except commands.CommandError as exc:
             _deny(request, agent, 502, str(exc))
     request.state.audit = (agent.name, f"started command {run.id}: {template.id} on {body.host}")

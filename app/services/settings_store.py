@@ -18,6 +18,7 @@ DEFAULTS = {
     "notify_pushover_token": "",
     "notify_pushover_user": "",
     "notify_ntfy_url": "",
+    "command_history_keep": "20",  # saved copies of the command library kept for Restore
 }
 
 
