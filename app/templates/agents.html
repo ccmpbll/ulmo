@@ -155,43 +155,4 @@
     </div>
   </div>
 </div>
-
-<div class="settings-section">
-  <h2>Recent changes</h2>
-  <div class="card">
-    <table>
-      <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
-      <tbody>
-        {% for c in changes %}
-        <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
-        {% else %}
-        <tr><td colspan="3" class="muted">No changes yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="settings-section">
-  <h2>Recent API requests</h2>
-  <div class="card">
-    <table>
-      <thead>
-        <tr><th>When</th><th>Agent</th><th>Request</th><th>Result</th></tr>
-      </thead>
-      <tbody>
-        {% for e in audit %}
-        <tr>
-          <td>{{ e.at | local_time }}</td>
-          <td>{{ e.agent_name or '-' }}</td>
-          <td>{{ e.method }} {{ e.path }}</td>
-          <td><span class="badge {{ 'success' if e.status_code < 400 else 'failed' }}">{{ e.status_code }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="muted">No requests yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
 {% endblock %}

@@ -75,7 +75,7 @@ Guard rails: a run is refused (409) while another run of the same playbook is go
 the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at
 once (429). **Agent runs** on the page is a kill switch: when off, no agent can start a run
 (reading and cancelling still work); it is deliberately not part of Settings backup/restore.
-Every change made on the Agents page is listed under **Recent changes**.
+Every change made on the Agents and Commands pages, and every API request and command run, is listed on the **Activity** page (paged, with filters).
 
 **Running commands over SSH.** This is a separate construct from Ansible: its own hosts and its
 own commands, managed on the **Commands** page and stored in one file, `commands.yml` in the data

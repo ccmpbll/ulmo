@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
-from app.models import AdminAudit, Agent, AgentAudit, Grant, Role, RoleCommand
+from app.models import Agent, Grant, Role, RoleCommand
 from app.services import agents, command_library, git_sync, inventory
 from app.templating import templates
 
@@ -22,8 +22,6 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         rows = session.exec(select(Agent).order_by(Agent.name)).all()
         roles = session.exec(select(Role).order_by(Role.name)).all()
         grants = session.exec(select(Grant).order_by(Grant.playbook)).all()
-        audit = session.exec(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(50)).all()
-        changes = session.exec(select(AdminAudit).order_by(AdminAudit.id.desc()).limit(20)).all()
         role_commands = session.exec(select(RoleCommand)).all()
     library = command_library.load()[0]
     return templates.TemplateResponse(
@@ -44,8 +42,6 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "hosts": inventory.list_hosts(),
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
-            "audit": audit,
-            "changes": changes,
             "error": error,
             "new_token": new_token,
         },
