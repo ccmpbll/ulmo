@@ -12,11 +12,6 @@ Commands page (and safe to edit by hand):
         timeout: 30                   # seconds, 1-300 (default 30)
         sudo: false                   # run as `sudo -n <argv>`
         risk: medium                  # label only: low | medium | high
-      list-containers:
-        description: List containers, optionally filtered
-        argv: [docker, ps, -a, "--filter={filter}"]
-        params:
-          filter: {type: regex, pattern: "(id|name)=[a-z0-9_.-]+", optional: true}
     hosts:                            # where each one may run
       gandalf:
         address: 10.42.11.10
@@ -164,7 +159,7 @@ def parse_command(name: str, data) -> Template:
         if optional and len(set(names)) > 1:
             _bad(f"{token!r} mixes optional parameter {optional[0]} with another placeholder; dropping it would lose the other value")
         if optional and PLACEHOLDER_RE.fullmatch(token) and argv[i - 1].startswith("-"):
-            _bad(f"optional parameter {optional[0]} would leave {argv[i - 1]!r} without its value; write it as one element, {argv[i - 1]}={{{optional[0]}}}")
+            _bad(f"optional parameter {optional[0]} must not stand alone after {argv[i - 1]!r}; write {argv[i - 1]}={{{optional[0]}}}")
 
     timeout = data.get("timeout", 30)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 300:
@@ -267,11 +262,10 @@ def validate_params(template: Template, given) -> dict[str, str]:
 def build_argv(template: Template, values: dict[str, str]) -> list[str]:
     """The exact argument list to run. Each value lands inside one element; an
     element holding the placeholder of an optional parameter that was left out is dropped."""
-    optional = {n for n, spec in template.params.items() if spec.get("optional")}
     argv = [
         PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], token)
         for token in template.argv
-        if not optional or all(name in values for name in PLACEHOLDER_RE.findall(token))
+        if all(name in values for name in PLACEHOLDER_RE.findall(token))
     ]
     return ["sudo", "-n", *argv] if template.sudo else argv
 
