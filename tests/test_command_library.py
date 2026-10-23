@@ -187,14 +187,19 @@ def test_optional_parameters():
 
     # Required ones stay required next to an optional one; a mixed element goes when the optional part is absent.
     mixed = cl.parse_command("m", {
-        "description": "d", "argv": ["echo", "{a}", "{b}", "{a}-{b}"],
+        "description": "d", "argv": ["echo", "{a}", "{b}"],
         "params": {"a": {"type": "enum", "values": ["x"]}, "b": {"type": "enum", "values": ["y"], "optional": True}},
     })
     _raises(cl.validate_params, mixed, {}, contains="missing parameters: a")
     assert cl.build_argv(mixed, cl.validate_params(mixed, {"a": "x"})) == ["echo", "x"]
-    assert cl.build_argv(mixed, cl.validate_params(mixed, {"a": "x", "b": "y"})) == ["echo", "x", "y", "x-y"]
+    assert cl.build_argv(mixed, cl.validate_params(mixed, {"a": "x", "b": "y"})) == ["echo", "x", "y"]
     assert "optional" not in cl.parse_command("restart", RESTART).params["container"], "required params look as before"
     _raises(cl.parse_command, "bad", {"description": "d", "argv": ["echo", "{a}"], "params": {"a": {"type": "enum", "values": ["x"], "optional": "yes"}}}, contains="optional must be true or false")
+    optional_p = {"p": {"type": "enum", "values": ["x"], "optional": True}}
+    _raises(cl.parse_command, "m", {"description": "d", "argv": ["echo", "{a}-{p}"], "params": {"a": {"type": "enum", "values": ["x"]}, **optional_p}}, contains="mixes optional parameter p")
+    assert cl.parse_command("m", {"description": "d", "argv": ["echo", "{p}{p}"], "params": optional_p}), "one parameter repeated in an element is fine"
+    _raises(cl.parse_command, "f", {"description": "d", "argv": ["docker", "ps", "--filter", "{p}"], "params": optional_p}, contains="--filter={p}")
+    assert cl.parse_command("pos", {"description": "d", "argv": ["ls", "{p}"], "params": optional_p}), "a bare optional positional is fine"
     sudo = cl.parse_command("s", {"description": "d", "argv": ["ls", "{p}"], "sudo": True, "params": {"p": {"type": "enum", "values": ["/"], "optional": True}}})
     assert cl.build_argv(sudo, {}) == ["sudo", "-n", "ls"]
 
