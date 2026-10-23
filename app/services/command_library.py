@@ -26,6 +26,11 @@ substituted into one argv element. The list is later joined with shlex.join, so
 a value can never become shell syntax, and a value cannot start with "-"
 (option injection) unless the parameter says allow_leading_dash.
 
+A parameter marked optional may be left out. The argv element that holds its
+placeholder is then dropped, so write a flag and its value as one element
+("--filter={filter}", not "--filter", "{filter}") and give the placeholder an
+element of its own. Supplied values are checked like required ones.
+
 Every change goes through one validated read-modify-write: the whole file is
 re-checked, the previous copy is kept as history, and the new one is swapped in
 atomically. A hand edit that no longer parses keeps the last good library in
@@ -59,9 +64,9 @@ COMMAND_KEYS = {"description", "argv", "params", "timeout", "sudo", "risk"}
 HOST_KEYS = {"address", "port", "user", "auth", "ssh_key", "commands"}
 AUTH_MODES = ("key", "password")
 PARAM_KEYS = {
-    "enum": {"type", "values"},
-    "int": {"type", "min", "max"},
-    "regex": {"type", "pattern", "max_length", "allow_leading_dash"},
+    "enum": {"type", "values", "optional"},
+    "int": {"type", "min", "max", "optional"},
+    "regex": {"type", "pattern", "max_length", "allow_leading_dash", "optional"},
 }
 ADDRESS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
@@ -148,6 +153,13 @@ def parse_command(name: str, data) -> Template:
     if set(params) - used:
         _bad(f"parameters never used in argv: {', '.join(sorted(set(params) - used))}")
     clean = {pname: _parse_param(pname, spec) for pname, spec in params.items()}
+    for i, token in enumerate(argv):
+        names = PLACEHOLDER_RE.findall(token)
+        optional = [n for n in names if clean[n].get("optional")]
+        if optional and len(set(names)) > 1:
+            _bad(f"{token!r} mixes optional parameter {optional[0]} with another placeholder; dropping it would lose the other value")
+        if optional and PLACEHOLDER_RE.fullmatch(token) and argv[i - 1].startswith("-"):
+            _bad(f"optional parameter {optional[0]} must not stand alone after {argv[i - 1]!r}; write {argv[i - 1]}={{{optional[0]}}}")
 
     timeout = data.get("timeout", 30)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 300:
@@ -177,18 +189,21 @@ def _parse_param(name: str, spec) -> dict:
     kind = spec["type"]
     if set(spec) - PARAM_KEYS[kind]:
         _bad(f"parameter {name}: unknown keys {', '.join(sorted(map(str, set(spec) - PARAM_KEYS[kind])))}")
+    if not isinstance(spec.get("optional", False), bool):
+        _bad(f"parameter {name}: optional must be true or false")
+    opt = {"optional": True} if spec.get("optional") else {}
     if kind == "enum":
         values = spec.get("values")
         if not isinstance(values, list) or not values or not all(isinstance(v, str) and v and "\0" not in v for v in values):
             _bad(f"parameter {name}: values must be a non-empty list of strings")
         if len(set(values)) != len(values) or any(len(v) > MAX_VALUE_CHARS for v in values):
             _bad(f"parameter {name}: values must be unique and under {MAX_VALUE_CHARS} characters")
-        return {"type": "enum", "values": values}
+        return {"type": "enum", "values": values, **opt}
     if kind == "int":
         lo, hi = spec.get("min"), spec.get("max")
         if any(isinstance(x, bool) or not isinstance(x, int) for x in (lo, hi)) or lo > hi:
             _bad(f"parameter {name}: min and max are required whole numbers with min <= max")
-        return {"type": "int", "min": lo, "max": hi}
+        return {"type": "int", "min": lo, "max": hi, **opt}
     pattern = spec.get("pattern")
     max_length = spec.get("max_length", 100)
     if not isinstance(pattern, str) or not pattern:
@@ -202,7 +217,7 @@ def _parse_param(name: str, spec) -> dict:
     dash = spec.get("allow_leading_dash", False)
     if not isinstance(dash, bool):
         _bad(f"parameter {name}: allow_leading_dash must be true or false")
-    return {"type": "regex", "pattern": pattern, "max_length": max_length, "allow_leading_dash": dash}
+    return {"type": "regex", "pattern": pattern, "max_length": max_length, "allow_leading_dash": dash, **opt}
 
 
 def validate_params(template: Template, given) -> dict[str, str]:
@@ -210,13 +225,16 @@ def validate_params(template: Template, given) -> dict[str, str]:
     Raises ValueError with a message safe to show the agent."""
     if not isinstance(given, dict):
         _bad("params must be an object")
-    extra, missing = set(given) - set(template.params), set(template.params) - set(given)
+    extra = set(given) - set(template.params)
+    missing = {n for n, spec in template.params.items() if not spec.get("optional")} - set(given)
     if extra:
         _bad(f"unknown parameters: {', '.join(sorted(map(str, extra)))}")
     if missing:
         _bad(f"missing parameters: {', '.join(sorted(missing))}")
     out = {}
     for name, spec in template.params.items():
+        if name not in given:  # an optional parameter left out
+            continue
         value = given[name]
         if spec["type"] == "enum":
             if not isinstance(value, str) or value not in spec["values"]:
@@ -242,8 +260,13 @@ def validate_params(template: Template, given) -> dict[str, str]:
 
 
 def build_argv(template: Template, values: dict[str, str]) -> list[str]:
-    """The exact argument list to run. Each value lands inside one element."""
-    argv = [PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], token) for token in template.argv]
+    """The exact argument list to run. Each value lands inside one element; an
+    element holding the placeholder of an optional parameter that was left out is dropped."""
+    argv = [
+        PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], token)
+        for token in template.argv
+        if all(name in values for name in PLACEHOLDER_RE.findall(token))
+    ]
     return ["sudo", "-n", *argv] if template.sudo else argv
 
 

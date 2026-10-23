@@ -68,10 +68,15 @@ LIBRARY = {
             "params": {"unit": {"type": "regex", "pattern": "[a-z0-9@._-]+", "max_length": 60}},
             "sudo": True,
         },
+        "ps": {
+            "description": "List containers, optionally filtered",
+            "argv": ["docker", "ps", "-a", "--filter={filter}"],
+            "params": {"filter": {"type": "regex", "pattern": "(id|name)=[a-z0-9]+", "max_length": 40, "optional": True}},
+        },
         "hang": {"description": "Takes too long", "argv": ["sleep", "9"], "timeout": 1},
     },
     "hosts": {
-        "gandalf": {"address": "10.42.11.10", "port": 22, "user": "root", "ssh_key": "unraid-key", "commands": ["restart", "logs", "say", "hang"]},
+        "gandalf": {"address": "10.42.11.10", "port": 22, "user": "root", "ssh_key": "unraid-key", "commands": ["restart", "logs", "say", "ps", "hang"]},
         "frodo": {"address": "frodo.lan", "port": 2222, "user": "ansible", "ssh_key": "ansible-ed25519", "commands": ["logs", "say", "status", "hang"]},
         "bare": {"address": "10.0.0.9", "user": "ansible", "commands": ["say"]},
     },
@@ -286,6 +291,24 @@ def test_changes_to_the_library_take_effect_immediately():
 def _runs():
     with Session(engine) as session:
         return session.exec(select(CommandRun)).all()
+
+
+def test_optional_parameter_over_the_api():
+    _, token, _ = _agent("optional", ["ps", "restart"])
+    cat = {c["command"]: c for c in client.get("/api/v1/catalog", headers=_h(token)).json()["commands"]}
+    assert cat["ps"]["params"]["filter"]["optional"] is True, "the catalog tells the agent it may leave it out"
+    assert "optional" not in cat["restart"]["params"]["container"]
+    for params, argv in [({}, ["docker", "ps", "-a"]), ({"filter": "id=98b74d1d1761"}, ["docker", "ps", "-a", "--filter=id=98b74d1d1761"])]:
+        FakePopen.instances.clear()
+        FakePopen.behavior = {"output": b"ok\n", "rc": 0}
+        r = _post(token, "ps", "gandalf", params)
+        assert r.status_code == 202, r.text
+        run = _wait(r.json()["id"])
+        assert run.status == "success" and _remote(FakePopen.instances[-1].cmd) == argv and run.line == shlex.join(argv), (run.line, argv)
+    for params, contains in [({"filter": "id=;rm"}, "pattern"), ({"filter": ""}, "non-empty"), ({"other": "x"}, "unknown parameters")]:
+        r = _post(token, "ps", "gandalf", params)
+        assert r.status_code == 400 and contains in r.json()["detail"], (params, r.text)
+    assert _post(token, "restart", "gandalf", {}).status_code == 400, "a required parameter is still required"
 
 
 def test_catalog_is_role_intersect_hosts():
@@ -647,6 +670,7 @@ def main():
     test_default_deny_and_validation()
     test_changes_to_the_library_take_effect_immediately()
     test_catalog_is_role_intersect_hosts()
+    test_optional_parameter_over_the_api()
     test_run_success_failure_timeout_truncation()
     test_post_can_wait_for_the_result()
     test_runs_are_private_to_their_agent()
