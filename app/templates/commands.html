@@ -98,7 +98,7 @@
         <tr>
           <td>{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
           <td><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
-          <td class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+          <td class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}{{ ', optional' if spec.optional }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
           <td class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
           <td class="actions-cell">
             <div class="actions">

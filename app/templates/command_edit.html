@@ -16,7 +16,7 @@
     <label>Definition (YAML)
       <textarea class="code" name="text" rows="14" spellcheck="false">{{ text }}</textarea>
     </label>
-    <p class="muted">Placeholders such as <code>{container}</code> in <code>argv</code> must be declared under <code>params</code> as <code>enum</code> (allowed values), <code>int</code> (min and max) or <code>regex</code> (must match in full; may not start with <code>-</code> unless <code>allow_leading_dash: true</code>).</p>
+    <p class="muted">Placeholders such as <code>{container}</code> in <code>argv</code> must be declared under <code>params</code> as <code>enum</code> (allowed values), <code>int</code> (min and max) or <code>regex</code> (must match in full; may not start with <code>-</code> unless <code>allow_leading_dash: true</code>). Add <code>optional: true</code> to let a caller leave a parameter out; the <code>argv</code> element holding it is then dropped, so write <code>--filter={filter}</code> as one element.</p>
     <label>Try it: sample values, one <code>name=value</code> per line (nothing is run)
       <textarea class="code" name="samples" rows="3" spellcheck="false">{{ samples }}</textarea>
     </label>

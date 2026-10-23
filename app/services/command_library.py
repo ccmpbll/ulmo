@@ -12,6 +12,16 @@ Commands page (and safe to edit by hand):
         timeout: 30                   # seconds, 1-300 (default 30)
         sudo: false                   # run as `sudo -n <argv>`
         risk: medium                  # label only: low | medium | high
+    list-containers:
+      description: List containers, optionally filtered
+      argv: [docker, ps, -a, "--filter={filter}"]
+      params:
+        filter: {type: regex, pattern: "(id|name)=[a-z0-9_.-]+", optional: true}
+
+An optional parameter may be left out. Its value is then absent and every argv
+element that holds its placeholder is dropped, so write a flag and its value as one
+element ("--filter={filter}", not "--filter", "{filter}"). Supplied values are
+checked exactly like required ones.
     hosts:                            # where each one may run
       gandalf:
         address: 10.42.11.10
@@ -59,9 +69,9 @@ COMMAND_KEYS = {"description", "argv", "params", "timeout", "sudo", "risk"}
 HOST_KEYS = {"address", "port", "user", "auth", "ssh_key", "commands"}
 AUTH_MODES = ("key", "password")
 PARAM_KEYS = {
-    "enum": {"type", "values"},
-    "int": {"type", "min", "max"},
-    "regex": {"type", "pattern", "max_length", "allow_leading_dash"},
+    "enum": {"type", "values", "optional"},
+    "int": {"type", "min", "max", "optional"},
+    "regex": {"type", "pattern", "max_length", "allow_leading_dash", "optional"},
 }
 ADDRESS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
@@ -177,6 +187,13 @@ def _parse_param(name: str, spec) -> dict:
     kind = spec["type"]
     if set(spec) - PARAM_KEYS[kind]:
         _bad(f"parameter {name}: unknown keys {', '.join(sorted(map(str, set(spec) - PARAM_KEYS[kind])))}")
+    if not isinstance(spec.get("optional", False), bool):
+        _bad(f"parameter {name}: optional must be true or false")
+    clean = _parse_param_type(name, spec, kind)
+    return {**clean, "optional": True} if spec.get("optional") else clean
+
+
+def _parse_param_type(name: str, spec: dict, kind: str) -> dict:
     if kind == "enum":
         values = spec.get("values")
         if not isinstance(values, list) or not values or not all(isinstance(v, str) and v and "\0" not in v for v in values):
@@ -210,13 +227,16 @@ def validate_params(template: Template, given) -> dict[str, str]:
     Raises ValueError with a message safe to show the agent."""
     if not isinstance(given, dict):
         _bad("params must be an object")
-    extra, missing = set(given) - set(template.params), set(template.params) - set(given)
+    extra = set(given) - set(template.params)
+    missing = {n for n, spec in template.params.items() if not spec.get("optional")} - set(given)
     if extra:
         _bad(f"unknown parameters: {', '.join(sorted(map(str, extra)))}")
     if missing:
         _bad(f"missing parameters: {', '.join(sorted(missing))}")
     out = {}
     for name, spec in template.params.items():
+        if name not in given:  # an optional parameter left out
+            continue
         value = given[name]
         if spec["type"] == "enum":
             if not isinstance(value, str) or value not in spec["values"]:
@@ -242,8 +262,13 @@ def validate_params(template: Template, given) -> dict[str, str]:
 
 
 def build_argv(template: Template, values: dict[str, str]) -> list[str]:
-    """The exact argument list to run. Each value lands inside one element."""
-    argv = [PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], token) for token in template.argv]
+    """The exact argument list to run. Each value lands inside one element; an
+    element holding the placeholder of an optional parameter that was left out is dropped."""
+    argv = [
+        PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], token)
+        for token in template.argv
+        if all(name in values for name in PLACEHOLDER_RE.findall(token))
+    ]
     return ["sudo", "-n", *argv] if template.sudo else argv
 
 

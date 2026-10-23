@@ -171,6 +171,37 @@ def test_parameter_validation():
     assert cl.validate_params(dash_ok, {"t": "-n"}) == {"t": "-n"}
 
 
+def test_optional_parameters():
+    ps = cl.parse_command("ps", {
+        "description": "d", "argv": ["docker", "ps", "-a", "--filter={f}"],
+        "params": {"f": {"type": "regex", "pattern": "(id|name)=[a-z0-9]+", "max_length": 40, "optional": True}},
+    })
+    assert ps.params["f"]["optional"] is True
+    assert cl.validate_params(ps, {}) == {}, "left out is fine"
+    assert cl.build_argv(ps, {}) == ["docker", "ps", "-a"], "the element holding the placeholder is dropped"
+    values = cl.validate_params(ps, {"f": "id=ab12"})
+    assert cl.build_argv(ps, values) == ["docker", "ps", "-a", "--filter=id=ab12"]
+    for bad in ("id=AB", "x=1", "id=a b", "", 5, "id=" + "a" * 40):  # a supplied value is checked like a required one
+        _raises(cl.validate_params, ps, {"f": bad})
+    _raises(cl.validate_params, ps, {"g": "x"}, contains="unknown parameters")
+
+    # Required ones stay required next to an optional one; a mixed element goes when the optional part is absent.
+    mixed = cl.parse_command("m", {
+        "description": "d", "argv": ["echo", "{a}", "{b}", "{a}-{b}"],
+        "params": {"a": {"type": "enum", "values": ["x"]}, "b": {"type": "enum", "values": ["y"], "optional": True}},
+    })
+    _raises(cl.validate_params, mixed, {}, contains="missing parameters: a")
+    assert cl.build_argv(mixed, cl.validate_params(mixed, {"a": "x"})) == ["echo", "x"]
+    assert cl.build_argv(mixed, cl.validate_params(mixed, {"a": "x", "b": "y"})) == ["echo", "x", "y", "x-y"]
+    assert "optional" not in cl.parse_command("restart", RESTART).params["container"], "required params look as before"
+    _raises(cl.parse_command, "bad", {"description": "d", "argv": ["echo", "{a}"], "params": {"a": {"type": "enum", "values": ["x"], "optional": "yes"}}}, contains="optional must be true or false")
+    sudo = cl.parse_command("s", {"description": "d", "argv": ["ls", "{p}"], "sudo": True, "params": {"p": {"type": "enum", "values": ["/"], "optional": True}}})
+    assert cl.build_argv(sudo, {}) == ["sudo", "-n", "ls"]
+
+    # The Preview box: leave the line out to see the command without it.
+    assert cl.sample_values(ps, "") == {} and cl.sample_values(ps, "f=name=plex") == {"f": "name=plex"}
+
+
 def test_values_stay_one_literal_argument():
     say = cl.parse_command("say", SAY)
     for value in ["; rm -rf /", "$(id)", "`id`", "a && b", "x | y", "it's", 'say "hi"', "a\\b", "*", "~", "a b  c", "${HOME}", "#comment", "é ü 日本"]:
@@ -657,6 +688,16 @@ def test_commands_page():
     assert r.status_code == 200 and "docker restart sonarr" in r.text
     r = _form(admin, "/commands/preview", name="restart", text=text, samples="container=plex")
     assert "one of: sonarr, radarr" in r.text
+
+    # An optional parameter: shown as such in the list, and Preview with the line left out drops its element.
+    opt = yaml.safe_dump({"description": "d", "argv": ["docker", "ps", "--filter={f}"], "params": {"f": {"type": "enum", "values": ["name=a"], "optional": True}}}, sort_keys=False)
+    r = _form(admin, "/commands/preview", name="ps", text=opt, samples="")
+    assert r.status_code == 200 and "would receive: timeout -k 5 30 docker ps<" in r.text, r.text
+    r = _form(admin, "/commands/preview", name="ps", text=opt, samples="f=name=a")
+    assert "--filter=name=a" in r.text
+    assert _form(admin, "/commands/save", name="ps", text=opt, base=cl.current_version(), is_new="1").status_code == 303
+    assert "f (enum, optional)" in admin.get("/commands").text
+    cl.delete_command("ps")
     r = _form(admin, "/commands/preview", name="restart", text="description: x\nargv: []\n", samples="")
     assert "argv must be" in r.text
     sneaky = yaml.safe_dump(SAY, sort_keys=False)
@@ -927,6 +968,7 @@ def main():
     assert r.status_code == 303 and admin.get("/commands").status_code == 200, "test login failed"
     test_commands_are_validated_strictly()
     test_parameter_validation()
+    test_optional_parameters()
     test_values_stay_one_literal_argument()
     test_regex_parameters_are_checked_and_time_limited()
     test_hosts_are_validated()

@@ -122,6 +122,11 @@ Parameter types are `enum` (a list of allowed strings), `int` (required min and 
 time budget, so a pattern that is slow on some value (for example `(a|aa)+$`) rejects that value
 instead of hanging ulmo.
 
+Add `optional: true` to any parameter to let a caller leave it out. The `argv` element that holds its
+placeholder is then dropped, so write a flag and its value as one element: `argv: [docker, ps, -a,
+"--filter={filter}"]` runs `docker ps -a` with no filter and `docker ps -a --filter=name=plex` with one.
+A value that is supplied is checked exactly like a required one.
+
 The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
 command a set of sample values would produce, without running anything) and hosts through a form
 with a **Test connection** button. A command can be renamed even while it is in use: the hosts that
