@@ -14,7 +14,7 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 - Live per-task progress and a structured Play Recap on completion
 - One **Activity** page for playbook runs, command runs, git syncs, API requests and changes: newest first,
   paged, filterable. History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
-  goes with it; runs in progress are never touched), 500 command runs and 5,000 each of requests and changes.
+  goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
 - View playbook/inventory YAML, syntax highlighted (read-only)
 - Per-playbook cron schedules, independent of the git sync schedule
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
@@ -24,7 +24,8 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 - **Commands**: a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer
   them, edited in the UI with saved copies. A host signs in with an SSH key or a password (see below)
 - JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles that say which
-  playbooks on which hosts, and which commands, an agent may run, a kill switch, and an audit log (see below)
+  playbooks on which hosts, and which commands, an agent may run, optional approval by you before a
+  call runs, an hourly request limit per agent, a kill switch, and an audit log (see below)
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -125,7 +126,10 @@ instead of hanging ulmo.
 Add `optional: true` to any parameter to let a caller leave it out. The `argv` element that holds its
 placeholder is then dropped, so write a flag and its value as one element: `argv: [docker, ps, -a,
 "--filter={filter}"]` runs `docker ps -a` with no filter and `docker ps -a --filter=name=plex` with one.
-A value that is supplied is checked exactly like a required one.
+A value that is supplied is checked exactly like a required one. Saving is refused when an optional
+placeholder shares an element with another placeholder (dropping it would lose the other value) or
+stands alone right after a flag (`"--filter", "{filter}"` would leave a bare `--filter`). The catalog
+marks optional parameters with `"optional": true`, and the Commands page lists them as optional.
 
 The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
 command a set of sample values would produce, without running anything) and hosts through a form
@@ -203,6 +207,8 @@ unencrypted. A private git remote needing its own key can mount one directly in
 
 - `ULMO_DISABLE_AUTH=true` — skip login entirely; only if ulmo already sits behind your own
   access control (reverse proxy, VPN)
+- `ULMO_DATA_DIR` — where ulmo keeps everything (db, synced repo, SSH keys, command library, run logs);
+  `/data` in the container, which `docker-compose.yml` mounts from `./data`
 - `ULMO_SECURE_COOKIES=true` — mark the session cookie Secure (HTTPS-only). Set it when ulmo is
   served over TLS; leave off for plain-HTTP/localhost deployments
 - `ULMO_SECRET_KEY` — pin the session-signing key; otherwise one is generated and persisted to
