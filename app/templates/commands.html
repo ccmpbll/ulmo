@@ -15,20 +15,20 @@
 <div class="settings-section">
   <h2>Hosts</h2>
   <div class="card">
-    <table>
+    <table class="stack">
       <thead><tr><th>Host</th><th>Connects as</th><th>Signs in with</th><th>Offers</th><th></th></tr></thead>
       <tbody>
         {% for h in hosts %}
         <tr>
-          <td>{{ h.name }}</td>
-          <td>{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
-          <td class="muted">{% if h.auth == 'password' %}password{% if h.name not in password_hosts %} <span class="error">(none saved)</span>{% endif %}{% else %}{{ h.ssh_key or 'ssh default' }}{% endif %}</td>
-          <td class="muted">
+          <td data-label="Host">{{ h.name }}</td>
+          <td data-label="Connects as">{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
+          <td data-label="Signs in with" class="muted">{% if h.auth == 'password' %}password{% if h.name not in password_hosts %} <span class="error">(none saved)</span>{% endif %}{% else %}{{ h.ssh_key or 'ssh default' }}{% endif %}</td>
+          <td data-label="Offers" class="muted">
             {% if h.commands | length > 4 %}
             <details><summary>{{ h.commands | length }} commands</summary>{{ h.commands | join(', ') }}</details>
             {% else %}{{ h.commands | join(', ') or 'nothing' }}{% endif %}
           </td>
-          <td class="actions-cell">
+          <td data-label="" class="actions-cell">
             <div class="actions">
               <a class="btn secondary" href="/commands?host={{ h.name | urlencode }}#host-form">Edit</a>
               <form method="post" action="/commands/hosts/{{ h.name }}/test"><button type="submit" class="secondary">Test connection</button></form>
@@ -91,16 +91,16 @@
     <a class="btn" href="/commands/edit">New command</a>
   </div>
   <div class="card">
-    <table>
+    <table class="stack">
       <thead><tr><th>Command</th><th>Runs</th><th>Parameters</th><th>Offered by</th><th></th></tr></thead>
       <tbody>
         {% for c in commands %}
         <tr>
-          <td>{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
-          <td><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
-          <td class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}{{ ', optional' if spec.optional }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
-          <td class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
-          <td class="actions-cell">
+          <td data-label="Command">{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
+          <td data-label="Runs"><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
+          <td data-label="Parameters" class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}{{ ', optional' if spec.optional }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+          <td data-label="Offered by" class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
+          <td data-label="" class="actions-cell">
             <div class="actions">
               <a class="btn secondary" href="/commands/edit?name={{ c.id | urlencode }}">Edit</a>
               <form method="post" action="/commands/{{ c.id }}/delete" onsubmit="return confirm('Delete command {{ c.id }}?');"><button type="submit" class="danger">Delete</button></form>
@@ -119,14 +119,14 @@
   <h2>Saved copies</h2>
   <div class="card">
     <p class="muted">Every change keeps the copy it replaced. Each line says what the change after that copy was; open one to see what restoring it would undo. The number kept is set under Settings.</p>
-    <table>
+    <table class="stack">
       <thead><tr><th>Copy from</th><th>What changed after it</th><th></th></tr></thead>
       <tbody>
         {% for v in versions %}
         <tr>
-          <td>{{ v.at | local_time }}</td>
-          <td class="muted">{{ v.change or '(not summarised)' }}</td>
-          <td class="actions-cell">
+          <td data-label="Copy from">{{ v.at | local_time }}</td>
+          <td data-label="What changed after it" class="muted">{{ v.change or '(not summarised)' }}</td>
+          <td data-label="" class="actions-cell">
             <div class="actions">
               <a class="btn secondary" href="/commands/history/{{ v.id }}">View</a>
               <form method="post" action="/commands/history/{{ v.id }}/restore" onsubmit="return confirm('Restore this copy? The current one is kept as a saved copy.');">

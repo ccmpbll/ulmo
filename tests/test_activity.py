@@ -122,7 +122,7 @@ def test_filters():
     assert _showing(failed.text) == "Showing 1 to 20 of 20"
     assert ">success<" not in failed.text.split("<tbody>")[1], "only failed runs in the table"
     frodo = admin.get("/activity?tab=commands&host=frodo&status=timeout")
-    assert re.search(r"of (\d+)", _showing(frodo.text)).group(1) == "10" and "<td>gandalf</td>" not in frodo.text
+    assert re.search(r"of (\d+)", _showing(frodo.text)).group(1) == "10" and ">gandalf</td>" not in frodo.text
     by_agent = admin.get("/activity?tab=commands&by=agent:scripty")
     assert re.search(r"of (\d+)", _showing(by_agent.text)).group(1) == "15"
     assert _showing(admin.get("/activity?tab=commands&status=exploded").text).endswith("of 60"), "an unknown status is ignored, not an error"
@@ -235,7 +235,7 @@ def test_playbook_and_sync_tabs():
         session.add(RunHistory(playbook="playbooks/still-going.yaml", status="running", triggered_by="manual"))
         session.commit()
     going = admin.get("/activity?tab=playbooks&playbook=playbooks/still-going.yaml").text
-    assert ">running<" in going and '<td class="muted">-</td>' in going
+    assert ">running<" in going and '<td data-label="Took" class="muted">-</td>' in going
 
 
 def test_runs_are_listed_by_start_time():

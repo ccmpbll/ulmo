@@ -169,7 +169,7 @@ def test_password_is_stored_only_in_the_database():
     page = admin.get("/commands?host=gandalf").text
     assert "saved: leave blank to keep it" in page and 'name="password"' in page and "value=" + '"' + PW not in page
     assert 'type="password"' in page
-    assert "<td class=\"muted\">password" in page and "none saved" not in page
+    assert "<td data-label=\"Signs in with\" class=\"muted\">password" in page and "none saved" not in page
 
 
 def test_saving_rules():

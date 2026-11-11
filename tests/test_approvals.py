@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -116,8 +117,13 @@ commands.subprocess = SimpleNamespace(Popen=FakePopen, PIPE=-1, STDOUT=-2, DEVNU
 client = TestClient(app)
 admin = TestClient(app)
 sent: list[tuple] = []  # what the notifier would have pushed
-notifier._send_pushover = lambda token, user, title, message, url="": sent.append((title, message, url))
-notifier._send_ntfy = lambda url, title, message, click="": None
+def _fake_post(url, data, name, headers=None):
+    if name == "Pushover":
+        f = dict(urllib.parse.parse_qsl(data.decode()))
+        sent.append((f["title"], f["message"], f.get("url", "")))
+
+
+notifier._post = _fake_post
 
 
 def _h(token):
