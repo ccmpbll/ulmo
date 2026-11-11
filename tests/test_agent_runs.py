@@ -214,7 +214,9 @@ def test_kill_switch():
         assert client.get("/api/v1/catalog", headers=_h(token)).json()["runs_enabled"] is False
     finally:
         agents.set_runs_enabled(True)
-    assert _run(token, "playbooks/restart.yml", ["web1"]).status_code == 202
+    r = _run(token, "playbooks/restart.yml", ["web1"])
+    assert r.status_code == 202
+    _wait_done(r.json()["id"])  # else the next test's run on the same host can still see this one as running (409)
 
 
 def test_cancel_only_your_own_running_runs():
