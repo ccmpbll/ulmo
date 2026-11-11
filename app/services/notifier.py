@@ -32,14 +32,7 @@ def notify_run_complete(run: RunHistory) -> None:
         parts.append(f"limit: {run.limit}")
     message = title + (f" ({', '.join(parts)})" if parts else "")
 
-    pushover_token = settings.get("notify_pushover_token", "").strip()
-    pushover_user = settings.get("notify_pushover_user", "").strip()
-    ntfy_url = settings.get("notify_ntfy_url", "").strip()
-
-    if pushover_token and pushover_user:
-        _send_pushover(pushover_token, pushover_user, title, message)
-    if ntfy_url:
-        _send_ntfy(ntfy_url, title, message)
+    _send(settings, title, message)
 
 
 def notify_approval(approval: Approval) -> None:
@@ -53,35 +46,26 @@ def notify_approval(approval: Approval) -> None:
     message = f"{approval.agent_name} wants to run: {approval.line}" + (f" on {approval.host}" if approval.kind == "command" else "")
     if approval.agent_note:
         message += f"\n{approval.agent_name} says: {approval.agent_note[:300]}"
-    pushover_token = settings.get("notify_pushover_token", "").strip()
-    pushover_user = settings.get("notify_pushover_user", "").strip()
+    _send(settings, title, message, url)
+
+
+def _send(settings: dict, title: str, message: str, url: str = "") -> None:
+    token = settings.get("notify_pushover_token", "").strip()
+    user = settings.get("notify_pushover_user", "").strip()
+    if token and user:
+        fields = {"token": token, "user": user, "title": title, "message": message}
+        if url:
+            fields.update(url=url, url_title="Review request")
+        _post("https://api.pushover.net/1/messages.json", urllib.parse.urlencode(fields).encode(), "Pushover")
     ntfy_url = settings.get("notify_ntfy_url", "").strip()
-    if pushover_token and pushover_user:
-        _send_pushover(pushover_token, pushover_user, title, message, url)
     if ntfy_url:
-        _send_ntfy(ntfy_url, title, message, url)
+        _post(ntfy_url, message.encode(), "ntfy", {"Title": title, **({"Click": url} if url else {})})
 
 
-def _send_pushover(token: str, user: str, title: str, message: str, url: str = "") -> None:
-    fields = {"token": token, "user": user, "title": title, "message": message}
-    if url:
-        fields.update(url=url, url_title="Review request")
-    data = urllib.parse.urlencode(fields).encode()
-    req = urllib.request.Request("https://api.pushover.net/1/messages.json", data=data)
+def _post(url: str, data: bytes, name: str, headers: dict | None = None) -> None:
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10):
             pass
     except Exception:
-        logger.exception("Pushover notification failed")
-
-
-def _send_ntfy(url: str, title: str, message: str, click: str = "") -> None:
-    req = urllib.request.Request(url, data=message.encode(), method="POST")
-    req.add_header("Title", title)
-    if click:
-        req.add_header("Click", click)
-    try:
-        with urllib.request.urlopen(req, timeout=10):
-            pass
-    except Exception:
-        logger.exception("ntfy notification failed")
+        logger.exception("%s notification failed", name)

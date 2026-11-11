@@ -126,12 +126,12 @@
 
       <div class="subhead">Playbook grants</div>
       {% if grants[r.id] %}
-      <table>
+      <table class="stack">
         <tbody>
           {% for g in grants[r.id] %}
           <tr>
-            <td>{{ g.playbook }}</td>
-            <td class="muted">{{ g.hosts.replace(',', ', ') }}</td>
+            <td data-label="Playbook">{{ g.playbook }}</td>
+            <td class="muted" data-label="Hosts">{{ g.hosts.replace(',', ', ') }}</td>
             <td>{% if g.requires_approval %}<span class="badge running">needs approval</span>{% endif %}</td>
             <td class="actions-cell">
               <div class="actions">

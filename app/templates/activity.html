@@ -102,18 +102,18 @@
 </div>
 
 <div class="card">
-  <table>
+  <table class="stack">
     {% if tab == "playbooks" %}
     <thead><tr><th>Started</th><th>Playbook</th><th>Status</th><th>Started by</th><th>Took</th><th></th></tr></thead>
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.started_at | local_time }}</td>
-        <td>{{ r.playbook }}{% if r.tags or r.limit %}<br /><span class="muted">{% if r.tags %}tags: {{ r.tags }}{% endif %}{% if r.tags and r.limit %} · {% endif %}{% if r.limit %}limit: {{ r.limit }}{% endif %}</span>{% endif %}</td>
-        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
-        <td>{{ r.triggered_by }}</td>
-        <td class="muted">{{ took(r) }}</td>
-        <td class="actions-cell"><a class="btn secondary" href="/runs/{{ r.id }}">View</a></td>
+        <td data-label="Started">{{ r.started_at | local_time }}</td>
+        <td data-label="Playbook">{{ r.playbook }}{% if r.tags or r.limit %}<br /><span class="muted">{% if r.tags %}tags: {{ r.tags }}{% endif %}{% if r.tags and r.limit %} · {% endif %}{% if r.limit %}limit: {{ r.limit }}{% endif %}</span>{% endif %}</td>
+        <td data-label="Status"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td data-label="Started by">{{ r.triggered_by }}</td>
+        <td data-label="Took" class="muted">{{ took(r) }}</td>
+        <td data-label="" class="actions-cell"><a class="btn secondary" href="/runs/{{ r.id }}">View</a></td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="muted">No playbook runs{{ ' match' if filters }}.</td></tr>
@@ -124,12 +124,12 @@
     <tbody>
       {% for c in rows %}
       <tr>
-        <td>{{ c.started_at | local_time }}</td>
-        <td>{{ c.triggered_by }}</td>
-        <td>{{ c.host }}</td>
-        <td>{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
-        <td><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
-        <td class="muted">{{ took(c) }}</td>
+        <td data-label="When">{{ c.started_at | local_time }}</td>
+        <td data-label="Started by">{{ c.triggered_by }}</td>
+        <td data-label="Host">{{ c.host }}</td>
+        <td data-label="Command">{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
+        <td data-label="Status"><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
+        <td data-label="Took" class="muted">{{ took(c) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="muted">No command runs{{ ' match' if filters }}.</td></tr>
@@ -140,11 +140,11 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.started_at | local_time }}</td>
-        <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
-        <td>{{ r.triggered_by }}</td>
-        <td class="muted">{{ took(r) }}</td>
-        <td class="actions-cell"><a class="btn secondary" href="/logs/{{ r.id }}">View</a></td>
+        <td data-label="Started">{{ r.started_at | local_time }}</td>
+        <td data-label="Status"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td data-label="Started by">{{ r.triggered_by }}</td>
+        <td data-label="Took" class="muted">{{ took(r) }}</td>
+        <td data-label="" class="actions-cell"><a class="btn secondary" href="/logs/{{ r.id }}">View</a></td>
       </tr>
       {% else %}
       <tr><td colspan="5" class="muted">No syncs{{ ' match' if filters }}.</td></tr>
@@ -155,10 +155,10 @@
     <tbody>
       {% for e in rows %}
       <tr>
-        <td>{{ e.at | local_time }}</td>
-        <td>{{ e.agent_name or '-' }}</td>
-        <td>{{ e.method }} {{ e.path }}</td>
-        <td><span class="badge {{ 'success' if e.status_code < 400 else 'failed' }}">{{ e.status_code }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
+        <td data-label="When">{{ e.at | local_time }}</td>
+        <td data-label="Agent">{{ e.agent_name or '-' }}</td>
+        <td data-label="Request">{{ e.method }} {{ e.path }}</td>
+        <td data-label="Result"><span class="badge {{ 'success' if e.status_code < 400 else 'failed' }}">{{ e.status_code }}</span>{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="4" class="muted">No requests{{ ' match' if filters }}.</td></tr>
@@ -168,7 +168,7 @@
     <thead><tr><th>When</th><th>Who</th><th>Change</th></tr></thead>
     <tbody>
       {% for c in rows %}
-      <tr><td>{{ c.at | local_time }}</td><td>{{ c.admin }}</td><td>{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
+      <tr><td data-label="When">{{ c.at | local_time }}</td><td data-label="Who">{{ c.admin }}</td><td data-label="Change">{{ c.action }}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</td></tr>
       {% else %}
       <tr><td colspan="3" class="muted">No changes{{ ' match' if filters }}.</td></tr>
       {% endfor %}

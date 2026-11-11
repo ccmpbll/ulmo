@@ -286,5 +286,11 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   }
   table.stack td.actions-cell { white-space: normal; }
   table.stack td.actions-cell .actions { justify-content: flex-start; flex-wrap: wrap; }
+
+  /* Settings schedule rows and the Play Recap would otherwise be squeezed or run off the screen */
+  .schedule-row { grid-template-columns: 1fr; gap: 6px; }
+  #recap-panel { overflow-x: auto; }
+  #recap-table { min-width: 420px; }
+  .page-header { flex-wrap: wrap; gap: 8px; }
 }
 .usage { display: block; margin-top: 4px; font-size: 0.78rem; }
