@@ -26,6 +26,9 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 - JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles that say which
   playbooks on which hosts, and which commands, an agent may run, optional approval by you before a
   call runs, an hourly request limit per agent, a kill switch, and an audit log (see below)
+- **Change proposals**: scripts (Claude Code, n8n, curl) can read `commands.yml` and the roles and
+  *propose* changes to commands and roles through a separate token; you approve each one with a diff
+  (see "Proposing changes" below)
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -186,6 +189,71 @@ bad parameters or missing permission costs nothing. The default is 60; set anoth
 agent (0 is no limit), and the Agents page shows how many it has used in the last hour. Past the
 limit, a new request answers `429 rate limit: N requests per hour`. Raising a limit is locked while
 `ULMO_DISABLE_AUTH` is set.
+
+### Proposing changes (commands and roles)
+
+Commands and roles are edited on the Commands and Agents pages, and scripts can ask for the same
+edits through the proposals API. A script **cannot change anything itself**: it sends a proposal,
+ulmo checks it, and it waits on the **Approvals** page (section "Change proposals") for you to
+approve it after reading the diff.
+
+Create a **change token** under Agents -> Change tokens (shown once; only its hash is stored; it can
+have an expiry). It is not an agent token: an agent token is refused on `/api/v1/admin`, a change
+token is refused on every agent route, and neither is a login. A change token can read, and propose;
+it cannot run a command, cannot approve its own proposal, and cannot reach any admin page. What it
+can read is the whole of `commands.yml`: host addresses, SSH user names and key file names (not key
+contents or passwords), so hand one only to a tool you would trust with that.
+
+```
+GET  /api/v1/admin/commands.yml        the file as it is on disk
+GET  /api/v1/admin/roles               each role's commands (with needs_approval) and, read-only, its playbook grants
+POST /api/v1/admin/proposals[?dry_run=true]   {"note": "why", "ops": [ ... ]}  -> 202 {"id", "diff", "previews"}
+GET  /api/v1/admin/proposals[/{id}]    this token's proposals: pending | applied | denied | expired | failed
+```
+
+A proposal is up to 20 operations applied together or not at all (library operations first, in the
+order given, then role operations). Each is a change of one thing, not a replacement of a list:
+
+```
+{"op": "save_command", "name": "pfsense-update-check", "body": {description, argv, timeout, ...}, "samples": {"unit": "nginx"}}
+{"op": "delete_command", "name": "x"}                       refused while a host still offers it
+{"op": "host_offer", "host": "ecth", "add": ["x"], "remove": ["y"]}
+{"op": "role_allow", "role": "n8n", "add": [{"command": "x", "needs_approval": false}], "remove": ["y"]}
+{"op": "role_set_approval", "role": "n8n", "command": "x", "needs_approval": true}
+```
+
+- `save_command` creates or replaces one command, checked exactly as the Commands page checks it (the
+  whole file is validated). With `samples` (values for its blanks) the answer and the approval page
+  show the same `The host would receive: ...` line as the editor's Preview, and a sample the command
+  would refuse rejects the proposal.
+- `needs_approval` must always be stated when a command is added to a role: there is no default, so a
+  proposal cannot quietly add a command that runs unattended.
+- Control, zero-width, direction-override and other invisible characters are refused anywhere in an
+  operation (they could make the diff read differently from what is saved), and one command is limited
+  to 20 KB, as in the editor. Names are letters, digits, `.`, `_` and `-` only. Any other non-ASCII
+  character a proposal adds (a Cyrillic "o" in a command line, say) is allowed but listed in
+  `warnings` and in a red notice on the approval page, with its code point.
+- Adding something already there, or removing something that is not, is an error. A proposal that
+  changes nothing is an error. `?dry_run=true` checks a proposal and records nothing.
+- Not available from the API, on purpose: hosts' addresses, users, keys and passwords, agents,
+  tokens, roles' existence, playbook grants, limits and the kill switch.
+
+Approving. The proposal's page (`/proposals/{id}`, linked from the notification when **Public URL**
+is set) shows the diff of `commands.yml`, the diff of the roles it touches (a deleted command also
+leaves every role that held it) and each Preview line. **Approve** applies it through the same
+locked, validated write as the Commands page: one saved copy for the library part (restorable from
+the Commands page) and a change-log entry naming both the token and you. Approve carries a digest of
+what you were shown; if the proposal, `commands.yml` or the roles changed since you opened the page,
+it is refused and you look again. Applying is all or nothing: the roles and the library are written
+together, and if either fails the other is put back. A proposal that can no longer be applied
+(someone made the same change by hand, or a role was edited meanwhile) is marked `failed`. If
+`commands.yml` does not parse at that moment, Approve answers with the error and the proposal stays
+pending. A proposal whose change token was disabled, has expired or was deleted cannot be applied, so
+disabling a leaked token revokes what it queued. Proposals expire after 24 hours, at most 10 per
+token wait at once, a token may make 60 proposal or dry-run calls an hour (then `429`), and asking
+again for one already waiting returns the same proposal. The
+proposer's note is shown escaped and labelled as its words. While `ULMO_DISABLE_AUTH` is set,
+change tokens cannot be created and proposals cannot be approved (denying always works).
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
 cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create

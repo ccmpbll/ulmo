@@ -44,7 +44,7 @@ from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AdminAudit, Agent, AgentRequest, Approval, CommandRun, RoleCommand, RunHistory, utcnow  # noqa: E402
 from app.routers import approvals as approvals_router  # noqa: E402
-from app.services import agents, approvals, command_library as cl, commands, git_sync, inventory, notifier, settings_store  # noqa: E402
+from app.services import agents, approvals, command_library as cl, commands, git_sync, inventory, notifier, proposals, settings_store  # noqa: E402
 
 SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 (SSH_STORAGE_DIR / "k").write_text("not a real key")
@@ -523,14 +523,14 @@ def test_agent_deletion_clears_the_counter_and_the_page_shows_usage():
 def test_the_nav_count_is_a_read():
     _, token, _ = _agent("counted", asking=["restart"])
     aid = _ask(token).json()["approval_id"]
-    n = approvals.pending_count()
+    n = proposals.waiting_total()
     assert n >= 1
     with Session(engine) as session:
         row = session.get(Approval, aid)
         row.expires_at = utcnow() - timedelta(seconds=1)
         session.add(row)
         session.commit()
-    assert approvals.pending_count() == n - 1, "an expired request is not counted"
+    assert proposals.waiting_total() == n - 1, "an expired request is not counted"
     with Session(engine) as session:
         assert session.get(Approval, aid).status == "pending", "counting does not write; the approvals page settles it"
     approvals.expire_stale()

@@ -324,6 +324,7 @@ def parse_host(name: str, data, command_names: set[str]) -> Host:
 # --- the file ----------------------------------------------------------------------
 
 _lock = threading.RLock()
+LOCK = _lock  # held by a caller that must plan a change and write it as one step
 _state = {"fingerprint": None, "library": Library(), "error": ""}
 _on_valid_load = []
 
@@ -515,6 +516,23 @@ def delete_host(name: str, base: str | None = None) -> None:
         if name not in data["hosts"]:
             _bad("no such host")
         del data["hosts"][name]
+
+    _modify(base, change)
+
+
+def raw_data() -> dict:
+    """A fresh copy of the file's contents, to plan a change against."""
+    return _raw()
+
+
+def apply_data(data: dict, base: str) -> None:
+    """Make `data` (planned against the file as it was when its version was `base`) the new
+    contents, through the same validated, saved-copy, atomic write every edit uses. Raises
+    Conflict if the file changed since."""
+
+    def change(current):
+        current.clear()
+        current.update(data)
 
     _modify(base, change)
 

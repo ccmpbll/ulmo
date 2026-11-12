@@ -9,7 +9,11 @@
 <div class="card">
   <p class="ok">Token for <strong>{{ new_token[0] }}</strong>. Copy it now; it is not shown again.</p>
   <pre>{{ new_token[1] }}</pre>
+  {% if token_kind == "admin" %}
+  <p class="muted">Send it as <code>Authorization: Bearer &lt;token&gt;</code> to <code>/api/v1/admin/...</code>. It can read commands and roles and propose changes; you approve each one on the Approvals page.</p>
+  {% else %}
   <p class="muted">Send it as <code>Authorization: Bearer &lt;token&gt;</code> to <code>/api/v1/...</code>.</p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -89,6 +93,46 @@
       <div class="actions form-actions"><button type="submit" class="secondary">Create agent</button></div>
     </form>
 </div>
+</div>
+
+<div class="settings-section">
+  <h2>Change tokens</h2>
+  <p class="muted">For scripts that propose changes to commands and roles (<code>/api/v1/admin</code>). A change token cannot run anything and cannot apply a change; every proposal waits on the Approvals page for you to approve it after seeing the diff.</p>
+  <div class="card">
+    <table class="stack">
+      <thead>
+        <tr><th>Name</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for t in admin_tokens %}
+        <tr>
+          <td data-label="Name">{{ t.name }}</td>
+          <td data-label="Status"><span class="badge {{ 'success' if t.enabled else 'cancelled' }}">{{ 'enabled' if t.enabled else 'disabled' }}</span></td>
+          <td data-label="Expires">{{ t.expires_at | local_time if t.expires_at else 'never' }}</td>
+          <td data-label="Last used">{{ t.last_used_at | local_time }}</td>
+          <td class="actions-cell" data-label="">
+            <div class="actions">
+              <form method="post" action="/admin-tokens/{{ t.id }}/toggle"><button type="submit" class="secondary">{{ 'Disable' if t.enabled else 'Enable' }}</button></form>
+              <form method="post" action="/admin-tokens/{{ t.id }}/delete" onsubmit="return confirm('Delete change token {{ t.name }}? Its token stops working and its proposals are removed.');"><button type="submit" class="danger">Delete</button></form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No change tokens yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="section-head"><h3>Create a change token</h3></div>
+    <form method="post" action="/admin-tokens">
+      <div class="form-grid">
+        <label>Name<input type="text" name="name" required maxlength="40" /></label>
+        <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
+      </div>
+      <div class="actions form-actions"><button type="submit" class="secondary">Create token</button></div>
+    </form>
+  </div>
 </div>
 
 <div class="settings-section">

@@ -49,6 +49,18 @@ def notify_approval(approval: Approval) -> None:
     _send(settings, title, message, url)
 
 
+def notify_proposal(proposal, summary: str) -> None:
+    """Tell the admin a script proposed a change. Like approvals: sent whatever "Notify on" says,
+    with a link to the proposal when a public URL is set."""
+    settings = settings_store.get_all()
+    base = settings.get("public_url", "").strip().rstrip("/")
+    url = f"{base}/proposals/{proposal.id}" if base else ""
+    message = f"{proposal.token_name} proposes: {summary}"
+    if proposal.note:
+        message += f"\n{proposal.token_name} says: {proposal.note[:300]}"
+    _send(settings, f"ulmo: {proposal.token_name} proposes a change", message, url)
+
+
 def _send(settings: dict, title: str, message: str, url: str = "") -> None:
     token = settings.get("notify_pushover_token", "").strip()
     user = settings.get("notify_pushover_user", "").strip()

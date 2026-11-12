@@ -157,6 +157,41 @@ class Approval(SQLModel, table=True):
         return {"approved": "success", "failed": "failed"}.get(self.status, "cancelled")
 
 
+class AdminToken(SQLModel, table=True):
+    """A credential for the proposals API: it can read commands.yml and roles and propose
+    changes, nothing else. It is not an agent and cannot run anything or approve anything.
+    Only the sha256 of the token is stored."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    token_hash: str = Field(unique=True, index=True)
+    enabled: bool = True
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    last_used_at: Optional[datetime] = None
+
+
+class Proposal(SQLModel, table=True):
+    """A change to commands or roles that a proposer token asked for. Nothing is applied until
+    an admin approves it on its page, after seeing the diff."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token_id: int = Field(index=True)
+    token_name: str = ""
+    ops: str = "[]"  # JSON list of operations, as sent
+    note: str = ""  # the proposer's own words (untrusted text, shown escaped)
+    status: str = "pending"  # pending | applied | denied | expired | failed
+    result: str = ""  # why an approved proposal could not be applied
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    expires_at: datetime = Field(default_factory=utcnow)
+    decided_at: Optional[datetime] = None
+    decided_by: str = ""
+
+    @property
+    def badge(self) -> str:
+        return {"applied": "success", "failed": "failed"}.get(self.status, "cancelled")
+
+
 class AdminAudit(SQLModel, table=True):
     """Changes made on the Agents page (agents, roles, grants, kill switch).
     Kept apart from AgentAudit so an API flood, which prunes that table, can

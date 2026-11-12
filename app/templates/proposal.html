@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Proposal {{ p.id }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ p.token_name }} proposes a change</h1><a class="btn secondary" href="/approvals">All requests</a></div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="card">
+  <p>Proposal {{ p.id }}, sent {{ p.created_at | local_time }} with the change token <strong>{{ p.token_name }}</strong>.</p>
+  {% if p.note %}<p><span class="muted">{{ p.token_name }} says:</span> {{ p.note }}</p>{% endif %}
+  {% if p.status == "pending" %}
+  <p class="muted">Expires {{ p.expires_at | local_time }}. Approving applies exactly the change below, and only if nothing it covers has changed since you opened this page.</p>
+  {% if problem %}
+  <p class="error">This can no longer be applied: {{ problem }}</p>
+  <div class="actions form-actions">
+    <form method="post" action="/proposals/{{ p.id }}/deny"><button type="submit" class="danger">Deny</button></form>
+  </div>
+  {% else %}
+  {% if plan.previews %}
+  <h3>What the host would receive</h3>
+  {% for pv in plan.previews %}<p>{{ pv.command }}: <code>The host would receive: {{ pv.line }}</code></p>{% endfor %}
+  {% endif %}
+  {% for w in plan.warnings %}<p class="error">{{ w }}</p>{% endfor %}
+  <h3>The change</h3>
+  <pre class="diff">{% for line in plan.diff.split('\n') %}<span style="{% if line.startswith('+') and not line.startswith('+++') %}color: var(--green){% elif line.startswith('-') and not line.startswith('---') %}color: var(--red){% else %}opacity: .7{% endif %}">{{ line }}</span>
+{% endfor %}</pre>
+  <p class="muted">Lines starting with <code>-</code> go away; lines starting with <code>+</code> are added. A command that is deleted also leaves every role that held it. The change is saved as one restorable copy on the Commands page.</p>
+  {% if locked %}<p class="error">Approving is off while ULMO_DISABLE_AUTH is set.</p>{% endif %}
+  <div class="actions form-actions">
+    <form method="post" action="/proposals/{{ p.id }}/approve">
+      <input type="hidden" name="seen" value="{{ plan.digest }}" />
+      <button type="submit" {{ 'disabled' if locked }}>Approve</button>
+    </form>
+    <form method="post" action="/proposals/{{ p.id }}/deny"><button type="submit" class="danger">Deny</button></form>
+  </div>
+  {% endif %}
+  {% else %}
+  <p>
+    <span class="badge {{ p.badge }}">{{ p.status }}</span>
+    {% if p.decided_by %}by <strong>{{ p.decided_by }}</strong> {{ p.decided_at | local_time }}{% endif %}
+  </p>
+  {% if p.status == "failed" %}<p class="error">Approved, but it could not be applied: {{ p.result }}</p>{% endif %}
+  {% if p.status == "applied" %}<p><a href="/commands">See the saved copies on the Commands page</a></p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

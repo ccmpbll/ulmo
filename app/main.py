@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SECRET_KEY, SECURE_COOKIES
 from app.database import init_db
-from app.routers import activity, agents, api, approvals, auth, command_admin, inventory, logs, playbooks, runs, settings
+from app.routers import activity, admin_api, agents, api, approvals, auth, command_admin, inventory, logs, playbooks, proposals, runs, settings
 from app.services import agents as agent_service
 from app.services import commands, git_sync, retention, runner, scheduler, ssh_keys
 
@@ -52,6 +52,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=SECURE_C
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(activity.router)
+app.include_router(admin_api.router)
 app.include_router(agents.router)
 app.include_router(api.router)
 app.include_router(approvals.router)
@@ -60,5 +61,6 @@ app.include_router(command_admin.router)
 app.include_router(inventory.router)
 app.include_router(logs.router)
 app.include_router(playbooks.router)
+app.include_router(proposals.router)
 app.include_router(runs.router)
 app.include_router(settings.router)
