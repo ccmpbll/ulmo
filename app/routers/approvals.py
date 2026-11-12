@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.services import agents, approvals
+from app.services import agents, approvals, proposals
 from app.templating import templates
 
 # Where an admin decides what agents asked to run. Cookie-session login only, so an agent
@@ -16,7 +16,7 @@ LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who c
 
 @router.get("/approvals", response_class=HTMLResponse)
 def approvals_page(request: Request):
-    return templates.TemplateResponse(request, "approvals.html", {"pending": approvals.pending(), "recent": approvals.recent()})
+    return templates.TemplateResponse(request, "approvals.html", {"pending": approvals.pending(), "recent": approvals.recent(), "proposals_pending": proposals.pending(), "proposals_recent": proposals.recent()})
 
 
 @router.get("/approvals/{approval_id}", response_class=HTMLResponse)

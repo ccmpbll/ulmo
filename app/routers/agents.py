@@ -6,7 +6,7 @@ from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
 from app.models import Agent, Grant, Role, RoleCommand
-from app.services import agents, command_library, git_sync, inventory
+from app.services import agents, command_library, git_sync, inventory, proposals
 from app.templating import templates
 
 # Admin side of the agent API: cookie-session login only. Tokens, roles and
@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(require_login)])
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could widen what agents may do."
 
 
-def _page(request: Request, error: str | None = None, new_token: tuple[str, str] | None = None):
+def _page(request: Request, error: str | None = None, new_token: tuple[str, str] | None = None, token_kind: str = "agent"):
     with Session(engine) as session:
         rows = session.exec(select(Agent).order_by(Agent.name)).all()
         roles = session.exec(select(Role).order_by(Role.name)).all()
@@ -48,6 +48,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "used_last_hour": {a.id: agents.requests_last_hour(a) for a in rows},
             "error": error,
             "new_token": new_token,
+            "token_kind": token_kind,
+            "admin_tokens": proposals.list_tokens(),
         },
         status_code=400 if error else 200,
         # The page holding a plaintext token must not be kept by a browser or proxy cache.
@@ -137,6 +139,35 @@ def set_agent_role(request: Request, agent_id: int, role_id: str = Form(""), use
     except ValueError as exc:
         return _page(request, error=str(exc))
     agents.admin_audit(user.username, "set agent role", f"agent id {agent_id} -> role id {role_id or 'none'}")
+    return _back()
+
+
+@router.post("/admin-tokens", response_class=HTMLResponse)
+def create_admin_token(request: Request, name: str = Form(...), expires_days: str = Form(""), user=Depends(require_login)):
+    # A proposer token can only propose, but minting one is still locked while auth is disabled.
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    try:
+        row, token = proposals.create_token(name, _whole_number(expires_days, "Expiry"))
+    except ValueError as exc:
+        return _page(request, error=str(exc))
+    agents.admin_audit(user.username, "create change token", row.name)
+    return _page(request, new_token=(row.name, token), token_kind="admin")
+
+
+@router.post("/admin-tokens/{token_id}/toggle")
+def toggle_admin_token(request: Request, token_id: int, user=Depends(require_login)):
+    if AUTH_DISABLED:
+        return _page(request, error=LOGIN_REQUIRED)
+    proposals.toggle_token(token_id)
+    agents.admin_audit(user.username, "toggle change token", f"token id {token_id}")
+    return _back()
+
+
+@router.post("/admin-tokens/{token_id}/delete")
+def delete_admin_token(token_id: int, user=Depends(require_login)):
+    proposals.delete_token(token_id)
+    agents.admin_audit(user.username, "delete change token", f"token id {token_id}")
     return _back()
 
 

@@ -71,6 +71,30 @@ def clean_note(note: str | None) -> str:
     return " ".join("".join(c for c in (note or "") if c.isprintable() or c.isspace()).split())
 
 
+def enqueue(model, owner_column, owner_id: int, is_same: Callable, cap: int, cap_message: str, keep: int, make_row: Callable, before_new: Callable[[], None] | None = None):
+    """Add a waiting row for one owner (an agent, a change token), or return the identical one already
+    waiting (a retrying script must not pile up copies, each of which could be approved). The cap, the
+    duplicate check and the insert are one step under a lock; `before_new` runs only when a new row is
+    about to be made; the newest `keep` rows of the table are kept. Returns (row, created)."""
+    with _create_lock, Session(engine) as session:
+        waiting = session.exec(select(model).where(owner_column == owner_id, model.status == "pending")).all()
+        same = next((row for row in waiting if is_same(row)), None)
+        if same is not None:
+            return same, False
+        if len(waiting) >= cap:
+            raise TooManyPending(cap_message)
+        if before_new is not None:
+            before_new()
+        row = make_row()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        session.exec(delete(model).where(model.id <= row.id - keep))
+        session.commit()
+        session.refresh(row)  # the commit expired it, and the caller reads it after the session closes
+        return row, True
+
+
 def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str, agent_note: str = "", before_new: Callable[[], None] | None = None) -> tuple[Approval, bool]:
     """Record a request, or return the identical one already waiting (a workflow that retries
     must not pile up copies, each of which could run). `before_new` runs only when a new row
@@ -78,26 +102,15 @@ def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: 
     Returns (approval, created)."""
     params_json = json.dumps(params, sort_keys=True)
     expire_stale()
-    with _create_lock, Session(engine) as session:
-        waiting = session.exec(select(Approval).where(Approval.agent_id == agent.id, Approval.status == "pending")).all()
-        same = next((row for row in waiting if _key(row) == (kind, target, host, params_json)), None)
-        if same is not None:
-            return same, False
-        if len(waiting) >= MAX_PENDING_PER_AGENT:
-            raise TooManyPending(f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval")
-        if before_new is not None:
-            before_new()
-        row = Approval(
+    return enqueue(
+        Approval, Approval.agent_id, agent.id, lambda row: _key(row) == (kind, target, host, params_json),
+        MAX_PENDING_PER_AGENT, f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval", KEEP,
+        lambda: Approval(
             agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line, agent_note=agent_note,
             expires_at=utcnow() + EXPIRY,
-        )
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        session.exec(delete(Approval).where(Approval.id <= row.id - KEEP))
-        session.commit()
-        session.refresh(row)  # the commit expired it, and the caller reads it after the session closes
-        return row, True
+        ),
+        before_new,
+    )
 
 
 def get(approval_id: int) -> Approval | None:
@@ -118,14 +131,6 @@ def recent() -> list[Approval]:
         return list(
             session.exec(select(Approval).where(Approval.status != "pending").order_by(Approval.id.desc()).limit(50)).all()
         )
-
-
-def pending_count() -> int:
-    """For the top bar on every page: one COUNT, and no write (an expired request is simply not counted)."""
-    with Session(engine) as session:
-        return session.exec(
-            select(func.count()).select_from(Approval).where(Approval.status == "pending", Approval.expires_at >= utcnow())
-        ).one()
 
 
 def decide(approval_id: int, approve: bool, admin: str) -> Approval:

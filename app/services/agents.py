@@ -43,14 +43,37 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
-    """Create an agent and return it with its plaintext token (the only time
-    the token exists outside the caller's hands)."""
+def check_token_args(name: str, expires_days: int | None) -> str:
+    """The cleaned name of a new token holder (agent or change token), or ValueError."""
     name = name.strip()
     if not NAME_RE.match(name):
         raise ValueError("Name must be 1-40 characters: letters, digits, '.', '_' or '-'.")
     if expires_days is not None and not 1 <= expires_days <= MAX_EXPIRY_DAYS:
         raise ValueError(f"Expiry must be between 1 and {MAX_EXPIRY_DAYS} days.")
+    return name
+
+
+def token_state(session: Session, row, disabled_reason: str, touch: bool = True) -> str:
+    """"" if this agent or change token is enabled and unexpired, else the reason (for the audit log
+    only). `touch` also refreshes last_used_at, at most once a minute: not on every request, which
+    would be a second write per call."""
+    if not row.enabled:
+        return disabled_reason
+    now = utcnow().replace(tzinfo=None)  # SQLite hands datetimes back naive; they are UTC
+    if row.expires_at is not None and row.expires_at <= now:
+        return "token expired"
+    if touch and (row.last_used_at is None or now - row.last_used_at > LAST_USED_REFRESH):
+        row.last_used_at = now
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+    return ""
+
+
+def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
+    """Create an agent and return it with its plaintext token (the only time
+    the token exists outside the caller's hands)."""
+    name = check_token_args(name, expires_days)
     _check_limit(max_per_hour)
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
@@ -129,18 +152,7 @@ def authenticate(token: str) -> tuple[Agent | None, str]:
         agent = session.exec(select(Agent).where(Agent.token_hash == hash_token(token))).first()
         if agent is None:
             return None, "unknown token"
-        if not agent.enabled:
-            return agent, "agent disabled"
-        now = utcnow().replace(tzinfo=None)  # SQLite hands datetimes back naive; they are UTC
-        if agent.expires_at is not None and agent.expires_at <= now:
-            return agent, "token expired"
-        # Not on every request: that would be a second write per call.
-        if agent.last_used_at is None or now - agent.last_used_at > LAST_USED_REFRESH:
-            agent.last_used_at = now
-            session.add(agent)
-            session.commit()
-            session.refresh(agent)
-        return agent, ""
+        return agent, token_state(session, agent, "agent disabled")
 
 
 def audit(agent_name: str | None, method: str, path: str, status_code: int, detail: str = "") -> None:
@@ -159,9 +171,9 @@ def audit(agent_name: str | None, method: str, path: str, status_code: int, deta
         session.commit()
 
 
-def toggle_enabled(agent_id: int) -> None:
+def toggle_enabled(agent_id: int, model=Agent) -> None:
     with Session(engine) as session:
-        agent = session.get(Agent, agent_id)
+        agent = session.get(model, agent_id)
         if agent is not None:
             agent.enabled = not agent.enabled
             session.add(agent)

@@ -23,6 +23,39 @@
   {% endfor %}
 </div>
 
+<div class="settings-section">
+<h2>Change proposals</h2>
+<p class="muted">Changes to commands and roles that a script proposed. Each shows a diff; nothing changes until you approve it. A proposal nobody decides on expires after 24 hours.</p>
+<div class="card">
+  <div class="section-head"><h3>Waiting for you</h3></div>
+  {% for p in proposals_pending %}
+  <div class="decision">
+    <div class="decision-head"><a href="/proposals/{{ p.id }}">{{ p.token_name }} proposes a change</a></div>
+    {% if p.note %}<div class="decision-note"><span class="muted">{{ p.token_name }} says:</span> {{ p.note }}</div>{% endif %}
+    <div class="muted decision-meta">expires {{ p.expires_at | local_time }}</div>
+    <div class="actions form-actions"><a class="btn secondary" href="/proposals/{{ p.id }}">Review the diff</a></div>
+  </div>
+  {% else %}
+  <p class="empty">No proposals are waiting.</p>
+  {% endfor %}
+</div>
+<div class="card">
+  <div class="section-head"><h3>Recent proposals</h3></div>
+  {% for p in proposals_recent %}
+  <div class="decision">
+    <div class="decision-head">
+      <a href="/proposals/{{ p.id }}">{{ p.token_name }}: proposal {{ p.id }}</a>
+      <span class="badge {{ p.badge }}">{{ p.status }}</span>
+    </div>
+    <div class="muted decision-meta">{{ p.created_at | local_time }}{% if p.decided_by %} · {{ p.decided_by }}{% endif %}</div>
+  </div>
+  {% else %}
+  <p class="empty">No proposals yet.</p>
+  {% endfor %}
+</div>
+</div>
+
+<h2>Agent requests</h2>
 <div class="card">
   <div class="section-head"><h3>Recent decisions</h3></div>
   {% for a in recent %}
