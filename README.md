@@ -211,12 +211,24 @@ POST /api/v1/admin/proposals[?dry_run=true]   {"note": "why", "ops": [ ... ]}  -
 GET  /api/v1/admin/proposals[/{id}]    this token's proposals: pending | applied | denied | expired | failed
 ```
 
+For example, check a new command without proposing anything (a dry run returns the diff and the
+`The host would receive` line, and creates no proposal):
+
+```
+curl -s -H "Authorization: Bearer $CHANGE_TOKEN" -H 'Content-Type: application/json' \
+  'https://ulmo.example.com/api/v1/admin/proposals?dry_run=true' \
+  -d '{"note": "why", "ops": [{"op": "save_command", "name": "kernel-log",
+       "body": {"description": "Kernel warnings and errors", "argv": ["dmesg", "-T", "--level=err,warn"], "risk": "low"}}]}'
+```
+
+Drop `?dry_run=true` to send it for real; the answer is `202` with the proposal's `id`.
+
 A proposal is up to 20 operations applied together or not at all (library operations first, in the
 order given, then role operations). Each is a change of one thing, not a replacement of a list:
 
 ```
 {"op": "save_command", "name": "pfsense-update-check", "body": {description, argv, timeout, ...}, "samples": {"unit": "nginx"}}
-{"op": "delete_command", "name": "x"}                       refused while a host still offers it
+{"op": "delete_command", "name": "x"}                       refused while a host still offers it; the roles lose it with it
 {"op": "host_offer", "host": "ecth", "add": ["x"], "remove": ["y"]}
 {"op": "role_allow", "role": "n8n", "add": [{"command": "x", "needs_approval": false}], "remove": ["y"]}
 {"op": "role_set_approval", "role": "n8n", "command": "x", "needs_approval": true}
@@ -235,6 +247,10 @@ order given, then role operations). Each is a change of one thing, not a replace
   `warnings` and in a red notice on the approval page, with its code point.
 - Adding something already there, or removing something that is not, is an error. A proposal that
   changes nothing is an error. `?dry_run=true` checks a proposal and records nothing.
+- Deleting a command takes it out of every role, so do not also list it in a `role_allow` `remove` in
+  the same proposal: it is already gone by then and the proposal fails ("n8n does not have: x"). Take
+  it off the host first (`host_offer` `remove`), in the same proposal; library operations run in order.
+- A role must already exist for `role_allow` and `role_set_approval`; create it on the Agents page.
 - Not available from the API, on purpose: hosts' addresses, users, keys and passwords, agents,
   tokens, roles' existence, playbook grants, limits and the kill switch.
 
