@@ -365,33 +365,6 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .usermenu .menu .ver { padding: 10px 2px 8px; border-top: 1px solid var(--border); }
   .container { padding: 16px 14px; }
 
-  /* A table marked "stack" becomes one card per row: a two-column grid, each cell labelled by its column.
-     m-title is the row's name and m-status its badge (together the card's first line, neither labelled);
-     full spans both columns; an empty cell and the header row disappear. */
-  table.stack thead { display: none; }
-  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
-  table.stack tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 16px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-  table.stack tbody tr:last-child { border-bottom: 0; }
-  table.stack td, .card.flush > table.stack td:first-child { width: auto; min-width: 0; padding: 0; border: none; overflow-wrap: break-word; }
-  table.stack td.full, table.stack td.actions-cell { grid-column: 1 / -1; }
-  table.stack td:empty { display: none; }
-  table.stack td[data-label]:not([data-label=""])::before {
-    content: attr(data-label); display: block; margin-bottom: 3px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: normal;
-  }
-  /* The name takes the whole first line and the badge sits over its right end, so a long name is not squeezed into half the width */
-  table.stack td.m-title { grid-column: 1 / -1; grid-row: 1; align-self: center; font-weight: 600; font-size: 1rem; }
-  table.stack td.m-title .muted { font-weight: normal; font-size: 0.85rem; }
-  table.stack td.m-status { grid-column: 1 / -1; grid-row: 1; justify-self: end; align-self: start; }
-  table.stack tr:has(td.m-status:not(:empty)) td.m-title { padding-right: 6rem; }
-  table.stack td.m-title[data-label]:not([data-label=""])::before, table.stack td.m-status[data-label]:not([data-label=""])::before { display: none; }
-  table.stack td.when { white-space: normal; }
-  table.stack td.actions-cell { white-space: normal; }
-  table.stack td.actions-cell .actions { justify-content: flex-start; flex-wrap: wrap; }
-  table.stack td select, table.stack td input[type="number"] { max-width: none; }
-  /* A role's grants sit inside a panel that already pads them */
-  .panel table.stack tr { padding-left: 0; padding-right: 0; }
-  .card.flush > p { padding: 12px 16px; margin: 0; }
-
   /* Settings schedule rows and the Play Recap would otherwise be squeezed or run off the screen */
   .schedule-row { grid-template-columns: 1fr; gap: 6px; }
   #recap-panel { overflow-x: auto; }
@@ -404,7 +377,7 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .card.flush { padding: 0; overflow: hidden; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .card-head h2 { margin: 0; font-size: 0.95rem; }
-.card-head a { font-size: 0.82rem; }
+.card-head a { font-size: 0.82rem; white-space: nowrap; }
 .section-title { font-size: 1.05rem; margin: 24px 0 10px; }
 .needs { border-color: rgba(224, 179, 65, 0.4); background: linear-gradient(180deg, rgba(224, 179, 65, 0.07), var(--panel) 60%); }
 .needs .card-head { border-color: rgba(224, 179, 65, 0.25); }
@@ -417,9 +390,9 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .ask .meta { margin-top: 4px; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
 .ask .btns { display: flex; gap: 8px; }
 .ask .btns form { margin: 0; }
-.clear { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: var(--muted); }
+.clear { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 12px 16px; color: var(--muted); }
 .clear .tick { color: var(--green); }
-.clear a { font-size: 0.82rem; }
+.clear a { font-size: 0.82rem; white-space: nowrap; margin-left: auto; }  /* stays at the right end, even on a line of its own */
 .running-strip { display: flex; align-items: flex-start; gap: 14px; padding: 12px 16px; margin-bottom: 16px; border-radius: 10px; border: 1px solid rgba(79, 140, 255, 0.35); background: rgba(79, 140, 255, 0.07); }
 .running-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .kind { display: inline-block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 5px; background: #232733; color: var(--muted); }
@@ -444,8 +417,10 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .settings-section:last-child { margin-bottom: 0; }
 @media (max-width: 760px) {
   .split { grid-template-columns: 1fr; gap: 16px; }
-  .sidenav { position: static; flex-direction: row; overflow-x: auto; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
-  .sidenav a { white-space: nowrap; }
+  /* The sections wrap into rows of buttons, so none is squeezed and none needs scrolling to */
+  .sidenav { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .sidenav a { flex: 1 1 auto; text-align: center; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; }
+  .sidenav a.active { border-color: var(--accent); }
 }
 
 /* Ansible: each playbook shows its last run and schedule, and is edited in place */
@@ -463,3 +438,49 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 /* Tables: a row lights up under the pointer */
 tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 table.stack tbody tr:hover { background: none; }
+
+/* Agent runs: status, what it means, and the switch on one line (wrapping under each other on a phone) */
+.killswitch { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin: 0; }
+.killswitch-text { flex: 1 1 260px; min-width: 0; }
+
+/* On a phone (640px and narrower) a stacked table's rows become two-column cards. Wider than that, a tablet or a small
+   window, the table stays a table, a little tighter below 1000px. */
+@media (max-width: 640px) {
+  /* A table marked "stack" becomes one card per row: a two-column grid, each cell labelled by its column.
+     m-title is the row's name and m-status its badge (together the card's first line, neither labelled);
+     full spans both columns; an empty cell and the header row disappear. */
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  table.stack tbody tr:last-child { border-bottom: 0; }
+  table.stack td, .card.flush > table.stack td:first-child { width: auto; min-width: 0; padding: 0; border: none; overflow-wrap: break-word; }
+  table.stack td.full, table.stack td.actions-cell { grid-column: 1 / -1; }
+  table.stack td:empty { display: none; }
+  table.stack td[data-label]:not([data-label=""])::before {
+    content: attr(data-label); display: block; margin-bottom: 3px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: normal;
+  }
+  /* The name takes the whole first line and the badge sits over its right end, so a long name is not squeezed into half the width */
+  table.stack td.m-title { grid-column: 1 / -1; grid-row: 1; align-self: center; font-weight: 600; font-size: 1rem; }
+  table.stack td.m-title .muted { font-weight: normal; font-size: 0.85rem; }
+  table.stack td.m-status { grid-column: 1 / -1; grid-row: 1; justify-self: end; align-self: start; }
+  table.stack tr:has(td.m-status:not(:empty)) td.m-title { padding-right: 6rem; }
+  table.stack td.m-title[data-label]:not([data-label=""])::before, table.stack td.m-status[data-label]:not([data-label=""])::before { display: none; }
+  table.stack td.when { white-space: normal; }
+  table.stack td.actions-cell { white-space: normal; }
+  table.stack td.actions-cell .actions { justify-content: flex-start; flex-wrap: wrap; }
+  table.stack td select, table.stack td input[type="number"] { max-width: none; }
+  /* A role's grants sit inside a panel that already pads them */
+  .panel table.stack tr { padding-left: 0; padding-right: 0; }
+  .card.flush > p { padding: 12px 16px; margin: 0; }
+}
+/* Table mode: a select in a narrow column keeps a usable width, and below 1000px the cells are tighter */
+@media (min-width: 641px) {
+  table.stack td select { min-width: 6.5rem; }
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  table.stack th, table.stack td { padding: 9px 6px; font-size: 0.88rem; }
+  /* The buttons of a row stack, so the last column is one button wide */
+  table.stack td.actions-cell .actions { flex-direction: column; align-items: stretch; gap: 6px; }
+  table.stack td.actions-cell .actions form { display: contents; }
+  table.stack td.actions-cell .actions button, table.stack td.actions-cell .actions .btn { width: 100%; text-align: center; justify-content: center; }
+}

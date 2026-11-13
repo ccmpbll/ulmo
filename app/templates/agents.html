@@ -30,12 +30,14 @@
 <div class="settings-section">
   <h2>Agent runs</h2>
   <div class="card">
-    <form method="post" action="/agent-runs/toggle">
+    <form method="post" action="/agent-runs/toggle" class="killswitch">
       {% if runs_enabled %}
-      <span class="badge success">on</span> Agents can start the playbooks and commands their role allows.
+      <span class="badge success">on</span>
+      <span class="killswitch-text">Agents can start the playbooks and commands their role allows.</span>
       <button type="submit" class="danger">Switch off</button>
       {% else %}
-      <span class="badge failed">off</span> No agent can start a run. Reading and cancelling still work.
+      <span class="badge failed">off</span>
+      <span class="killswitch-text">No agent can start a run. Reading and cancelling still work.</span>
       <input type="hidden" name="enable" value="1" />
       <button type="submit" class="secondary">Switch on</button>
       {% endif %}
