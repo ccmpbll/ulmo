@@ -17,7 +17,8 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
   paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
   goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
 - **Ansible** (top bar): the playbooks and the inventory as two tabs; view their YAML, syntax highlighted (read-only)
-- Per-playbook cron schedules, independent of the git sync schedule
+- Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run), independent of the git sync schedule
+- No outside network needed: the syntax highlighter and log colouring ship in `app/static/vendor/`
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
 - "Sync from Git" installs collections from the repo's `requirements.yaml`; each sync's full output is
   under Overview -> Syncs
@@ -264,7 +265,7 @@ Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
-**Settings → SSH Keys** (first section on the page) — paste the private key(s) used to connect to managed
+**Settings → SSH keys** — paste the private key(s) used to connect to managed
 hosts, for Ansible and for the Commands page. Symlinked
 into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the common
 `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` inventory convention, so no

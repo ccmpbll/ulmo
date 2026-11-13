@@ -416,11 +416,10 @@ def test_page_tabs():
     assert "Download backup" in admin.get("/settings?tab=backup").text
     acct = admin.get("/settings?tab=account").text
     assert active(acct) == ["Account &amp; users"] and "Change your password" in acct and "Users" in acct and "Git repository URL" not in acct
-    assert "Playbook Schedules" in admin.get("/settings?tab=schedules").text
     assert active(admin.get("/settings?tab=nonsense").text) == ["Git sync"]
     resp = admin.post("/settings/notifications", data={"public_url": "ftp://nope"}, follow_redirects=False)
     assert resp.headers["location"].startswith("/settings?tab=notify&error="), "a refused notification setting shows on its tab"
-    resp = admin.post("/settings", data={"git_sync_cron": "not a cron", "recent_runs_count": "5", "run_timeout_minutes": "5", "command_history_keep": "5"}, follow_redirects=False)
+    resp = admin.post("/settings", data={"git_sync_cron": "not a cron"}, follow_redirects=False)
     assert resp.headers["location"].startswith("/settings?tab=git&"), "the git form returns to its tab"
     resp = admin.post("/settings/users/password", data={"current_password": "wrong", "new_password": "x", "new_password_confirm": "x"}, follow_redirects=False)
     assert resp.headers["location"] == "/settings?tab=account&error=Current+password+is+incorrect"
@@ -435,6 +434,125 @@ def test_page_tabs():
     assert "Waiting (1)" in admin.get("/approvals").text, "the Waiting tab counts what is waiting"
     admin.post(f"/approvals/{aid}/deny")
     assert "Waiting (" not in admin.get("/approvals").text
+
+
+def test_times_carry_their_timezone():
+    """The database returns UTC timestamps without a zone; the <time> tag must say UTC, or a browser
+    reads the digits as its own local time (hours off). A relative one is flagged for the script."""
+    from datetime import datetime, timezone as tz
+    from app.templating import local_ago, local_time
+    naive = datetime(2026, 1, 2, 3, 4, 5)
+    assert 'datetime="2026-01-02T03:04:05+00:00"' in local_time(naive), "a naive timestamp is UTC"
+    east = datetime(2026, 1, 2, 3, 4, 5, tzinfo=tz(timedelta(hours=-5)))
+    assert 'datetime="2026-01-02T08:04:05+00:00"' in local_time(east), "an aware one is converted to UTC"
+    assert "data-relative" in local_ago(naive) and "data-relative" not in local_time(naive)
+    assert local_time(None) == "-" and local_ago(None) == "-"
+    page = admin.get("/").text
+    assert re.search(r'<time class="local-time" datetime="[^"]+\+00:00" data-relative>', page), "the Overview's When column is relative"
+    js = Path(__file__).resolve().parent.parent / "app" / "static" / "local-time.js"
+    assert 'hasAttribute("data-relative")' in js.read_text() and "htmx" not in js.read_text()
+
+
+def test_nothing_loads_from_the_internet():
+    """highlight.js and ansi_up are served from /static/vendor and htmx (unused) is gone, so the
+    pages work on a network with no outside access."""
+    templates = Path(__file__).resolve().parent.parent / "app" / "templates"
+    for f in templates.glob("*.html"):
+        text = f.read_text()
+        assert not re.search(r'<(script|link)[^>]+(src|href)="https?://', text), f"{f.name} loads from another site"
+    for name in ("highlight.min.js", "atom-one-dark.min.css", "ansi_up.js"):
+        r = admin.get(f"/static/vendor/{name}")
+        assert r.status_code == 200 and len(r.content) > 500, name
+    assert "htmx" not in admin.get("/").text
+
+
+def test_ansible_rows():
+    """Each playbook shows its last run and schedule and is scheduled in place; the old Recent Runs
+    table and the schedule form under Settings are gone."""
+    from app.routers import playbooks as playbooks_module  # noqa: F401
+    from app.services import git_sync, inventory
+    real = (git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts)
+    git_sync.list_playbooks = lambda: [{"name": "rowtest.yml", "rel_path": "playbooks/rowtest.yml"}, {"name": "unrun.yml", "rel_path": "playbooks/unrun.yml"}]
+    git_sync.repo_synced = lambda: True
+    inventory.list_hosts = lambda: ["web1"]
+    scheduler.scheduler.start()
+    try:
+        with Session(engine) as session:
+            run = RunHistory(playbook="playbooks/rowtest.yml", status="success", triggered_by="admin")
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+        page = admin.get("/ansible").text
+        assert "Recent Runs" not in page and ">Playbooks</a>" in page and ">Inventory</a>" in page
+        assert f'href="/runs/{run.id}"><span class="badge success">success</span></a>' in page and "Never run" in page and "Not scheduled" in page
+        assert page.count('action="/settings/playbook-schedule"') == 2 and ">Schedule</summary>" in page
+        # Run sits beside the name, outside the form that holds the tag and host boxes, tied to it by id.
+        for n in (1, 2):
+            assert f'<button type="submit" form="run-{n}" class="run-btn">Run</button>' in page and f'<form method="post" action="/playbooks/run" class="playbook-run-form" id="run-{n}">' in page
+        assert page.count('name="rel_path" value="playbooks/rowtest.yml"') == 2, "the run form and the schedule form each name the playbook"
+
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": "0 3 * * *"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/ansible?ok=Schedule%20enabled"), "back on the Ansible page"
+        page = admin.get("/ansible").text
+        assert "<code>0 3 * * *</code>" in page and "· next <time" in page and ">Edit schedule</summary>" in page
+        nxt = scheduler.next_run("playbooks/rowtest.yml")
+        assert nxt is not None and nxt.utcoffset() == timedelta(0) and nxt > utcnow(), "the next run is a UTC time in the future"
+        assert scheduler.next_run("playbooks/unrun.yml") is None
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": "nope"}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ansible?error="), "a bad schedule is refused where it was typed"
+        assert "<code>0 3 * * *</code>" in admin.get("/ansible").text, "and the old one is kept"
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": ""}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ansible?ok=Schedule%20disabled") and "<code>" not in admin.get("/ansible").text.split("playbook-row", 2)[1]
+        assert scheduler.next_run("playbooks/rowtest.yml") is None
+
+        settings_page = admin.get("/settings?tab=git").text
+        assert "Playbook Schedules" not in settings_page and "schedules" not in admin.get("/settings").text.split("</nav>")[0]
+        # Sync is on both tabs and returns to the tab it was pressed on.
+        assert 'name="back" value="inventory"' in admin.get("/inventory").text
+        for back, where in (("", "/ansible?"), ("inventory", "/inventory?"), ("anything-else", "/ansible?")):
+            r = admin.post("/sync", data={"back": back}, follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"].startswith(where), (back, r.headers["location"])
+        with Session(engine) as session:
+            session.delete(session.get(RunHistory, run.id))
+            session.commit()
+    finally:
+        scheduler.scheduler.shutdown(wait=False)
+        git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts = real
+
+
+def test_settings_forms_are_separate():
+    """Git sync and Run limits are two forms with two handlers; saving one never touches the other."""
+    page = admin.get("/settings").text
+    assert 'action="/settings"' in page and 'action="/settings/limits"' in page and "recent_runs_count" not in page
+    git_form = page.split('action="/settings"')[1].split("</form>")[0]
+    assert "run_timeout_minutes" not in git_form and "command_history_keep" not in git_form and "git_repo_url" in git_form
+    limits_form = page.split('action="/settings/limits"')[1].split("</form>")[0]
+    assert "run_timeout_minutes" in limits_form and "git_repo_url" not in limits_form
+    from app.services import settings_store
+    assert admin.post("/settings/limits", data={"run_timeout_minutes": "11", "command_history_keep": "12"}).status_code == 200
+    admin.post("/settings", data={"git_repo_url": "https://git.example/x.git", "git_branch": "dev"})
+    assert settings_store.get("run_timeout_minutes") == "11" and settings_store.get("command_history_keep") == "12", "saving git settings leaves the limits alone"
+    admin.post("/settings/limits", data={"run_timeout_minutes": "30", "command_history_keep": "13"})
+    assert settings_store.get("git_repo_url") == "https://git.example/x.git" and settings_store.get("git_branch") == "dev", "saving limits leaves git settings alone"
+    for bad in ("-1", "x"):
+        r = admin.post("/settings/limits", data={"run_timeout_minutes": bad, "command_history_keep": "5"}, follow_redirects=False)
+        assert "error=" in r.headers["location"] and settings_store.get("run_timeout_minutes") == "30", bad
+    settings_store.set_many({"git_repo_url": "", "git_branch": "main", "run_timeout_minutes": "60", "command_history_keep": "20"})
+
+
+def test_approve_is_hidden_without_a_login():
+    """While ULMO_DISABLE_AUTH is set nobody is signed in, so the Overview offers Deny and the
+    request's own page, not Approve."""
+    aid = _wait()
+    real = activity_module.AUTH_DISABLED
+    activity_module.AUTH_DISABLED = True
+    try:
+        page = admin.get("/").text
+        assert f'action="/approvals/{aid}/deny"' in page and f'action="/approvals/{aid}/approve"' not in page
+    finally:
+        activity_module.AUTH_DISABLED = real
+    assert f'action="/approvals/{aid}/approve"' in admin.get("/").text
+    admin.post(f"/approvals/{aid}/deny")
 
 
 def test_runs_are_listed_by_start_time():
@@ -580,6 +698,11 @@ def main():
     test_overview_needs_you_and_running()
     test_ansible_page_moved()
     test_page_tabs()
+    test_times_carry_their_timezone()
+    test_nothing_loads_from_the_internet()
+    test_ansible_rows()
+    test_settings_forms_are_separate()
+    test_approve_is_hidden_without_a_login()
     test_runs_are_listed_by_start_time()
     test_old_list_pages_redirect_and_detail_pages_stay()
     test_change_log_is_bounded()

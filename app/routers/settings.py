@@ -16,7 +16,6 @@ router = APIRouter(dependencies=[Depends(require_login)])
 
 TABS = (
     ("git", "Git sync"),
-    ("schedules", "Playbook schedules"),
     ("ssh", "SSH keys"),
     ("notify", "Notifications"),
     ("backup", "Backup & restore"),
@@ -28,15 +27,6 @@ TABS = (
 def settings_page(request: Request, error: str | None = None, ok: str | None = None, tab: str = "git"):
     with Session(engine) as session:
         users = session.exec(select(User).order_by(User.username)).all()
-    playbooks = git_sync.list_playbooks()
-    with Session(engine) as session:
-        schedules = {
-            s.rel_path: s.cron
-            for s in session.exec(select(PlaybookSchedule)).all()
-        }
-    for pb in playbooks:
-        pb["cron"] = schedules.get(pb["rel_path"], "")
-
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -50,7 +40,6 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "ssh_keys": ssh_keys.list_keys(),
             "ssh_link_warnings": ssh_keys.link_warnings(),
             "auth_disabled": AUTH_DISABLED,
-            "playbooks": playbooks,
         },
     )
 
@@ -65,19 +54,38 @@ def update_settings(
     requirements_path: str = Form(""),
     git_sync_cron: str = Form(""),
     extra_args: str = Form(""),
-    recent_runs_count: str = Form("5"),
+):
+    git_sync_cron = git_sync_cron.strip()
+    if git_sync_cron:
+        from apscheduler.triggers.cron import CronTrigger
+        try:
+            CronTrigger.from_crontab(git_sync_cron)
+        except ValueError:
+            return RedirectResponse(
+                "/settings?tab=git&error=Invalid+git+sync+cron+expression", status_code=303
+            )
+
+    settings_store.set_many(
+        {
+            "git_repo_url": git_repo_url.strip(),
+            "git_branch": git_branch.strip() or "main",
+            "playbooks_subdir": playbooks_subdir.strip(),
+            "inventory_path": inventory_path.strip() or "inventory.yaml",
+            "requirements_path": requirements_path.strip(),
+            "git_sync_cron": git_sync_cron,
+            "extra_args": extra_args.strip(),
+        }
+    )
+    scheduler.reschedule(git_sync_cron)
+    return RedirectResponse("/settings?tab=git&ok=Git+sync+settings+saved", status_code=303)
+
+
+@router.post("/settings/limits")
+def update_limits(
+    request: Request,
     run_timeout_minutes: str = Form("60"),
     command_history_keep: str = Form("20"),
 ):
-    try:
-        recent_runs_count_int = int(recent_runs_count.strip())
-        if recent_runs_count_int < 1:
-            raise ValueError
-    except ValueError:
-        return RedirectResponse(
-            "/settings?tab=git&error=Recent+runs+to+show+must+be+a+positive+number", status_code=303
-        )
-
     try:
         run_timeout_minutes_int = int(run_timeout_minutes.strip())
         if run_timeout_minutes_int < 0:
@@ -96,32 +104,13 @@ def update_settings(
             "/settings?tab=git&error=Saved+command+library+copies+must+be+a+number+from+1+to+500", status_code=303
         )
 
-    git_sync_cron = git_sync_cron.strip()
-    if git_sync_cron:
-        from apscheduler.triggers.cron import CronTrigger
-        try:
-            CronTrigger.from_crontab(git_sync_cron)
-        except ValueError:
-            return RedirectResponse(
-                "/settings?tab=git&error=Invalid+git+sync+cron+expression", status_code=303
-            )
-
     settings_store.set_many(
         {
-            "git_repo_url": git_repo_url.strip(),
-            "git_branch": git_branch.strip() or "main",
-            "playbooks_subdir": playbooks_subdir.strip(),
-            "inventory_path": inventory_path.strip() or "inventory.yaml",
-            "requirements_path": requirements_path.strip(),
-            "git_sync_cron": git_sync_cron.strip(),
-            "extra_args": extra_args.strip(),
-            "recent_runs_count": str(recent_runs_count_int),
             "run_timeout_minutes": str(run_timeout_minutes_int),
             "command_history_keep": str(command_history_keep_int),
         }
     )
-    scheduler.reschedule(git_sync_cron.strip())
-    return RedirectResponse("/settings?tab=git&ok=Settings+saved", status_code=303)
+    return RedirectResponse("/settings?tab=git&ok=Run+limits+saved", status_code=303)
 
 
 @router.get("/settings/backup")
@@ -212,6 +201,7 @@ def update_playbook_schedule(
     rel_path: str = Form(...),
     cron: str = Form(""),
 ):
+    """Edited on the Ansible page, next to the playbook it belongs to."""
     cron = cron.strip()
     if cron:
         from apscheduler.triggers.cron import CronTrigger
@@ -219,7 +209,7 @@ def update_playbook_schedule(
             CronTrigger.from_crontab(cron)
         except ValueError:
             return RedirectResponse(
-                f"/settings?tab=schedules&error={quote(f'Invalid cron expression for {rel_path}')}",
+                f"/ansible?error={quote(f'Invalid cron expression for {rel_path}')}",
                 status_code=303,
             )
     with Session(engine) as session:
@@ -233,6 +223,6 @@ def update_playbook_schedule(
     scheduler.reschedule_playbook(rel_path, cron)
     action = "enabled" if cron else "disabled"
     return RedirectResponse(
-        f"/settings?tab=schedules&ok={quote(f'Schedule {action} for {rel_path}')}",
+        f"/ansible?ok={quote(f'Schedule {action} for {rel_path}')}",
         status_code=303,
     )

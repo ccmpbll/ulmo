@@ -962,14 +962,10 @@ console.log("script ok");
 
 
 def test_history_setting():
-    r = admin.post("/settings", data={"git_repo_url": "", "git_branch": "main", "playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml",
-                                      "requirements_path": "", "git_sync_cron": "", "extra_args": "", "recent_runs_count": "5",
-                                      "run_timeout_minutes": "60", "command_history_keep": "7"}, follow_redirects=False)
+    r = admin.post("/settings/limits", data={"run_timeout_minutes": "60", "command_history_keep": "7"}, follow_redirects=False)
     assert r.status_code == 303 and settings_store.get("command_history_keep") == "7"
     for bad in ("0", "501", "abc", "-3", "2.5"):
-        r = admin.post("/settings", data={"git_repo_url": "", "git_branch": "main", "playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml",
-                                          "requirements_path": "", "git_sync_cron": "", "extra_args": "", "recent_runs_count": "5",
-                                          "run_timeout_minutes": "60", "command_history_keep": bad}, follow_redirects=False)
+        r = admin.post("/settings/limits", data={"run_timeout_minutes": "60", "command_history_keep": bad}, follow_redirects=False)
         assert "error=" in r.headers["location"] and settings_store.get("command_history_keep") == "7", bad
     settings_store.set_many({"command_history_keep": "20"})
     assert "command_history_keep" in settings_store.export_yaml()

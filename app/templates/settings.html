@@ -17,7 +17,7 @@
   <div class="split-body">
 {% if tab == "git" %}
 <div class="settings-section">
-  <h2>Git Sync</h2>
+  <h2>Git sync</h2>
   <div class="card">
     <form method="post" action="/settings">
       <label>Git repository URL
@@ -41,46 +41,30 @@
       <label>Extra ansible-playbook args
         <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
       </label>
-      <hr style="border-color: var(--border); margin: 16px 0;" />
-      <label>Recent runs to show on dashboard
-        <input type="number" name="recent_runs_count" value="{{ settings.recent_runs_count }}" min="1" step="1" />
-      </label>
-      <label>Run timeout, minutes (0 = no timeout)
-        <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
-      </label>
-      <label>Saved copies of the command library to keep (for Restore)
-        <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
-      </label>
-      <button type="submit">Save settings</button>
+      <button type="submit">Save git sync settings</button>
     </form>
   </div>
 </div>
-{% endif %}
-{% if tab == "schedules" %}
+
 <div class="settings-section">
-  <h2>Playbook Schedules</h2>
+  <h2>Run limits</h2>
   <div class="card">
-    {% if playbooks %}
-    {% for pb in playbooks %}
-    <form method="post" action="/settings/playbook-schedule" class="schedule-row">
-      <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      <div class="schedule-name">
-        <span class="playbook-name">{{ pb.name }}</span>
-        <span class="muted" style="font-size:0.78rem;">{{ pb.rel_path }}</span>
+    <form method="post" action="/settings/limits">
+      <div class="form-grid">
+        <label>Run timeout, minutes (0 = no timeout)
+          <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
+        </label>
+        <label>Saved copies of the command library to keep (for Restore)
+          <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
+        </label>
       </div>
-      <input type="text" name="cron" value="{{ pb.cron }}" placeholder="*/30 * * * *  (blank = disabled)" class="schedule-cron" />
-      <button type="submit" class="secondary">Save</button>
+      <button type="submit">Save run limits</button>
     </form>
-    {% endfor %}
-    {% else %}
-    <p class="muted">Sync a repo first to see playbooks here.</p>
-    {% endif %}
   </div>
 </div>
 {% endif %}
 {% if tab == "ssh" %}
 <div class="settings-section">
-  <h2>SSH Keys</h2>
   <div class="card">
     {% if ssh_link_warnings %}
     <p class="error">
@@ -132,7 +116,6 @@
 {% endif %}
 {% if tab == "notify" %}
 <div class="settings-section">
-  <h2>Notifications</h2>
   <div class="card">
     <form method="post" action="/settings/notifications">
       <label>Notify on
@@ -162,7 +145,6 @@
 {% endif %}
 {% if tab == "backup" %}
 <div class="settings-section">
-  <h2>Backup &amp; Restore</h2>
   <div class="card">
     <p class="muted">
       Backs up the settings above (git repo, schedule, etc.) as a YAML file. SSH keys and user

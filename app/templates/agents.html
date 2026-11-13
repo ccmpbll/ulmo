@@ -64,7 +64,7 @@
           </td>
           <td data-label="Status"><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
           <td data-label="Expires">{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
-          <td data-label="Last used">{{ a.last_used_at | local_time }}</td>
+          <td data-label="Last used">{{ a.last_used_at | local_ago }}</td>
           <td data-label="Per hour">
             <form method="post" action="/agents/{{ a.id }}/limit" class="actions">
               <input type="number" name="max_per_hour" min="0" max="100000" value="{{ a.max_per_hour if a.max_per_hour is not none }}" placeholder="{{ default_per_hour }}" style="width: 5.5rem; margin: 0;" aria-label="Requests per hour for {{ a.name }}" />
@@ -81,7 +81,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="muted">No agents yet.</td></tr>
+        <tr><td colspan="7" class="muted">No agents yet. Create one below to get a token.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -109,7 +109,6 @@
 
 {% if tab == "tokens" %}
 <div class="settings-section">
-  <h2>Change tokens</h2>
   <p class="muted">For scripts that propose changes to commands and roles (<code>/api/v1/admin</code>). A change token cannot run anything and cannot apply a change; every proposal waits on the Approvals page for you to approve it after seeing the diff.</p>
   <div class="card">
     <table class="stack">
@@ -122,7 +121,7 @@
           <td data-label="Name">{{ t.name }}</td>
           <td data-label="Status"><span class="badge {{ 'success' if t.enabled else 'cancelled' }}">{{ 'enabled' if t.enabled else 'disabled' }}</span></td>
           <td data-label="Expires">{{ t.expires_at | local_time if t.expires_at else 'never' }}</td>
-          <td data-label="Last used">{{ t.last_used_at | local_time }}</td>
+          <td data-label="Last used">{{ t.last_used_at | local_ago }}</td>
           <td class="actions-cell" data-label="">
             <div class="actions">
               <form method="post" action="/admin-tokens/{{ t.id }}/toggle"><button type="submit" class="secondary">{{ 'Disable' if t.enabled else 'Enable' }}</button></form>
@@ -131,7 +130,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No change tokens yet.</td></tr>
+        <tr><td colspan="5" class="muted">No change tokens yet. Create one below.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -152,7 +151,6 @@
 
 {% if tab == "roles" %}
 <div class="settings-section">
-  <h2>Roles</h2>
   <div class="card">
     <p class="muted">A role says what an agent may use: <strong>playbook grants</strong> (a playbook on specific hosts from the Ansible inventory) and <strong>commands</strong> (from the <a href="/commands">Commands</a> page). Anything not listed is denied.</p>
     {% for r in roles %}

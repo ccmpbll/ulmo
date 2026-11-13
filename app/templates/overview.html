@@ -161,7 +161,7 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td data-label="When" class="when">{{ r.at | local_time }}</td>
+        <td data-label="When" class="when">{{ r.at | local_ago }}</td>
         <td data-label="Type"><span class="kind {{ r.kind }}">{{ r.kind }}</span></td>
         <td data-label="What">{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}{% if r.detail %}<br /><span class="muted">{{ r.detail }}</span>{% endif %}</td>
         <td data-label="Started by" class="muted">{{ r.by }}</td>

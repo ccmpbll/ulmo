@@ -231,13 +231,18 @@ pre.log {
   line-height: 1.4;
 }
 
-.playbook-row { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.playbook-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; row-gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .playbook-row:last-child { border-bottom: none; }
 .playbook-row-header { display: flex; align-items: baseline; gap: 10px; }
 .playbook-name { font-weight: 700; font-size: 1.05rem; }
 .playbook-path { color: var(--muted); font-size: 0.8rem; }
 
-.playbook-run-form { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 12px; margin: 0; }
+/* Run sits top right beside the name and schedule; the tag and host options, when there are any, go under both */
+.playbook-row-header { grid-column: 1; grid-row: 1; }
+.playbook-facts { grid-column: 1; grid-row: 2; }
+.run-btn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.playbook-run-form { grid-column: 1 / -1; grid-row: 3; margin: 0; }
+.playbook-run-form:not(:has(.run-options)) { display: none; }
 .run-options { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .chip-section { display: flex; flex-direction: column; gap: 4px; }
 .chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -423,3 +428,19 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .sidenav { position: static; flex-direction: row; overflow-x: auto; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
   .sidenav a { white-space: nowrap; }
 }
+
+/* Ansible: each playbook shows its last run and schedule, and is edited in place */
+.card.flush .playbook-row { padding: 16px; }
+.playbook-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; font-size: 0.85rem; color: var(--muted); }
+.playbook-facts .fact { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.playbook-facts a { color: inherit; }
+.schedule-details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; list-style: none; }
+.schedule-details summary::-webkit-details-marker { display: none; }
+.schedule-form { display: flex; gap: 8px; margin: 8px 0 0; }
+.schedule-form input { margin: 0; width: 260px; max-width: 100%; }
+.empty-state { padding: 28px 16px; text-align: center; }
+.empty-state p { margin: 4px 0; }
+
+/* Tables: a row lights up under the pointer */
+tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+table.stack tbody tr:hover { background: none; }

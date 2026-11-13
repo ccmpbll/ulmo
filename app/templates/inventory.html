@@ -2,17 +2,23 @@
 {% from "_macros.html" import subnav %}
 {% block title %}Inventory - ulmo{% endblock %}
 {% block content %}
+{% if request.query_params.get("error") %}<p class="error">{{ request.query_params.get("error") }}</p>{% endif %}
+{% if request.query_params.get("ok") %}<p class="ok">{{ request.query_params.get("ok") }}</p>{% endif %}
 <div class="page-header">
   <div>
     <h1>Ansible</h1>
     <p class="sub">Playbooks and inventory from the synced git repo.</p>
   </div>
+  <form method="post" action="/sync">
+    <input type="hidden" name="back" value="inventory" />
+    <button type="submit" class="secondary">Sync from Git</button>
+  </form>
 </div>
 {{ subnav([("/ansible", "Playbooks", false), ("/inventory", "Inventory", true)]) }}
 
 {% if not repo_synced %}
 <div class="card">
-  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then sync from the Playbooks tab.</p>
+  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then press "Sync from Git".</p>
 </div>
 {% elif not files %}
 <div class="card">
@@ -50,8 +56,8 @@
 </div>
 {% endif %}
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="/static/vendor/atom-one-dark.min.css">
+<script src="/static/vendor/highlight.min.js"></script>
 <script>
   const inventoryCodeEl = document.getElementById("inventory-code");
   if (inventoryCodeEl) hljs.highlightElement(inventoryCodeEl);
