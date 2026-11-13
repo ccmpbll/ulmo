@@ -9,31 +9,34 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 
 ## Features
 
-- Lists your playbooks with inline tag (`--tags`) and host (`--limit`)
-  selection; live colorized log streaming, cancel, and a configurable run timeout (default 60 min)
-- Live per-task progress and a structured Play Recap on completion. A finished run that used `--tags` says how many of the playbook's tasks ran and lists the ones left out because no tag matched
-- Each run records the playbook's version and a revision of all the files; the run page says whether the playbook has changed since and links to the saved copy it ran
-- An **Overview** landing page: what is waiting on you (approve or deny agent requests right there), what is
-  running now, and the activity log of playbook runs, command runs, git imports, API requests and changes: newest first,
-  paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 imports are kept (a run's log
-  goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
-- **Ansible** (top bar): Playbooks, Inventory and **Files** tabs. Files is where ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`, `files/`): browse (grouped by folder, with size and last edited), edit in the browser with syntax colours and line numbers, upload files or a zip, create, move, delete, download everything as a zip. Each save keeps the old contents as a saved copy you can compare and Restore; an edit made from a stale page is refused, not merged. **The files are read-only while a playbook run is active**, so a run never sees them change; the page says which run and offers Cancel. Editing is switched off while `ULMO_DISABLE_AUTH` is set, and so are Import from Git and the Ansible settings (which include extra `ansible-playbook` arguments). A YAML file that does not parse, or a playbook that fails `ansible-playbook --syntax-check`, is still saved, with a warning. Moving a playbook takes its saved copies, grants and schedule with it. Zip uploads keep the executable bit; an edit keeps a file's CRLF line endings.
-- Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run)
-- No outside network needed: the syntax highlighter and log colouring ship in `app/static/vendor/`
-- Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
-- Collections from `requirements.yaml` are installed when that file changes
-- **Import from Git** (Settings -> Ansible): a one-time copy of a repository into ulmo, for moving in. It is not a sync; the previous files are kept beside the data folder as `ansible.before-import-*`. An install that still has the old `./data/repo` checkout has its files copied across automatically at first start (the checkout is left in place; delete it when you're happy)
-- Settings backup/restore as YAML
-- **Commands**: a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer
-  them, edited in the UI with saved copies. A host signs in with an SSH key or a password (see below)
-- JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles that say which
-  playbooks on which hosts, and which commands, an agent may run, optional approval by you before a
-  call runs, an hourly request limit per agent, a kill switch, and an audit log (see below)
-- **Change proposals**: scripts (Claude Code, n8n, curl) can read `commands.yml`, the roles and the
-  workspace files, and *propose* changes to commands, roles and any file (playbooks included) through a
-  separate token; you approve each one with a diff (see "Proposing changes" below). Agents can read the
-  playbooks but never write a file
-- SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
+- **Playbooks:** pick tags (`--tags`) and hosts (`--limit`), watch a live colourised log with per-task
+  progress and a Play Recap, cancel, set a run timeout (60 min default) and a cron schedule per playbook.
+  A finished run that used tags lists the tasks no tag matched. Each run records the playbook's version and
+  a revision of all files, and links to the saved copy it ran if the file has changed since.
+- **Files** (Ansible → Files): ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`,
+  `files/`). Browse them by folder, edit with syntax colours and line numbers, upload files or a zip,
+  create, move, delete, or download everything as a zip. Every save keeps the old contents as a saved
+  copy you can compare and Restore, and an edit from a stale page is refused, not merged. **The files are
+  read-only while a playbook runs.** A file that does not parse, or a playbook that fails
+  `ansible-playbook --syntax-check`, is saved with a warning. Moving a playbook takes its grants and
+  schedule with it. Editing, Import from Git and the Ansible settings (which include extra
+  `ansible-playbook` arguments) are off while `ULMO_DISABLE_AUTH` is set.
+- **Import from Git** (Settings → Ansible): a one-time copy of a repository into ulmo, not a sync; the
+  previous files are kept as `ansible.before-import-*`. An old `./data/repo` checkout is copied across at
+  first start and left in place.
+- **Overview:** what is waiting on you (approve or deny there), what is running, and the activity log of
+  runs, command runs, imports, API requests and changes, paged and filterable. History is pruned (newest
+  500 playbook runs, imports, command runs and approvals; 5,000 requests and changes).
+- **Commands:** a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer them.
+- **API for scripts and agents** (n8n etc.): per-agent bearer tokens, roles that say which playbooks and
+  commands an agent may run, optional approval by you before a call runs, an hourly limit, a kill switch
+  and an audit log.
+- **Change proposals:** scripts (Claude Code, n8n, curl) can read `commands.yml`, the roles and the
+  workspace files, and *propose* changes to commands, roles and any file through a separate token. You
+  approve each one with a diff. Agents can read playbooks but never write a file.
+- Notifications via Pushover and/or [ntfy](https://ntfy.sh), every run or failures only. Collections from
+  `requirements.yaml` are installed when it changes. Settings backup/restore as YAML. No outside network
+  needed. SQLite-backed login (first run creates the admin), or `ULMO_DISABLE_AUTH=true` to skip it.
 
 ## Running
 
@@ -42,14 +45,14 @@ curl -O https://raw.githubusercontent.com/ccmpbll/ulmo/main/docker-compose.yml
 docker compose up -d
 ```
 
-Open http://localhost:8000, create the first user, then open **Ansible -> Files** and upload your playbooks,
-inventory and `ansible.cfg` (or a zip of them), or use **Settings -> Ansible -> Import from Git** once.
+Open http://localhost:8000, create the first user, then open **Ansible → Files** and upload your
+playbooks, inventory and `ansible.cfg` (or a zip of them), or use **Settings → Ansible → Import from
+Git** once.
 
 ## Files layout
 
-Expected at the **top level** of the Files page — `ansible.cfg` (required there, no override),
-`inventory.yaml`, `requirements.yaml`. All three paths are configurable in Settings if named or
-placed differently; playbooks themselves live in a subdirectory (`playbooks/` by default):
+`ansible.cfg` (required at the top level) sits next to `inventory.yaml` and `requirements.yaml` (their
+paths are configurable in Settings). Playbooks live in `playbooks/` by default:
 
 ```
 .
@@ -62,46 +65,36 @@ placed differently; playbooks themselves live in a subdirectory (`playbooks/` by
 
 ## Agent API
 
-**Agents** (top bar) creates API agents. Each gets a token, shown once; only its hash is stored.
-Send it as `Authorization: Bearer <token>`. Tokens can be disabled, given an expiry, or deleted at
-any time, and every request (allowed or denied, with the reason) is listed on the same page.
+**Agents** (top bar) creates API agents. Each gets a token, shown once; only its hash is stored. Send it
+as `Authorization: Bearer <token>`. Tokens can be disabled, expire or be deleted, and every request
+(allowed or denied) is audited.
 
 ```
 GET  /api/v1/playbooks         playbooks and their tags
+GET  /api/v1/playbooks/content?path=...   a playbook's text and version (read only)
 GET  /api/v1/hosts             inventory hosts
 GET  /api/v1/runs?limit=       recent runs
 GET  /api/v1/runs/{id}         one run: status, recap, log tail (ANSI stripped, last 64 KB)
 GET  /api/v1/catalog           what this agent may run
 POST /api/v1/runs              start a playbook: {"playbook": "playbooks/x.yml", "limit": ["web1"]}
 POST /api/v1/runs/{id}/cancel  cancel a run this agent started
-GET  /api/v1/approvals/{id}    a request of this agent waiting for approval (see Approvals)
-GET  /api/v1/playbooks/content?path=...   a playbook's text and version (read only)
+GET  /api/v1/approvals/{id}    one of this agent's requests waiting for approval
 ```
 
-**Reading playbooks.** Every agent can read the playbooks `GET /api/v1/playbooks` lists, with
-`GET /api/v1/playbooks/content?path=playbooks/x.yaml`. Nothing else in the workspace is readable with an
-agent token (not `files/`, `ansible.cfg` or the inventory), and no agent can change a file: editing is
-done with a change token (below).
+Agents can read only the playbooks (not `files/`, `ansible.cfg` or the inventory) and cannot change a
+file: editing needs a change token (below).
 
-**Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
-create a **role**, add a **grant** (one playbook plus the hosts it may target), and assign the
-role to the agent. `limit` is required and every host must be named in the role's grants for
-that playbook; matching is exact, so wildcards, groups and `a:b` patterns are refused. ansible
-reads a name as a host *or* a group, so a host that shares its name with a group cannot be
-granted or used, and everything is refused while the inventory cannot be read. Runs go through
-the same code as the Run button (same `ansible-runner` call, no extra variables or check mode)
-and show up under Overview -> Playbook runs as `agent:<name>`.
+**Running playbooks.** An agent runs nothing by default. Create a **role**, add a **grant** (one playbook
+plus the hosts it may target) and assign the role to the agent. `limit` is required and every host must
+be named in the grants for that playbook; matching is exact (no wildcards, groups or `a:b`, and a host
+named like a group cannot be granted). Runs use the same code as the Run button (no extra variables or
+check mode) and show up as `agent:<name>`. A run is refused (409) while another run of the same playbook
+is going on any of the same hosts, and at most 5 agent runs go at once (429). **Agent runs** on the
+Agents page is a kill switch: off, no agent can start a run (reading and cancelling still work).
 
-Guard rails: a run is refused (409) while another run of the same playbook is going on any of
-the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at
-once (429). **Agent runs** on the page is a kill switch: when off, no agent can start a run
-(reading and cancelling still work); it is deliberately not part of Settings backup/restore.
-Every change made on the Agents and Commands pages, and every API request and command run, is listed on the **Overview** page (paged, with filters).
-
-**Running commands over SSH.** This is a separate construct from Ansible: its own hosts and its
-own commands, managed on the **Commands** page and stored in one file, `commands.yml` in the data
-volume (hand-editable too). A *command* is a fixed command line with typed blanks, and each
-*host* lists the commands it offers:
+**Running commands over SSH.** Separate from Ansible, with its own hosts and commands, edited on the
+**Commands** page and stored in `commands.yml` in the data volume. A *command* is a fixed command line with
+typed blanks; each *host* lists the commands it offers:
 
 ```yaml
 commands:
@@ -123,97 +116,58 @@ hosts:
     commands: [logs]
 ```
 
-A host signs in with an SSH key (the default, and the better choice) or with a username and
-password (`auth: password`, picked on the host form). The password is kept in ulmo's database, never
-in `commands.yml`, the download, the saved copies, the pages, the change log or run output; it is
-handed to `ssh` through `sshpass -e` in the child's environment, not on the command line. Anyone who
-can read `./data` can read it, so use a key where you can, and an account that is not root. Leaving
-the password blank when editing keeps the saved one; switching a host back to a key or deleting it
-removes the password.
-
-Parameter types are `enum` (a list of allowed strings), `int` (required min and max) and `regex`
-(must match in full; may not start with `-` unless `allow_leading_dash: true`). Every match has a short
-time budget, so a pattern that is slow on some value (for example `(a|aa)+$`) rejects that value
-instead of hanging ulmo.
-
-Add `optional: true` to any parameter to let a caller leave it out. The `argv` element that holds its
-placeholder is then dropped, so write a flag and its value as one element: `argv: [docker, ps, -a,
-"--filter={filter}"]` runs `docker ps -a` with no filter and `docker ps -a --filter=name=plex` with one.
-A value that is supplied is checked exactly like a required one. Saving is refused when an optional
-placeholder shares an element with another placeholder (dropping it would lose the other value) or
-stands alone right after a flag (`"--filter", "{filter}"` would leave a bare `--filter`). The catalog
-marks optional parameters with `"optional": true`, and the Commands page lists them as optional.
-
-The Commands page edits one command at a time (YAML, with a **Preview** that shows the exact
-command a set of sample values would produce, without running anything) and hosts through a form
-with a **Test connection** button. A command can be renamed even while it is in use: the hosts that
-offer it and the roles that hold it follow the new name in the same step (anything outside ulmo that
-calls it by the old name, such as n8n, has to be updated). Every change validates the whole file,
-keeps the previous copy (the number kept is a setting, 20 by default), lists each copy with what
-changed after it, lets you **View** what restoring it would undo, and **Restore** it, refuses to save over a change made
-elsewhere, and is written to the change log (with what the command now runs). A hand edit that no longer parses keeps the last good
-version in use and shows the error.
-
-A role lists which commands an agent may use (Agents page). A call is allowed only when the role
-includes the command **and** the chosen host offers it. The agent names a command, a host and
-values; ulmo checks every value, builds the argument list itself, and sends it to the host as one
-shell-quoted string, so a value is always a single literal argument and never shell syntax.
+- **Sign-in:** a host uses an SSH key (better) or a password (`auth: password`). The password is kept in
+  ulmo's database, never in `commands.yml`, downloads, saved copies, pages or logs, and reaches `ssh` via
+  `sshpass -e`. Anyone who can read `./data` can read it, so prefer a key and a non-root account.
+- **Parameters:** `enum`, `int` (min and max required) or `regex` (full match; no leading `-` unless
+  `allow_leading_dash: true`). A slow pattern rejects the value instead of hanging ulmo. `optional: true`
+  lets a caller leave one out: its `argv` element is dropped, so write a flag and value as one element
+  (`"--filter={filter}"`).
+- **Editing:** one command at a time as YAML, with a **Preview** of the exact command a set of sample
+  values produces, and hosts through a form with **Test connection**. A renamed command keeps its hosts
+  and roles. Every change validates the whole
+  file, keeps a saved copy (20 by default) you can View and Restore, refuses to overwrite a change made
+  elsewhere, and is logged. A hand edit that no longer parses keeps the last good version in use.
+- **Roles:** a call is allowed only if the agent's role has the command **and** the host offers it. ulmo
+  checks each value and builds the argument list itself, so a value is always one literal argument,
+  never shell syntax.
 
 ```
 POST /api/v1/commands[?wait=20]  {"command": "logs", "host": "gandalf", "params": {"n": 100, "container": "sonarr"}}
 GET  /api/v1/commands/{id}       status, return code, output (capped at 64 KB); only the agent's own runs
 ```
 
-`POST` waits for the result: up to `wait` seconds (default 20, `0` to 60). If the command finishes
-in time the answer is `200` with the status, return code and output; if not it is `202` with
-`"status": "running"` and you poll `GET /commands/{id}`. The command keeps running either way.
-Use `?wait=0` to fire and forget.
+`POST` waits up to `wait` seconds (default 20, max 60): `200` with the result if it finishes, else `202`
+and you poll `GET /commands/{id}`. The host runs it under its own `timeout` (coreutils or busybox must be
+installed). At most 5 commands run at once and 2 per host. The kill switch covers commands. Commands do
+not use the Ansible inventory, and playbook grants do not use these hosts.
 
-The host runs the command under its own `timeout` (coreutils or busybox must be installed there),
-so a timeout stops it on the host as well as in ulmo. Output beyond 64 KB is dropped but the real
-exit status is kept. At most 5 commands run at once and 2 per host; the newest 500 runs are kept.
-The kill switch covers commands too. Commands do not use the Ansible inventory, and playbook
-grants do not use these hosts.
+**Approvals.** A role can mark a command or a playbook grant "needs approval". A call to it answers `202`
+`{"status": "pending_approval", "approval_id": N}` and nothing runs until you decide on the **Approvals**
+page (each request has its own link, which a notification can open). Approving starts it as shown, after
+repeating every check a direct call gets. The agent polls `GET /api/v1/approvals/{id}`: `pending`, then
+`approved` (with a `result_url`), `denied`, `expired` (15 minutes) or `failed`. At most 10 requests per
+agent wait at once, and repeating one returns the same approval. A request may carry a `note` (500
+characters), shown escaped as the agent's words. Only a signed-in admin can decide; approving is refused
+while `ULMO_DISABLE_AUTH` is set. A new request sends a Pushover/ntfy notification; set **Public URL of
+ulmo** under Settings → Notifications to include the link.
 
-**Approvals.** A role can mark a command (under "Commands that need your approval") or a playbook
-grant ("Needs approval") as one that waits for you. A call to it answers `202` with
-`{"status": "pending_approval", "approval_id": N}` and nothing runs. Open **Approvals** (top bar,
-with a count of what is waiting) and approve or deny; each request has its own link, so a
-notification can open it directly, and signing in sends you back to it. Approving starts the run
-exactly as shown, after repeating every check a direct call gets, so a command that changed, a
-role that lost it or a switched-off kill switch makes it fail instead of run. The agent polls
-`GET /api/v1/approvals/{id}`: `pending`, then `approved` with a `result_url` to follow, or `denied`,
-`expired` (nobody decided in 15 minutes) or `failed`. At most 10 requests per agent wait at once, and asking again for something already waiting returns the same approval instead of a new one.
-A request can carry a short `note` (up to 500 characters, in the same JSON body), for example
-what the sweep found; it is shown on the Approvals page, labelled as the agent's words and
-escaped, stripped of control and direction-override characters, and included in the notification. It is ignored when the call needs no approval, and a
-repeat of a request that is already waiting keeps the first note.
-Only a signed-in admin can decide: an agent token cannot, and while `ULMO_DISABLE_AUTH` is set
-approving is refused. A new request sends a Pushover/ntfy notification (whatever "Notify on" says);
-set **Public URL of ulmo** under Settings -> Notifications to include the link.
-
-**Rate limit.** Each agent may make a limited number of requests per hour: playbook runs, commands
-and approval requests together, each counted once when it is accepted (an approval you give is not
-counted again, and neither is a retry of a request that is already waiting). A request refused for
-bad parameters or missing permission costs nothing. The default is 60; set another number on the
-agent (0 is no limit), and the Agents page shows how many it has used in the last hour. Past the
-limit, a new request answers `429 rate limit: N requests per hour`. Raising a limit is locked while
-`ULMO_DISABLE_AUTH` is set.
+**Rate limit.** Each agent gets 60 requests an hour by default (set it per agent on the Agents page; 0 is
+no limit): runs, commands and approval requests together, counted once when accepted. A request refused for bad parameters or missing
+permission costs nothing, and neither does your approval. Past the limit a request answers `429`.
 
 ### Proposing changes (commands, roles and files)
 
-Commands and roles are edited on the Commands and Agents pages and files on the Files page, and scripts
-can ask for the same edits through the proposals API. A script **cannot change anything itself**: it sends a proposal,
-ulmo checks it, and it waits on the **Approvals** page (section "Change proposals") for you to
-approve it after reading the diff.
+Scripts can ask for the same edits you make on the Commands, Agents and Files pages. A script **cannot
+change anything itself**: it sends a proposal, ulmo checks it, and it waits on the **Approvals** page
+("Change proposals") for you to approve after reading the diff.
 
-Create a **change token** under Agents -> Change tokens (shown once; only its hash is stored; it can
-have an expiry). It is not an agent token: an agent token is refused on `/api/v1/admin`, a change
-token is refused on every agent route, and neither is a login. A change token can read, and propose;
-it cannot run a command, cannot approve its own proposal, and cannot reach any admin page. What it
-can read is the whole of `commands.yml` (host addresses, SSH user names and key file names, not key
-contents or passwords) and every text file in the workspace, including `files/`, where keys and configs
-may be, so hand one only to a tool you would trust with that.
+Create a **change token** under Agents → Change tokens (shown once, optional expiry). It is not an agent
+token: agent tokens are refused on `/api/v1/admin`, change tokens on every agent route, and neither is a
+login. A change token can read and propose; it cannot run a command, approve its own proposal or reach any
+admin page. It can read `commands.yml` (host addresses, SSH user names and key file names, not keys or
+passwords) and every text file in the workspace, including `files/`, where keys may be, so hand one only
+to a tool you trust with that.
 
 ```
 GET  /api/v1/admin/commands.yml        the file as it is on disk
@@ -224,8 +178,7 @@ POST /api/v1/admin/proposals[?dry_run=true]   {"note": "why", "ops": [ ... ]}  -
 GET  /api/v1/admin/proposals[/{id}]    this token's proposals: pending | applied | denied | expired | failed
 ```
 
-For example, check a new command without proposing anything (a dry run returns the diff and the
-`The host would receive` line, and creates no proposal):
+A dry run returns the diff and records nothing:
 
 ```
 curl -s -H "Authorization: Bearer $CHANGE_TOKEN" -H 'Content-Type: application/json' \
@@ -234,10 +187,7 @@ curl -s -H "Authorization: Bearer $CHANGE_TOKEN" -H 'Content-Type: application/j
        "body": {"description": "Kernel warnings and errors", "argv": ["dmesg", "-T", "--level=err,warn"], "risk": "low"}}]}'
 ```
 
-Drop `?dry_run=true` to send it for real; the answer is `202` with the proposal's `id`.
-
-A proposal is up to 20 operations applied together or not at all (library operations first, in the
-order given, then role operations). Each is a change of one thing, not a replacement of a list:
+A proposal is up to 20 operations, applied together or not at all. Each changes one thing, not a list:
 
 ```
 {"op": "save_command", "name": "pfsense-update-check", "body": {description, argv, timeout, ...}, "samples": {"unit": "nginx"}}
@@ -248,88 +198,60 @@ order given, then role operations). Each is a change of one thing, not a replace
 {"op": "save_file", "path": "playbooks/site.yaml", "text": "<the whole new file>", "base": "<version from the read>"}
 ```
 
-- `save_command` creates or replaces one command, checked exactly as the Commands page checks it (the
-  whole file is validated). With `samples` (values for its blanks) the answer and the approval page
-  show the same `The host would receive: ...` line as the editor's Preview, and a sample the command
-  would refuse rejects the proposal.
-- `needs_approval` must always be stated when a command is added to a role: there is no default, so a
-  proposal cannot quietly add a command that runs unattended.
-- Control, zero-width, direction-override and other invisible characters are refused anywhere in an
-  operation (they could make the diff read differently from what is saved), and one command is limited
-  to 20 KB, as in the editor. Names are letters, digits, `.`, `_` and `-` only. Any other non-ASCII
-  character a proposal adds (a Cyrillic "o" in a command line, say) is allowed but listed in
-  `warnings` and in a red notice on the approval page, with its code point.
-- `save_file` creates or replaces any file in the workspace (a playbook, `files/`, `ansible.cfg`, the
-  inventory), not only playbooks. `base` is the `version` of the file when it was read, or `""` to
-  create one that does not exist: an edit against a file that has since changed is refused, and a
-  proposal with a `save_file` has only `save_file` operations (several files are fine, saved together
-  or not at all). `text` is the whole file, up to 256 KB per file and 1 MB per proposal, never a
-  binary. The approval page shows each file's diff with line numbers, flags the roles that are
-  granted a playbook you are changing, and approving saves through the Files page's write (the old
-  version kept as a saved copy, a CRLF file kept CRLF). It waits while a playbook runs, and warns if
-  `ansible-playbook --syntax-check` fails on a saved playbook. Read access to every file includes
-  `files/`, where keys may be, so a change token is as trusted as the person holding it.
-- Adding something already there, or removing something that is not, is an error. A proposal that
-  changes nothing is an error. `?dry_run=true` checks a proposal and records nothing.
-- Deleting a command takes it out of every role, so do not also list it in a `role_allow` `remove` in
-  the same proposal: it is already gone by then and the proposal fails ("n8n does not have: x"). Take
-  it off the host first (`host_offer` `remove`), in the same proposal; library operations run in order.
-- A role must already exist for `role_allow` and `role_set_approval`; create it on the Agents page.
-- Not available from the API, on purpose: hosts' addresses, users, keys and passwords, agents,
-  tokens, roles' existence, playbook grants, limits and the kill switch.
+- `save_command` is checked as the Commands page checks it. With `samples` the approval page shows the
+  `The host would receive` line (the same as Preview), and a sample the command would refuse rejects it.
+- `needs_approval` must be stated when adding a command to a role, so a proposal cannot quietly add one
+  that runs unattended.
+- `save_file` creates or replaces any workspace file. `base` is the file's `version` when read, or `""`
+  to create one: an edit against a file that has since changed is refused. A proposal with a `save_file`
+  has only `save_file` operations (saved together or not at all). `text` is the whole file, up to 256 KB
+  per file and 1 MB per proposal, never binary. Approving saves through the Files page's write (old
+  version kept, CRLF kept), waits while a playbook runs, and warns if `--syntax-check` fails.
+- Control, zero-width and direction-override characters are refused anywhere. Other non-ASCII characters
+  are allowed but flagged in `warnings` and on the approval page. One command is limited to 20 KB.
+- Adding what is already there, removing what is not, or changing nothing is an error. Deleting a command
+  takes it out of every role, so take it off the host first (`host_offer` `remove`) in the same proposal.
+  A role must already exist for `role_allow` and `role_set_approval`.
+- Not available from the API: hosts' addresses, users, keys and passwords, agents, tokens, roles'
+  existence, playbook grants, limits and the kill switch.
 
-Approving. The proposal's page (`/proposals/{id}`, linked from the notification when **Public URL**
-is set) shows the diff of `commands.yml`, the diff of the roles it touches (a deleted command also
-leaves every role that held it) and each Preview line. **Approve** applies it through the same
-locked, validated write as the Commands page: one saved copy for the library part (restorable from
-the Commands page) and a change-log entry naming both the token and you. Approve carries a digest of
-what you were shown; if the proposal, `commands.yml` or the roles changed since you opened the page,
-it is refused and you look again. Applying is all or nothing: the roles and the library are written
-together, and if either fails the other is put back. A proposal that can no longer be applied
-(someone made the same change by hand, or a role was edited meanwhile) is marked `failed`. If
-`commands.yml` does not parse at that moment, Approve answers with the error and the proposal stays
-pending. A proposal whose change token was disabled, has expired or was deleted cannot be applied, so
-disabling a leaked token revokes what it queued. Proposals expire after 24 hours, at most 10 per
-token wait at once, a token may make 60 proposal or dry-run calls an hour (then `429`), and asking
-again for one already waiting returns the same proposal. The
-proposer's note is shown escaped and labelled as its words. While `ULMO_DISABLE_AUTH` is set,
-change tokens cannot be created and proposals cannot be approved (denying always works).
+**Approving.** The proposal's page (`/proposals/{id}`) shows the diff of `commands.yml`, of the roles it
+touches, or of each file with line numbers (flagging roles granted a playbook you change). **Approve**
+applies it through the same locked, validated write as the Commands or Files page and logs it with the
+token and your name. It carries a digest of what you saw: if the proposal, `commands.yml`, the roles or
+the files changed since, it is refused and you look again. A proposal that can no longer be applied is
+`failed`; if `commands.yml` does not parse or a playbook is running, Approve answers with the reason and
+the proposal stays pending. Disabling, expiring or deleting a token cancels what it queued. Proposals
+expire after 24 hours, at most 10 per token wait, and a token may make 60 proposal or dry-run calls an
+hour (then `429`). While `ULMO_DISABLE_AUTH` is set, change tokens cannot be created and proposals cannot
+be approved (denying always works).
 
-The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it, and a token
-cannot reach any admin page. While `ULMO_DISABLE_AUTH=true` the Agents page will not create
-agents or widen what they may do (anyone reaching the page could), though it will still switch
-runs off. Requests are audited with the status code returned; the newest 5000 rows are kept.
-Serve ulmo over HTTPS so tokens are not sent in clear.
+The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it. While it is set the
+Agents page will not create agents or widen what they may do, though it will still switch runs off. Serve
+ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
-**Settings → SSH keys** — paste the private key(s) used to connect to managed
-hosts, for Ansible and for the Commands page. Symlinked
-into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the common
-`ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` inventory convention, so no
-inventory changes are needed. Set `ULMO_SSH_LINK_HOMES` if yours points elsewhere. Keys must be
-unencrypted. A private git remote (for Import from Git) needing its own key can mount one directly in
-`docker-compose.yml`.
+**Settings → SSH keys:** paste the private key(s) used to connect to managed hosts, for Ansible and the
+Commands page. They are symlinked into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the
+common `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` convention (set
+`ULMO_SSH_LINK_HOMES` if yours differs). Keys must be unencrypted. A private git remote needing its own
+key (for Import from Git) can mount one in `docker-compose.yml`.
 
 ## Environment variables
 
-- `ULMO_DISABLE_AUTH=true` — skip login entirely; only if ulmo already sits behind your own
-  access control (reverse proxy, VPN)
-- `ULMO_DATA_DIR` — where ulmo keeps everything (db, Ansible files, SSH keys, command library, run logs);
-  `/data` in the container, which `docker-compose.yml` mounts from `./data`
-- `ULMO_SECURE_COOKIES=true` — mark the session cookie Secure (HTTPS-only). Set it when ulmo is
-  served over TLS; leave off for plain-HTTP/localhost deployments
-- `ULMO_SECRET_KEY` — pin the session-signing key; otherwise one is generated and persisted to
-  `./data/secret_key` automatically
-- `ULMO_SSH_LINK_HOMES` — comma-separated home dirs to symlink SSH keys into, if not
-  `/home/ansible` or `/root`
+- `ULMO_DISABLE_AUTH=true`: skip login entirely; only if ulmo already sits behind your own access control
+- `ULMO_DATA_DIR`: where ulmo keeps everything; `/data` in the container, mounted from `./data`
+- `ULMO_SECURE_COOKIES=true`: mark the session cookie Secure; set it when served over TLS
+- `ULMO_SECRET_KEY`: pin the session-signing key; otherwise one is generated in `./data/secret_key`
+- `ULMO_SSH_LINK_HOMES`: comma-separated home dirs to symlink SSH keys into, if not `/home/ansible` or `/root`
 
 ## Data
 
-Everything lives under `./data` (db, Ansible files in `ansible/` with their saved copies in `ansible.history/`, SSH keys, command library, run logs, installed collections) —
-back that whole directory up (it also holds `commands.yml` and the passwords of password hosts).
-Settings backup/restore covers settings only: not SSH keys, user accounts, agents and roles, the
-command library or host passwords.
+Everything lives under `./data`: the database, Ansible files in `ansible/` (saved copies in
+`ansible.history/`), SSH keys, the command library, run logs and installed collections. Back up that whole
+directory; it also holds `commands.yml` and host passwords. Settings backup/restore covers settings only,
+not SSH keys, users, agents and roles, the command library or host passwords.
 
 ## Development
 
@@ -341,22 +263,15 @@ ULMO_DATA_DIR=./data uvicorn app.main:app --reload
 
 ### Tests
 
-Self-checks, no pytest — each file in `tests/` is a standalone script. They run in CI on every
-push to `main` and pull request.
+Self-checks, no pytest: each file in `tests/` is a standalone script, run in CI on every push to `main`
+and pull request. Python 3.10+ is required.
 
 ```bash
-./tests/run_all.sh              # all of them, one pass/fail summary
+./tests/run_all.sh                              # all of them, one pass/fail summary
 PYTHON=/path/to/python3.12 ./tests/run_all.sh   # pick an interpreter
+docker exec ulmo /app/tests/run_all.sh          # inside the container
 ```
 
-Python 3.10+ is required (the app uses `X | None` annotations). `run_all.sh` also works inside the
-container, since the image ships `tests/` and the dependencies:
-
-```bash
-docker exec ulmo /app/tests/run_all.sh
-```
-
-Coverage is deliberately narrow — these guard specific regressions, not the whole feature surface.
-Anything client-side still needs a real browser to verify; `test_stream_resume.py` only checks that
-the run-detail page's inline script parses.
-
+Coverage is deliberately narrow: these guard specific regressions, not the whole feature surface. Anything
+client-side still needs a real browser; `test_stream_resume.py` only checks that the run-detail page's
+inline script parses.
