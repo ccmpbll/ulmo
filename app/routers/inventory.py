@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from app.deps import require_login
-from app.services import git_sync, inventory, settings_store
+from app.services import inventory, settings_store, workspace
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -29,7 +29,7 @@ def inventory_page(request: Request, file: str | None = None):
             "selected": selected,
             "content": content,
             "error": error,
-            "repo_synced": git_sync.repo_synced(),
+            "has_files": workspace.has_files(),
             "settings_inventory_path": settings_store.get("inventory_path"),
         },
     )

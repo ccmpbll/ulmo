@@ -5,42 +5,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlmodel import Session, select
 
-from app.services import git_sync, retention, settings_store
+from app.services import retention, workspace
 
 logger = logging.getLogger("ulmo.scheduler")
 
 scheduler = BackgroundScheduler()
-GIT_SYNC_JOB_ID = "git-sync"
 PLAYBOOK_JOB_PREFIX = "playbook:"
 RETENTION_JOB_ID = "retention"
-
-
-def _run_scheduled_sync() -> None:
-    logger.info("Running scheduled git sync")
-    record = git_sync.sync_now(triggered_by="schedule")
-    if record.status == "success":
-        reap_orphaned_schedules()
-
-
-def reschedule(cron_expression: str | None = None) -> None:
-    cron_expression = cron_expression if cron_expression is not None else settings_store.get(
-        "git_sync_cron"
-    )
-
-    if scheduler.get_job(GIT_SYNC_JOB_ID):
-        scheduler.remove_job(GIT_SYNC_JOB_ID)
-
-    cron_expression = (cron_expression or "").strip()
-    if not cron_expression:
-        return
-
-    try:
-        trigger = CronTrigger.from_crontab(cron_expression)
-    except ValueError:
-        logger.warning("Invalid git_sync_cron expression: %r", cron_expression)
-        return
-
-    scheduler.add_job(_run_scheduled_sync, trigger, id=GIT_SYNC_JOB_ID, replace_existing=True)
 
 
 def reschedule_playbook(rel_path: str, cron: str) -> None:
@@ -66,9 +37,9 @@ def reschedule_playbook(rel_path: str, cron: str) -> None:
         try:
             runner.start_run(path_copy, triggered_by="schedule")
         except ValueError:
-            # Playbook was removed/renamed since this job was scheduled.
-            # reap_orphaned_schedules() clears the job itself after the next
-            # sync; until then, skip quietly instead of crashing the job.
+            # Playbook was removed since this job was scheduled.
+            # reap_orphaned_schedules() clears the job itself when the file is
+            # deleted; until then, skip quietly instead of crashing the job.
             logger.warning("Scheduled run skipped: playbook %r no longer exists", path_copy)
         except Exception:
             # e.g. a transient DB lock while reading settings or the playbook
@@ -98,13 +69,13 @@ def reschedule_all_playbooks() -> None:
 
 def reap_orphaned_schedules() -> None:
     """Remove PlaybookSchedule rows (and their APScheduler jobs) for
-    playbooks no longer in the synced repo. Call after a successful sync,
-    when the playbook list is authoritative — never at startup, since the
-    repo may not be synced yet and every schedule would look orphaned."""
+    playbooks no longer in the workspace. Called when a file is created or
+    deleted, when the playbook list is authoritative — never at startup, since
+    the workspace may not be populated yet and every schedule would look orphaned."""
     from app.database import engine
     from app.models import PlaybookSchedule
 
-    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
+    valid_paths = {p["rel_path"] for p in workspace.list_playbooks()}
     with Session(engine) as session:
         schedules = session.exec(select(PlaybookSchedule)).all()
         for s in schedules:
@@ -125,5 +96,5 @@ def start() -> None:
     if not scheduler.running:
         scheduler.start()
     schedule_retention()
-    reschedule()
     reschedule_all_playbooks()
+    workspace.on_listing_change(reap_orphaned_schedules)

@@ -44,7 +44,7 @@ from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AdminAudit, Agent, AgentRequest, Approval, CommandRun, RoleCommand, RunHistory, utcnow  # noqa: E402
 from app.routers import approvals as approvals_router  # noqa: E402
-from app.services import agents, approvals, command_library as cl, commands, git_sync, inventory, notifier, proposals, settings_store  # noqa: E402
+from app.services import agents, approvals, command_library as cl, commands, workspace, inventory, notifier, proposals, settings_store  # noqa: E402
 
 SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 (SSH_STORAGE_DIR / "k").write_text("not a real key")
@@ -67,7 +67,7 @@ def _set_library(data):
 
 _set_library(LIBRARY)
 
-git_sync.list_playbooks = lambda: [{"name": "frodo.yaml", "rel_path": "playbooks/frodo.yaml"}]
+workspace.list_playbooks = lambda: [{"name": "frodo.yaml", "rel_path": "playbooks/frodo.yaml"}]
 inventory.list_hosts = lambda: ["frodo", "cirdan"]
 inventory.list_groups = lambda: ["all", "ungrouped"]
 ansible_calls: list[dict] = []

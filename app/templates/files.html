@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import subnav, lock_banner %}
+{% block title %}Files - ulmo{% endblock %}
+{% block content %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
+<div class="page-header">
+  <div>
+    <h1>Ansible</h1>
+    <p class="sub">Playbooks, inventory and the files they use. Ulmo keeps these; there is no git sync.</p>
+  </div>
+  <a class="btn secondary" href="/files/download.zip">Download all (zip)</a>
+</div>
+{{ subnav([("/ansible", "Playbooks", false), ("/inventory", "Inventory", false), ("/files", "Files", true)]) }}
+{{ lock_banner(locked_by) }}
+{% if read_only %}<p class="error">Editing is off while <code>ULMO_DISABLE_AUTH</code> is set: without a login anyone who can reach this page could change what runs on your hosts.</p>{% endif %}
+
+<div class="card flush">
+  {% if not files %}
+  <div class="empty-state">
+    <p>No files yet.</p>
+    <p class="muted">Upload playbooks, an inventory and <code>ansible.cfg</code> below, create a file, or import a git repository once in <a href="/settings">Settings</a>.</p>
+  </div>
+  {% else %}
+  <table class="stack">
+    <thead><tr><th>File</th><th>Size</th><th></th></tr></thead>
+    <tbody>
+    {% for f in files %}
+      <tr>
+        <td class="m-title" data-label="File"><a href="/files/edit?path={{ f.rel_path | urlencode }}">{{ f.rel_path }}</a></td>
+        <td data-label="Size" class="muted">{{ f.size }} bytes</td>
+        <td class="m-status"><a class="btn secondary sm" href="/files/edit?path={{ f.rel_path | urlencode }}">{{ 'View' if read_only or locked_by else 'Edit' }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% if not read_only %}
+<div class="card">
+  <h3>New file</h3>
+  <form method="get" action="/files/edit" class="actions">
+    <input type="text" name="path" placeholder="playbooks/site.yaml" required style="flex: 1 1 260px; margin: 0;" aria-label="Path of the new file" />
+    <button type="submit" class="secondary" {{ 'disabled' if locked_by }}>Create</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Upload files</h3>
+  <form method="post" action="/files/upload" enctype="multipart/form-data">
+    <label>Files
+      <input type="file" name="uploads" multiple required />
+    </label>
+    <label>Into folder (blank = the top level; a file with the same name is replaced and the old one kept as a saved copy)
+      <input type="text" name="folder" placeholder="playbooks" />
+    </label>
+    <button type="submit" {{ 'disabled' if locked_by }}>Upload</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Upload a zip</h3>
+  <form method="post" action="/files/upload-zip" enctype="multipart/form-data">
+    <label>Zip file (unpacked into the workspace; its folders are kept as they are)
+      <input type="file" name="zip_file" accept=".zip" required />
+    </label>
+    <label>Into folder (blank = the top level)
+      <input type="text" name="folder" />
+    </label>
+    <button type="submit" {{ 'disabled' if locked_by }}>Unpack</button>
+  </form>
+</div>
+{% endif %}
+
+{% if deleted %}
+<div class="card">
+  <h3>Deleted files</h3>
+  <p class="muted">These have saved copies you can restore.</p>
+  {% for rel in deleted %}<div><a href="/files/edit?path={{ rel | urlencode }}">{{ rel }}</a></div>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

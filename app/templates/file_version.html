@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import lock_banner %}
+{% block title %}Saved copy of {{ rel_path }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ rel_path }} <span class="muted" style="font-size:0.8rem;font-weight:normal;">— saved copy</span></h1>
+  <a class="btn secondary" href="/files/edit?path={{ rel_path | urlencode }}">Back to the file</a>
+</div>
+{{ lock_banner(locked_by) }}
+<div class="card">
+  <div class="section-head"><h3>What restoring it would change</h3></div>
+  {% if not exists %}
+  <p class="empty">The file is deleted; restoring puts this copy back.</p>
+  {% elif same %}
+  <p class="empty">Identical to the current file.</p>
+  {% elif diff %}
+  <pre class="diff">{% for line in diff %}<span style="{% if line.startswith('+') and not line.startswith('+++') %}color: var(--green){% elif line.startswith('-') and not line.startswith('---') %}color: var(--red){% else %}opacity: .7{% endif %}">{{ line }}</span>{% endfor %}</pre>
+  <p class="muted">Lines starting with <code>-</code> are in the current file and would go away; lines starting with <code>+</code> are in this copy and would come back.</p>
+  {% else %}
+  <p class="empty">The current file can't be compared as text.</p>
+  {% endif %}
+  <form method="post" action="/files/restore" onsubmit="return confirm('Restore this copy? The current file is kept as a saved copy.');">
+    <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="version" value="{{ version }}" /><input type="hidden" name="base" value="{{ base }}" />
+    <div class="actions form-actions">
+      <button type="submit" {{ 'disabled' if read_only or locked_by or same }}>Restore this copy</button>
+    </div>
+  </form>
+</div>
+<div class="card">
+  <div class="section-head"><h3>The whole copy</h3></div>
+  <pre class="diff">{{ text }}</pre>
+</div>
+{% endblock %}

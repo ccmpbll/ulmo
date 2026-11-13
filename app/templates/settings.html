@@ -4,7 +4,7 @@
 <div class="page-header">
   <div>
     <h1>Settings</h1>
-    <p class="sub">Git sync, SSH keys, notifications, backups and accounts.</p>
+    <p class="sub">Ansible, SSH keys, notifications, backups and accounts.</p>
   </div>
 </div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -15,33 +15,45 @@
     {% for key, label in tabs %}<a href="/settings?tab={{ key }}"{% if tab == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
   </nav>
   <div class="split-body">
-{% if tab == "git" %}
+{% if tab == "ansible" %}
 <div class="settings-section">
-  <h2>Git sync</h2>
+  <h2>Ansible</h2>
   <div class="card">
+    <p class="muted">Paths are relative to the Ansible files, which you edit on the <a href="/files">Files</a> page.</p>
     <form method="post" action="/settings">
-      <label>Git repository URL
-        <input type="text" name="git_repo_url" value="{{ settings.git_repo_url }}" placeholder="https://git.example.com/Home/Ansible.git" />
-      </label>
-      <label>Branch
-        <input type="text" name="git_branch" value="{{ settings.git_branch }}" />
-      </label>
       <label>Playbooks subdirectory
         <input type="text" name="playbooks_subdir" value="{{ settings.playbooks_subdir }}" />
       </label>
-      <label>Inventory path (file or directory, relative to repo root)
+      <label>Inventory path (file or directory)
         <input type="text" name="inventory_path" value="{{ settings.inventory_path }}" placeholder="inventory.yaml" />
       </label>
-      <label>Requirements path (relative to repo root — blank auto-discovers requirements.yaml at repo root, then playbooks subdirectory)
+      <label>Requirements path (blank auto-discovers requirements.yaml at the top level, then in the playbooks subdirectory)
         <input type="text" name="requirements_path" value="{{ settings.requirements_path }}" placeholder="requirements.yaml" />
-      </label>
-      <label>Sync schedule (cron, 5-field — blank disables scheduled sync)
-        <input type="text" name="git_sync_cron" value="{{ settings.git_sync_cron }}" placeholder="*/30 * * * *" />
       </label>
       <label>Extra ansible-playbook args
         <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
       </label>
-      <button type="submit">Save git sync settings</button>
+      <button type="submit">Save Ansible settings</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Import from Git</h2>
+  <div class="card">
+    <p class="muted">A one-time copy of a repository's files, not a sync: ulmo keeps the files from then on. The current files are kept beside them in the data folder (<code>ansible.before-import-*</code>; the newest two are kept). Refused while a playbook is running.</p>
+    <form method="post" action="/settings/import-git">
+      <label>Git repository URL
+        <input type="text" name="git_repo_url" placeholder="https://git.example.com/Home/Ansible.git" />
+      </label>
+      <label>Branch
+        <input type="text" name="git_branch" value="main" />
+      </label>
+      <label class="check-item" style="border: none; padding-left: 0;">
+        <input type="checkbox" name="confirm" value="yes" />
+        <span>Replace the current Ansible files with this repository's</span>
+      </label>
+      <button type="submit" class="secondary">Import</button>
     </form>
   </div>
 </div>
@@ -56,6 +68,9 @@
         </label>
         <label>Saved copies of the command library to keep (for Restore)
           <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
+        </label>
+        <label>Saved copies to keep per Ansible file (for Restore)
+          <input type="number" name="workspace_history_keep" value="{{ settings.workspace_history_keep }}" min="1" max="500" step="1" />
         </label>
       </div>
       <button type="submit">Save run limits</button>

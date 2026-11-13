@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_agent
 from app.models import Agent, Approval, CommandRun, RunHistory
-from app.services import agent_runs, agents, approvals, command_library, commands, git_sync, inventory, notifier, playbook_tags, runner
+from app.services import agent_runs, agents, approvals, command_library, commands, workspace, inventory, notifier, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -71,7 +71,7 @@ def playbooks():
                 "name": pb["name"],
                 "tags": cache.get(pb["rel_path"], playbook_tags.EMPTY_RESULT)["tags"],
             }
-            for pb in git_sync.list_playbooks()
+            for pb in workspace.list_playbooks()
         ]
     }
 

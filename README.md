@@ -4,24 +4,24 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/docker.yml) ![Tests](https://img.shields.io/github/actions/workflow/status/ccmpbll/ulmo/tests.yml) ![Docker Image Size](https://img.shields.io/docker/image-size/ccmpbll/ulmo/latest) ![Docker Pulls](https://img.shields.io/docker/pulls/ccmpbll/ulmo.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
-A small web dashboard for running Ansible playbooks from a git repo, with manual or scheduled git sync,
+A small web dashboard for running Ansible playbooks you upload and edit in the browser (no git needed),
 plus an API that lets scripts and AI agents run allowlisted playbooks and SSH commands under tight limits.
 
 ## Features
 
-- Lists playbooks from the synced repo with inline tag (`--tags`) and host (`--limit`)
+- Lists your playbooks with inline tag (`--tags`) and host (`--limit`)
   selection; live colorized log streaming, cancel, and a configurable run timeout (default 60 min)
 - Live per-task progress and a structured Play Recap on completion
 - An **Overview** landing page: what is waiting on you (approve or deny agent requests right there), what is
-  running now, and the activity log of playbook runs, command runs, git syncs, API requests and changes: newest first,
-  paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
+  running now, and the activity log of playbook runs, command runs, git imports, API requests and changes: newest first,
+  paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 imports are kept (a run's log
   goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
-- **Ansible** (top bar): the playbooks and the inventory as two tabs; view their YAML, syntax highlighted (read-only)
-- Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run), independent of the git sync schedule
+- **Ansible** (top bar): Playbooks, Inventory and **Files** tabs. Files is where ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`, `files/`): browse, edit in the browser, upload files or a zip, create, delete, download everything as a zip. Each save keeps the old contents as a saved copy you can compare and Restore; an edit made from a stale page is refused, not merged. **The files are read-only while a playbook run is active**, so a run never sees them change; the page says which run and offers Cancel. Editing is switched off while `ULMO_DISABLE_AUTH` is set, and so are Import from Git and the Ansible settings (which include extra `ansible-playbook` arguments). A YAML file that does not parse is still saved, with a warning. Zip uploads keep the executable bit; an edit keeps a file's CRLF line endings.
+- Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run)
 - No outside network needed: the syntax highlighter and log colouring ship in `app/static/vendor/`
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
-- "Sync from Git" installs collections from the repo's `requirements.yaml`; each sync's full output is
-  under Overview -> Syncs
+- Collections from `requirements.yaml` are installed when that file changes
+- **Import from Git** (Settings -> Ansible): a one-time copy of a repository into ulmo, for moving in. It is not a sync; the previous files are kept beside the data folder as `ansible.before-import-*`. An install that still has the old `./data/repo` checkout has its files copied across automatically at first start (the checkout is left in place; delete it when you're happy)
 - Settings backup/restore as YAML
 - **Commands**: a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer
   them, edited in the UI with saved copies. A host signs in with an SSH key or a password (see below)
@@ -40,12 +40,12 @@ curl -O https://raw.githubusercontent.com/ccmpbll/ulmo/main/docker-compose.yml
 docker compose up -d
 ```
 
-Open http://localhost:8000, create the first user, then in **Settings** set the git repo URL,
-branch, and (optionally) sync schedule. Click **Sync from Git** to do the first clone.
+Open http://localhost:8000, create the first user, then open **Ansible -> Files** and upload your playbooks,
+inventory and `ansible.cfg` (or a zip of them), or use **Settings -> Ansible -> Import from Git** once.
 
-## Repo layout
+## Files layout
 
-Expected at the **root** of your synced repo — `ansible.cfg` (required there, no override),
+Expected at the **top level** of the Files page — `ansible.cfg` (required there, no override),
 `inventory.yaml`, `requirements.yaml`. All three paths are configurable in Settings if named or
 placed differently; playbooks themselves live in a subdirectory (`playbooks/` by default):
 
@@ -286,14 +286,14 @@ hosts, for Ansible and for the Commands page. Symlinked
 into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the common
 `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` inventory convention, so no
 inventory changes are needed. Set `ULMO_SSH_LINK_HOMES` if yours points elsewhere. Keys must be
-unencrypted. A private git remote needing its own key can mount one directly in
+unencrypted. A private git remote (for Import from Git) needing its own key can mount one directly in
 `docker-compose.yml`.
 
 ## Environment variables
 
 - `ULMO_DISABLE_AUTH=true` — skip login entirely; only if ulmo already sits behind your own
   access control (reverse proxy, VPN)
-- `ULMO_DATA_DIR` — where ulmo keeps everything (db, synced repo, SSH keys, command library, run logs);
+- `ULMO_DATA_DIR` — where ulmo keeps everything (db, Ansible files, SSH keys, command library, run logs);
   `/data` in the container, which `docker-compose.yml` mounts from `./data`
 - `ULMO_SECURE_COOKIES=true` — mark the session cookie Secure (HTTPS-only). Set it when ulmo is
   served over TLS; leave off for plain-HTTP/localhost deployments
@@ -304,7 +304,7 @@ unencrypted. A private git remote needing its own key can mount one directly in
 
 ## Data
 
-Everything lives under `./data` (db, synced repo, SSH keys, command library, run logs, installed collections) —
+Everything lives under `./data` (db, Ansible files in `ansible/` with their saved copies in `ansible.history/`, SSH keys, command library, run logs, installed collections) —
 back that whole directory up (it also holds `commands.yml` and the passwords of password hosts).
 Settings backup/restore covers settings only: not SSH keys, user accounts, agents and roles, the
 command library or host passwords.

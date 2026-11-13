@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import lock_banner %}
+{% block title %}{{ rel_path }} - ulmo{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ 'New file: ' if is_new }}{{ rel_path }}</h1>
+  <a class="btn secondary" href="/files">Back to files</a>
+</div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
+{% if warn %}<p class="error">Saved, but {{ warn }}. The next run or inventory read will fail on it until it is fixed.</p>{% endif %}
+{{ lock_banner(locked_by) }}
+{% if read_only %}<p class="error">Editing is off while <code>ULMO_DISABLE_AUTH</code> is set.</p>{% endif %}
+{% set frozen = read_only or locked_by %}
+
+{% if file and file.text is none %}
+<div class="card">
+  <p>This is a {{ 'binary or non-UTF-8' if file.size <= 1048576 else 'large' }} file ({{ file.size }} bytes), so it can't be edited here. Download it, or upload a new version on the Files page.</p>
+  <div class="actions">
+    <a class="btn secondary" href="/files/raw?path={{ rel_path | urlencode }}">Download</a>
+    {% if not frozen %}
+    <form method="post" action="/files/delete" data-name="{{ rel_path }}" onsubmit="return confirm('Delete ' + this.dataset.name + '? A saved copy is kept.');">
+      <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="base" value="{{ base }}" />
+      <button type="submit" class="secondary">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <form method="post" action="/files/save" id="edit-form">
+    <input type="hidden" name="path" value="{{ rel_path }}" />
+    <input type="hidden" name="base" value="{{ base }}" />
+    <label>Contents
+      <textarea class="code" name="text" id="file-text" rows="28" spellcheck="false" wrap="off" {{ 'readonly' if frozen }}>
+{{ text }}</textarea>
+    </label>
+    <div class="actions form-actions">
+      <button type="submit" {{ 'disabled' if frozen }}>Save</button>
+      <a class="btn secondary" href="/files">Cancel</a>
+      {% if file %}<a class="btn secondary" href="/files/raw?path={{ rel_path | urlencode }}">Download</a>{% endif %}
+    </div>
+  </form>
+  {% if file and not frozen %}
+  <form method="post" action="/files/delete" style="margin-top: 12px;" data-name="{{ rel_path }}" onsubmit="return confirm('Delete ' + this.dataset.name + '? A saved copy is kept.');">
+    <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="base" value="{{ base }}" />
+    <button type="submit" class="secondary">Delete this file</button>
+  </form>
+  {% endif %}
+</div>
+<script>
+  // Tab inserts two spaces (YAML has no tabs); Escape then Tab leaves the box for keyboard users.
+  const box = document.getElementById("file-text");
+  let leave = false;
+  box.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { leave = true; return; }
+    if (e.key !== "Tab" || e.shiftKey || leave) { leave = false; return; }
+    e.preventDefault();
+    const s = box.selectionStart, t = box.selectionEnd;
+    box.setRangeText("  ", s, t, "end");
+  });
+  // Warn before leaving with unsaved changes.
+  const start = box.value;
+  let saving = false;
+  document.getElementById("edit-form").addEventListener("submit", () => { saving = true; });
+  window.addEventListener("beforeunload", (e) => { if (!saving && box.value !== start) { e.preventDefault(); e.returnValue = ""; } });
+</script>
+{% endif %}
+
+{% if versions %}
+<div class="card">
+  <h3>Saved copies</h3>
+  <p class="muted">The file as it was before each change, newest first.</p>
+  {% for v in versions %}
+  <div><a href="/files/version?path={{ rel_path | urlencode }}&version={{ v.id }}">{{ v.at | local_time }}</a> <span class="muted">· {{ v.size }} bytes</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

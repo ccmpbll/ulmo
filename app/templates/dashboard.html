@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import subnav %}
+{% from "_macros.html" import subnav, lock_banner %}
 {% block title %}Ansible - ulmo{% endblock %}
 {% block content %}
 {% if request.query_params.get("error") %}<p class="error">{{ request.query_params.get("error") }}</p>{% endif %}
@@ -8,24 +8,23 @@
 <div class="page-header">
   <div>
     <h1>Ansible</h1>
-    <p class="sub">Playbooks and inventory from the synced git repo.</p>
+    <p class="sub">Playbooks and inventory ulmo keeps, edited on the Files page.</p>
   </div>
-  <form method="post" action="/sync">
-    <button type="submit" class="secondary">Sync from Git</button>
-  </form>
+  <a class="btn secondary" href="/files">Edit files</a>
 </div>
-{{ subnav([("/ansible", "Playbooks", true), ("/inventory", "Inventory", false)]) }}
+{{ subnav([("/ansible", "Playbooks", true), ("/inventory", "Inventory", false), ("/files", "Files", false)]) }}
 
+{{ lock_banner(locked_by) }}
 <div class="card flush">
-  {% if not repo_synced %}
+  {% if not has_files %}
   <div class="empty-state">
-    <p>No repo synced yet.</p>
-    <p class="muted">Set the git repository in <a href="/settings">Settings</a>, then press "Sync from Git".</p>
+    <p>No files yet.</p>
+    <p class="muted">Upload or create playbooks on the <a href="/files">Files</a> page, or import a git repository once in <a href="/settings">Settings</a>.</p>
   </div>
   {% elif not playbooks %}
   <div class="empty-state">
-    <p>No playbooks found in the configured subdirectory.</p>
-    <p class="muted">Check the playbooks subdirectory in <a href="/settings">Settings</a>.</p>
+    <p>No playbooks found in the playbooks folder.</p>
+    <p class="muted">Add one on the <a href="/files">Files</a> page, or check the playbooks subdirectory in <a href="/settings">Settings</a>.</p>
   </div>
   {% else %}
   {% for pb in playbooks %}

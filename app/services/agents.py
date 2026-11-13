@@ -22,7 +22,7 @@ from app.models import (
     RunHistory,
     utcnow,
 )
-from app.services import command_library, git_sync, inventory, settings_store
+from app.services import command_library, workspace, inventory, settings_store
 
 TOKEN_PREFIX = "ulmo_"
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -242,7 +242,7 @@ def _checked_hosts(hosts: list[str]) -> list[str]:
 
 def add_grant(role_id: int, playbook: str, hosts: list[str], requires_approval: bool = False) -> Grant:
     hosts = _checked_hosts(hosts)
-    if playbook not in {p["rel_path"] for p in git_sync.list_playbooks()}:
+    if playbook not in {p["rel_path"] for p in workspace.list_playbooks()}:
         raise ValueError("Unknown playbook.")
     groups = set(inventory.list_groups())
     shadowed = [h for h in hosts if h in groups]

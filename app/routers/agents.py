@@ -6,7 +6,7 @@ from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
 from app.models import Agent, Grant, Role, RoleCommand
-from app.services import agents, command_library, git_sync, inventory, proposals
+from app.services import agents, command_library, workspace, inventory, proposals
 from app.templating import templates
 
 # Admin side of the agent API: cookie-session login only. Tokens, roles and
@@ -45,7 +45,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "role_command_items": {r.id: [(c.command, "") for c in sorted(role_commands, key=lambda c: c.command) if c.role_id == r.id] for r in roles},
             "role_needing": {r.id: sorted(c.command for c in role_commands if c.role_id == r.id and c.requires_approval) for r in roles},
             "offered_by": {name: library.hosts_offering(name) for name in library.commands},
-            "playbooks": git_sync.list_playbooks(),
+            "playbooks": workspace.list_playbooks(),
             "hosts": inventory.list_hosts(),
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),

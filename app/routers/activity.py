@@ -23,7 +23,7 @@ TABS = (
     ("all", "All"),
     ("playbooks", "Playbook runs"),
     ("commands", "Command runs"),
-    ("syncs", "Syncs"),
+    ("syncs", "Imports"),
     ("requests", "API requests"),
     ("changes", "Changes"),
 )
@@ -68,7 +68,7 @@ def _feed(session, page: str):
         status = "success" if c.status == "success" else ("running" if c.status == "running" else "failed")
         rows.append(_row("command", c.started_at, c.command, c.host, c.triggered_by, status, c.status, c.started_at, c.finished_at))
     for r in _newest(session, SyncHistory, SyncHistory.started_at, reach):
-        rows.append(_row("sync", r.started_at, "Git sync", "", r.triggered_by, r.status, r.status, r.started_at, r.finished_at, f"/logs/{r.id}"))
+        rows.append(_row("sync", r.started_at, "Git import", "", r.triggered_by, r.status, r.status, r.started_at, r.finished_at, f"/logs/{r.id}"))
     for e in _newest(session, AgentAudit, AgentAudit.at, reach):
         rows.append(_row("request", e.at, f"{e.method} {e.path}", e.detail, e.agent_name or "-", "success" if e.status_code < 400 else "failed", str(e.status_code)))
     for c in _newest(session, AdminAudit, AdminAudit.at, reach):
@@ -85,7 +85,7 @@ def _running(session) -> list[dict]:
     for c in session.exec(select(CommandRun).options(defer(CommandRun.output)).where(CommandRun.status == "running").order_by(CommandRun.started_at.desc()).limit(5)).all():
         out.append({"kind": "Command", "label": f"{c.command} on {c.host}", "by": c.triggered_by, "at": c.started_at, "href": ""})
     for r in session.exec(select(SyncHistory).where(SyncHistory.status == "running").order_by(SyncHistory.started_at.desc()).limit(5)).all():
-        out.append({"kind": "Sync", "label": "Git sync", "by": r.triggered_by, "at": r.started_at, "href": f"/logs/{r.id}"})
+        out.append({"kind": "Sync", "label": "Git import", "by": r.triggered_by, "at": r.started_at, "href": f"/logs/{r.id}"})
     return sorted(out, key=lambda x: x["at"], reverse=True)[:5]
 
 

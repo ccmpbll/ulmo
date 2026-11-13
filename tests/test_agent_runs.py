@@ -48,7 +48,7 @@ from app.models import AdminAudit, Agent, AgentAudit, AgentRun, Grant, Role, Run
 from app.routers import agents as agents_router  # noqa: E402
 from app.routers import api as api_module  # noqa: E402
 from app.services import settings_store  # noqa: E402
-from app.services import agent_runs, agents, git_sync, inventory  # noqa: E402
+from app.services import agent_runs, agents, workspace, inventory  # noqa: E402
 
 PLAYBOOKS = [
     {"name": "restart.yml", "rel_path": "playbooks/restart.yml"},
@@ -56,7 +56,7 @@ PLAYBOOKS = [
 ]
 HOSTS = ["web1", "web2", "db1"]
 GROUPS = ["all", "ungrouped", "webservers"]  # ansible --limit reads a name as host OR group
-git_sync.list_playbooks = lambda: PLAYBOOKS
+workspace.list_playbooks = lambda: PLAYBOOKS
 inventory.list_hosts = lambda: HOSTS
 inventory.list_groups = lambda: GROUPS
 
