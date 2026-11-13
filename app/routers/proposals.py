@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.services import agents, proposals
+from app.services import agents, proposals, workspace
 from app.templating import templates
 
 # Where an admin decides what a script proposed to change in commands and roles. Cookie-session login
@@ -25,7 +25,8 @@ def proposal_page(request: Request, proposal_id: int):
     # The reason for a refused decision comes from the session, not the URL, so a link cannot put its own text on this page.
     return templates.TemplateResponse(
         request, "proposal.html",
-        {"p": row, "plan": plan, "problem": problem, "error": request.session.pop("proposal_error", ""), "locked": AUTH_DISABLED},
+        {"p": row, "plan": plan, "problem": problem, "error": request.session.pop("proposal_error", ""), "locked": AUTH_DISABLED,
+         "is_files": any(op.get("op") == "save_file" for op in json.loads(row.ops)), "locked_by": workspace.active_runs()},
     )
 
 

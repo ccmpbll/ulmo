@@ -1,33 +1,20 @@
 {% extends "base.html" %}
-{% from "_macros.html" import line_diff, lock_banner %}
 {% block title %}Request {{ a.id }} - ulmo{% endblock %}
 {% block content %}
-<div class="page-header"><h1>{{ a.agent_name }} wants to {{ 'edit' if a.kind == 'file' else 'run' }} {{ a.target }}</h1><a class="btn secondary" href="/approvals">All requests</a></div>
+<div class="page-header"><h1>{{ a.agent_name }} wants to run {{ a.target }}</h1><a class="btn secondary" href="/approvals">All requests</a></div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="card">
   <p><code>{{ a.line }}</code></p>
   <p>
-    {% if a.kind == "file" %}{{ 'New file' if edit and edit.is_new else 'File' }} <strong>{{ a.target }}</strong>.{% elif a.kind == "command" %}On <strong>{{ a.host }}</strong>.{% else %}Playbook <strong>{{ a.target }}</strong> on <strong>{{ a.host.replace(',', ', ') }}</strong>.{% endif %}
+    {% if a.kind == "command" %}On <strong>{{ a.host }}</strong>.{% else %}Playbook <strong>{{ a.target }}</strong> on <strong>{{ a.host.replace(',', ', ') }}</strong>.{% endif %}
     Asked {{ a.created_at | local_time }} by <strong>{{ a.agent_name }}</strong>.
   </p>
   {% if a.agent_note %}<p><span class="muted">{{ a.agent_name }} says:</span> {{ a.agent_note }}</p>{% endif %}
-  {% if edit %}
-  {{ lock_banner(edit.locked_by) }}
-  {% if edit.problem %}<p class="error">{{ edit.problem }}</p>{% endif %}
-  {% if edit.grants %}
-  <p class="error"><strong>Roles can run this playbook:</strong>
-    {% for g in edit.grants %}{{ g.role }} on {{ g.hosts | join(', ') }}{% if g.requires_approval %} (asks first){% endif %}{{ '; ' if not loop.last }}{% endfor %}.
-    Approving changes what those grants run.</p>
-  {% endif %}
-  {% if edit.odd %}<p class="error">The new text has non-ASCII characters, which can look like plain letters: {{ edit.odd | join(', ') }}</p>{% endif %}
-  <h3>+{{ edit.added }} -{{ edit.removed }} lines</h3>
-  {{ line_diff(edit.rows) }}
-  {% endif %}
   {% if a.status == "pending" %}
-  <p class="muted">Expires {{ a.expires_at | local_time }}. {% if a.kind == "file" %}Approving saves it now, exactly as shown; the old version is kept as a saved copy.{% else %}Approving runs it now, exactly as shown.{% endif %}</p>
+  <p class="muted">Expires {{ a.expires_at | local_time }}. Approving runs it now, exactly as shown.</p>
   {% if locked %}<p class="error">Approving is off while ULMO_DISABLE_AUTH is set.</p>{% endif %}
   <div class="actions form-actions">
-    <form method="post" action="/approvals/{{ a.id }}/approve"><button type="submit" {{ 'disabled' if locked or (edit and edit.problem) }}>Approve</button></form>
+    <form method="post" action="/approvals/{{ a.id }}/approve"><button type="submit" {{ 'disabled' if locked }}>Approve</button></form>
     <form method="post" action="/approvals/{{ a.id }}/deny"><button type="submit" class="danger">Deny</button></form>
   </div>
   {% else %}
@@ -35,8 +22,7 @@
     <span class="badge {{ a.badge }}">{{ a.status }}</span>
     {% if a.decided_by %}by <strong>{{ a.decided_by }}</strong> {{ a.decided_at | local_time }}{% endif %}
   </p>
-  {% if a.status == "failed" %}<p class="error">Approved, but it could not {{ 'be saved' if a.kind == 'file' else 'start' }}: {{ a.note }}</p>
-  {% elif a.kind == "file" and a.status == "approved" %}<p>Saved to <a href="/files/edit?path={{ a.target | urlencode }}">{{ a.target }}</a>.</p>{% if a.note %}<p class="error">{{ a.note }}</p>{% endif %}{% endif %}
+  {% if a.status == "failed" %}<p class="error">Approved, but it could not start: {{ a.note }}</p>{% endif %}
   {% if a.run_id %}
   <p>{% if a.kind == "playbook" %}<a href="/runs/{{ a.run_id }}">Open run {{ a.run_id }}</a>{% else %}<a href="/?tab=commands">See it under Activity, command runs</a> (run {{ a.run_id }}){% endif %}</p>
   {% endif %}

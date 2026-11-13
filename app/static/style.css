@@ -292,7 +292,6 @@ td.actions-cell .actions { flex-wrap: nowrap; justify-content: flex-end; }
 
 /* Forms: fields side by side where there is room */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
-@media (min-width: 900px) { .form-grid.three { grid-template-columns: repeat(3, 1fr); } }  /* five fields: a 3 + 2 grid, not 4 + 1 */
 .subhead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 20px 0 8px; }
 
 /* A list of things to tick: scrolls and filters instead of growing without end */
@@ -547,13 +546,6 @@ table.linediff tr.del td.sign, table.linediff tr.del td.txt { color: var(--red);
 table.linediff tr.gap td { color: var(--muted); background: #181b22; padding: 2px 8px; font-style: italic; }
 
 .mini-label { margin: 0 0 3px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-.access-row { display: flex; align-items: center; gap: 8px; }
-.access-row .mini-label { flex: none; width: 2.6rem; margin: 0; }
-.access-row select { flex: 1; min-width: 0; margin: 0; }
-@media (max-width: 1000px) {  /* the cell is too narrow for label and select side by side: stack them */
-  .access-row { display: block; }
-  .access-row .mini-label { width: auto; margin-bottom: 3px; }
-}
 @media (max-width: 640px) {  /* an agent's card: the groups are spaced apart, the buttons share the last line */
   td .usage { display: block; margin-top: 8px; }
   table.stack td.agent-actions { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }

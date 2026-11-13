@@ -43,7 +43,7 @@ def notify_approval(approval: Approval) -> None:
     base = settings.get("public_url", "").strip().rstrip("/")
     url = f"{base}/approvals/{approval.id}" if base else ""
     title = f"ulmo: {approval.agent_name} needs approval"
-    message = (f"{approval.agent_name} wants to {approval.line}" if approval.kind == "file" else f"{approval.agent_name} wants to run: {approval.line}") + (f" on {approval.host}" if approval.kind == "command" else "")
+    message = f"{approval.agent_name} wants to run: {approval.line}" + (f" on {approval.host}" if approval.kind == "command" else "")
     if approval.agent_note:
         message += f"\n{approval.agent_name} says: {approval.agent_note[:300]}"
     _send(settings, title, message, url)

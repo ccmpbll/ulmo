@@ -10,10 +10,10 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_proposer
 from app.models import AdminToken, Grant, Proposal, Role, RoleCommand
-from app.services import agents, approvals, command_library, notifier, proposals
+from app.services import agents, approvals, command_library, notifier, proposals, workspace
 
-# Proposals API for scripts (Claude Code, n8n, curl) holding a proposer token. It can read commands.yml
-# and the roles and propose changes. It cannot apply anything: an admin approves each proposal on its
+# Proposals API for scripts (Claude Code, n8n, curl) holding a proposer token. It can read commands.yml,
+# the roles and the workspace files, and propose changes (including to any file). It cannot apply anything: an admin approves each proposal on its
 # page after seeing the diff (see app/services/proposals.py).
 router = APIRouter(prefix="/api/v1/admin", dependencies=[Depends(require_proposer)])
 
@@ -57,6 +57,24 @@ def roles():
             for r in rows
         ]
     }
+
+
+@router.get("/files")
+def list_files():
+    """Every file in the workspace: path, size and when it was last edited."""
+    return {"files": [{"path": f["rel_path"], "size": f["size"], "modified": _iso(f["modified"])} for f in workspace.list_files()]}
+
+
+@router.get("/files/content")
+def file_content(path: str, request: Request, token: AdminToken = Depends(require_proposer)):
+    """One file as text with its `version`: send that back as `base` in a save_file operation."""
+    try:
+        info = workspace.read_file(path)
+    except ValueError as exc:
+        _refuse(request, token, 404, str(exc))
+    if info["text"] is None:
+        _refuse(request, token, 415, "That file is binary or too large to read as text")
+    return {"path": info["rel_path"], "version": info["version"], "text": info["text"]}
 
 
 class ProposalRequest(BaseModel):

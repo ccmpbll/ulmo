@@ -59,7 +59,7 @@
 {% endmacro %}
 
 {#
-  A diff with line numbers: rows from file_access.diff_rows() (kind ctx|add|del|gap, old_no, new_no, text).
+  A diff with line numbers: rows from proposals.diff_rows() (kind ctx|add|del|gap, old_no, new_no, text).
   The text is escaped by Jinja, so what an agent wrote cannot add markup.
 #}
 {% macro line_diff(rows) %}

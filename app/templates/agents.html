@@ -50,24 +50,17 @@
   <div class="card flush">
     <table class="stack">
       <thead>
-        <tr><th>Name</th><th>Access</th><th>Status</th><th>Expires</th><th>Last used</th><th>Per hour</th><th></th></tr>
+        <tr><th>Name</th><th>Role</th><th>Status</th><th>Expires</th><th>Last used</th><th>Per hour</th><th></th></tr>
       </thead>
       <tbody>
         {% for a in agents %}
         <tr>
           <td data-label="Name" class="m-title">{{ a.name }}</td>
-          <td data-label="" class="full">
-            <form method="post" action="/agents/{{ a.id }}/role" class="access-row">
-              <div class="mini-label">Role</div>
+          <td data-label="Role" class="full">
+            <form method="post" action="/agents/{{ a.id }}/role">
               <select name="role_id" onchange="this.form.submit()" aria-label="Role for {{ a.name }}">
                 <option value="">none (read only)</option>
                 {% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == a.role_id }}>{{ r.name }}</option>{% endfor %}
-              </select>
-            </form>
-            <form method="post" action="/agents/{{ a.id }}/files" class="access-row" style="margin-top: 8px;">
-              <div class="mini-label">Files</div>
-              <select name="file_access" onchange="this.form.submit()" aria-label="File access for {{ a.name }}">
-                {% for mode, label in file_modes %}<option value="{{ mode }}" {{ 'selected' if mode == a.file_access }}>{{ label }}</option>{% endfor %}
               </select>
             </form>
           </td>
@@ -100,19 +93,13 @@
   <div class="card">
     <div class="section-head"><h3>Create an agent</h3></div>
     <form method="post" action="/agents">
-      <div class="form-grid three">
+      <div class="form-grid">
         <label>Name<input type="text" name="name" required maxlength="40" /></label>
         <label>Role
           <select name="role_id">
             <option value="">none (read only)</option>
             {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
           </select>
-        </label>
-        <label>Files
-          <select name="file_access">
-            {% for mode, label in file_modes %}<option value="{{ mode }}">{{ label }}</option>{% endfor %}
-          </select>
-          <span class="muted">Edits always need your approval.</span>
         </label>
         <label>Expires after (days, optional)<input type="number" name="expires_days" min="1" /></label>
         <label>Requests per hour<input type="number" name="max_per_hour" min="0" max="100000" /><span class="muted">Blank is {{ default_per_hour }}; 0 is no limit.</span></label>

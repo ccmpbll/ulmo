@@ -70,14 +70,11 @@ def token_state(session: Session, row, disabled_reason: str, touch: bool = True)
     return ""
 
 
-def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None, file_access: str = "none") -> tuple[Agent, str]:
+def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
     """Create an agent and return it with its plaintext token (the only time
     the token exists outside the caller's hands)."""
     name = check_token_args(name, expires_days)
     _check_limit(max_per_hour)
-    from app.services import file_access as _files
-
-    file_access = _files.clean_mode(file_access)
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with Session(engine) as session:
@@ -89,7 +86,6 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
             name=name,
             role_id=role_id,
             max_per_hour=max_per_hour,
-            file_access=file_access,
             token_hash=hash_token(token),
             expires_at=utcnow() + timedelta(days=expires_days) if expires_days else None,
         )
@@ -113,20 +109,6 @@ def set_hourly_limit(agent_id: int, value: int | None) -> None:
         agent.max_per_hour = value
         session.add(agent)
         session.commit()
-
-
-def set_file_access(agent_id: int, mode: str) -> str:
-    from app.services import file_access  # imported here: file_access needs this module's callers
-
-    mode = file_access.clean_mode(mode)
-    with Session(engine) as session:
-        agent = session.get(Agent, agent_id)
-        if agent is None:
-            raise ValueError("Unknown agent.")
-        agent.file_access = mode
-        session.add(agent)
-        session.commit()
-    return mode
 
 
 def hourly_limit(agent: Agent) -> int:

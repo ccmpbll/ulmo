@@ -450,6 +450,36 @@ def store(rel: str, data: bytes, base: str | None = None) -> str:
     return version
 
 
+def store_checked(items: list[tuple[str, bytes, str]]) -> list[str]:
+    """Write several files, all or nothing: `items` are (path, bytes, base) with the version each file was
+    read at ("" = must not exist yet). Every base is checked before anything is written; if a write then
+    fails, the files already written are put back. Raises Locked, Conflict or ValueError."""
+    with LOCK:
+        require_unlocked()
+        planned = []
+        for rel, data, base in items:
+            if len(data) > MAX_FILE_BYTES:
+                raise ValueError(f"{rel} is over {MAX_FILE_BYTES // (1024 * 1024)} MB.")
+            rel, path = _path(rel)
+            planned.append((rel, path, data, base, _check_base(rel, path, base)))
+        _check_collisions([p[0] for p in planned])
+        written: list = []
+        try:
+            for rel, path, data, base, old in planned:
+                _store_one(rel, data, base)
+                written.append((path, old))
+        except BaseException:
+            for path, old in reversed(written):
+                if old is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    fileio.write_atomic(path, old, stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644, tmp_prefix=TMP_PREFIX)
+            raise
+    rels = [p[0] for p in planned]
+    _after_change(rels, listing_changed=any(p[4] is None for p in planned))
+    return rels
+
+
 def _check_exists_before(rel: str) -> bool:
     """True if this path does not exist yet (the write creates it)."""
     _, path = _path(rel)
@@ -541,6 +571,9 @@ def move(src: str, dst: str, base: str | None = None) -> str:
                 logger.exception("Workspace move listener failed")
     _after_change([src, dst], listing_changed=True)
     return dst
+
+
+check_collisions = _check_collisions  # for callers that plan a write before making it
 
 
 def unpack_zip(data: bytes, into: str = "") -> list[str]:
