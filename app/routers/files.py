@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.services import workspace
+from app.services import settings_store, workspace
 from app.templating import templates
 
 # The Files page: browse, edit, upload and delete the Ansible workspace. Cookie-session login only,
@@ -26,6 +26,25 @@ def _status_for(exc: Exception) -> int:
     if isinstance(exc, workspace.Conflict):
         return 409
     return 400
+
+
+_LANGUAGES = {"yaml": "yaml", "yml": "yaml", "sh": "bash", "bash": "bash", "json": "json", "xml": "xml", "py": "python", "md": "markdown",
+              "ini": "ini", "cfg": "ini", "conf": "ini", "toml": "ini", "service": "ini", "timer": "ini", "local": "ini"}
+
+
+def _language(rel: str, text: str) -> str:
+    """The highlight.js language for the editor ("" = leave it plain): by extension (a .j2 template by
+    what is under it), else by a #! line."""
+    name = rel.rsplit("/", 1)[-1].lower()
+    if name.endswith(".j2"):
+        name = name[:-3]
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext in _LANGUAGES:
+        return _LANGUAGES[ext]
+    first = text.split("\n", 1)[0]
+    if first.startswith("#!"):
+        return "python" if "python" in first else "bash" if "sh" in first else ""
+    return ""
 
 
 def _editor(request: Request, rel: str, text: str | None = None, base: str | None = None, error: str | None = None,
@@ -58,6 +77,8 @@ def _editor(request: Request, rel: str, text: str | None = None, base: str | Non
             "error": error,
             "ok": ok,
             "warn": warn,
+            "hl_lang": _language(rel, text),
+            "move_suggestion": rel if "old" in rel.split("/")[:-1] else (rel.rsplit("/", 1)[0] + "/" if "/" in rel else "") + "old/" + rel.rsplit("/", 1)[-1],
             "locked_by": workspace.active_runs(),
             "read_only": AUTH_DISABLED,
         },
@@ -67,11 +88,13 @@ def _editor(request: Request, rel: str, text: str | None = None, base: str | Non
 
 @router.get("/files", response_class=HTMLResponse)
 def files_page(request: Request, error: str | None = None, ok: str | None = None):
+    files = workspace.list_files()
     return templates.TemplateResponse(
         request,
         "files.html",
         {
-            "files": workspace.list_files(),
+            "groups": workspace.group_files(files, settings_store.get("playbooks_subdir")),
+            "has_files": bool(files),
             "deleted": workspace.deleted_files(),
             "locked_by": workspace.active_runs(),
             "read_only": AUTH_DISABLED,
@@ -129,6 +152,17 @@ def delete(request: Request, path: str = Form(...), base: str = Form("")):
     except ValueError as exc:
         return _editor(request, path.strip(), error=str(exc), status_code=_status_for(exc))
     return RedirectResponse(f"/files?ok={quote('Deleted ' + path.strip())}", status_code=303)
+
+
+@router.post("/files/move")
+def move(request: Request, path: str = Form(...), to: str = Form(...), base: str = Form("")):
+    if AUTH_DISABLED:
+        return _editor(request, path.strip(), error=LOGIN_REQUIRED, status_code=403)
+    try:
+        dst = workspace.move(path, to, base or None)
+    except ValueError as exc:
+        return _editor(request, path.strip(), error=str(exc), status_code=_status_for(exc))
+    return RedirectResponse(f"/files?ok={quote('Moved ' + path.strip() + ' to ' + dst)}", status_code=303)
 
 
 @router.get("/files/raw")

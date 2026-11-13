@@ -25,6 +25,13 @@
     </form>
     {% endif %}
   </div>
+  {% if file and not frozen %}
+  <form method="post" action="/files/move" class="actions" style="margin-top: 12px;">
+    <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="base" value="{{ base }}" />
+    <input type="text" name="to" value="{{ move_suggestion }}" required style="flex: 1 1 260px; margin: 0;" aria-label="Move this file to" />
+    <button type="submit" class="secondary">Move</button>
+  </form>
+  {% endif %}
 </div>
 {% else %}
 <div class="card">
@@ -32,8 +39,11 @@
     <input type="hidden" name="path" value="{{ rel_path }}" />
     <input type="hidden" name="base" value="{{ base }}" />
     <label>Contents
-      <textarea class="code" name="text" id="file-text" rows="28" spellcheck="false" wrap="off" {{ 'readonly' if frozen }}>
+      <div class="code-edit" id="code-edit" data-lang="{{ hl_lang }}">
+        <pre class="code-hl" aria-hidden="true"><code id="file-hl"></code></pre>
+        <textarea class="code" name="text" id="file-text" rows="28" spellcheck="false" wrap="off" {{ 'readonly' if frozen }}>
 {{ text }}</textarea>
+      </div>
     </label>
     <div class="actions form-actions">
       <button type="submit" {{ 'disabled' if frozen }}>Save</button>
@@ -42,12 +52,23 @@
     </div>
   </form>
   {% if file and not frozen %}
+  <form method="post" action="/files/move" class="actions" style="margin-top: 12px;">
+    <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="base" value="{{ base }}" />
+    <input type="text" name="to" value="{{ move_suggestion }}" required style="flex: 1 1 260px; margin: 0;" aria-label="Move this file to" />
+    <button type="submit" class="secondary">Move</button>
+  </form>
+  {% endif %}
+  {% if file and not frozen %}
   <form method="post" action="/files/delete" style="margin-top: 12px;" data-name="{{ rel_path }}" onsubmit="return confirm('Delete ' + this.dataset.name + '? A saved copy is kept.');">
     <input type="hidden" name="path" value="{{ rel_path }}" /><input type="hidden" name="base" value="{{ base }}" />
     <button type="submit" class="secondary">Delete this file</button>
   </form>
   {% endif %}
 </div>
+{% if hl_lang %}
+<link rel="stylesheet" href="/static/vendor/atom-one-dark.min.css">
+<script src="/static/vendor/highlight.min.js"></script>
+{% endif %}
 <script>
   // Tab inserts two spaces (YAML has no tabs); Escape then Tab leaves the box for keyboard users.
   const box = document.getElementById("file-text");
@@ -59,6 +80,23 @@
     const s = box.selectionStart, t = box.selectionEnd;
     box.setRangeText("  ", s, t, "end");
   });
+  // Syntax colours: the text is drawn, highlighted, in a <pre> under the (then transparent) textarea.
+  // Past a size the highlighting is skipped and the textarea shows its own text.
+  const wrap = document.getElementById("code-edit");
+  if (wrap.dataset.lang && window.hljs && hljs.getLanguage(wrap.dataset.lang)) {
+    const hl = document.getElementById("file-hl"), under = hl.parentNode, MAX = 200000;
+    let queued = false;
+    const paint = () => {
+      queued = false;
+      const on = box.value.length <= MAX;
+      wrap.classList.toggle("hl-on", on);
+      if (on) hl.innerHTML = hljs.highlight(box.value, { language: wrap.dataset.lang, ignoreIllegals: true }).value + "\n";
+      under.scrollTop = box.scrollTop; under.scrollLeft = box.scrollLeft;
+    };
+    box.addEventListener("input", () => { if (!queued) { queued = true; requestAnimationFrame(paint); } });
+    box.addEventListener("scroll", () => { under.scrollTop = box.scrollTop; under.scrollLeft = box.scrollLeft; });
+    paint();
+  }
   // Warn before leaving with unsaved changes.
   const start = box.value;
   let saving = false;

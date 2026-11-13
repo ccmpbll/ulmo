@@ -157,11 +157,34 @@ def _iter_files():
             path = here / name
             if name.startswith(TMP_PREFIX) or path.is_symlink():
                 continue
-            yield {"rel_path": path.relative_to(WORKSPACE_DIR).as_posix(), "name": name, "size": path.stat().st_size}
+            info = path.stat()
+            yield {"rel_path": path.relative_to(WORKSPACE_DIR).as_posix(), "name": name, "size": info.st_size,
+                   "modified": datetime.fromtimestamp(info.st_mtime, tz=timezone.utc)}
 
 
 def list_files() -> list[dict]:
     return sorted(_iter_files(), key=lambda f: f["rel_path"])
+
+
+def group_files(files: list[dict], playbooks_dir: str = "") -> list[dict]:
+    """The Files page layout: one group per top-level folder, in this order: the top level, the
+    playbooks folder, `files`, then the rest by name. Each group has its direct files and its
+    subfolders (collapsed on the page); every file gets a `label`, its path inside the group."""
+    groups: dict[str, dict] = {}
+    for f in files:
+        parts = f["rel_path"].split("/")
+        top = parts[0] if len(parts) > 1 else ""
+        inner = parts[1:] if top else parts
+        group = groups.setdefault(top, {"name": top, "count": 0, "direct": [], "subs": {}})
+        group["count"] += 1
+        if len(inner) == 1:
+            group["direct"].append({**f, "label": inner[0]})
+        else:
+            group["subs"].setdefault(inner[0], []).append({**f, "label": "/".join(inner[1:])})
+    runs_from = (playbooks_dir.strip("/").split("/")[0]) if playbooks_dir.strip("/") not in ("", ".") else ""
+    first = ["", runs_from, "files"]
+    names = [n for n in dict.fromkeys(first) if n in groups] + sorted(n for n in groups if n not in first)
+    return [{**groups[n], "subs": [{"name": k, "files": v} for k, v in sorted(groups[n]["subs"].items())], "runs_here": bool(n) and n == runs_from} for n in names]
 
 
 def has_files() -> bool:
@@ -235,6 +258,20 @@ def _keep_copy(rel: str, data: bytes) -> None:
     (folder / "PATH").write_text(rel)
     (folder / fileio.stamp()).write_bytes(data)
     fileio.keep_newest(_copies(folder), _history_keep())
+
+
+def _move_history(src: str, dst: str) -> None:
+    """Saved copies follow a moved file, so the old path does not turn up under Deleted files."""
+    src_dir, dst_dir = _history_dir(src), _history_dir(dst)
+    if not src_dir.is_dir():
+        return
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    (dst_dir / "PATH").write_text(dst)
+    for copy in _copies(src_dir):
+        if not (dst_dir / copy.name).exists():
+            copy.rename(dst_dir / copy.name)
+    fileio.keep_newest(_copies(dst_dir), _history_keep())
+    shutil.rmtree(src_dir, ignore_errors=True)
 
 
 def list_versions(rel: str) -> list[dict]:
@@ -383,6 +420,34 @@ def delete(rel: str, base: str | None) -> None:
             parent.rmdir()
             parent = parent.parent
     _after_change([rel], listing_changed=True)
+
+
+def move(src: str, dst: str, base: str | None = None) -> str:
+    """Move a file to a new path (a copy at `dst`, then `src` removed, in one locked step). Refuses an
+    existing `dst`. The saved copies move with it."""
+    with LOCK:
+        require_unlocked()
+        src, src_path = _path(src)
+        dst, _ = _path(dst)
+        if not src_path.is_file():
+            raise ValueError("That file doesn't exist.")
+        if src == dst:
+            raise ValueError("That is where the file already is.")
+        old = _check_base(src, src_path, base if base is not None else version_of(src_path.read_bytes()))
+        info = src_path.stat()
+        _store_one(dst, old, "", stat.S_IMODE(info.st_mode))
+        os.utime(WORKSPACE_DIR / dst, ns=(info.st_atime_ns, info.st_mtime_ns))  # moving is not editing: keep the date
+        src_path.unlink()
+        try:
+            _move_history(src, dst)
+        except OSError:
+            logger.warning("could not move the saved copies of %s to %s", src, dst, exc_info=True)
+        parent = src_path.parent
+        while parent != WORKSPACE_DIR and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+    _after_change([src, dst], listing_changed=True)
+    return dst
 
 
 def unpack_zip(data: bytes, into: str = "") -> list[str]:

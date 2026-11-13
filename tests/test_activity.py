@@ -573,10 +573,10 @@ def test_phone_tables():
     templates = Path(__file__).resolve().parent.parent / "app" / "templates"
     for f in templates.glob("*.html"):
         text = f.read_text()
-        for m in re.finditer(r'<table class="stack">', text):
-            opener = re.findall(r'<div class="(card[^"]*|panel[^"]*)"', text[:m.start()])[-1]
+        for m in re.finditer(r'<table class="stack[^"]*">', text):
+            opener = re.findall(r'<div class="(card(?: [^"]*)?|panel[^"]*)"', text[:m.start()])[-1]
             assert opener.startswith("panel") or "flush" in opener.split(), f"{f.name}: a stacked table needs a flush card or a panel, not {opener!r}"
-        for table in re.findall(r'<table class="stack">(.*?)</table>', text, re.S):
+        for table in re.findall(r'<table class="stack[^"]*">(.*?)</table>', text, re.S):
             real = [r for r in re.findall(r"<tr>(.*?)</tr>", table.split("<tbody>")[-1], re.S) if "colspan" not in r]
             assert all("m-title" in r for r in real), f"{f.name}: every stacked row needs a title cell"
     css = (Path(__file__).resolve().parent.parent / "app" / "static" / "style.css").read_text()

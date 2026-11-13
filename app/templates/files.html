@@ -15,27 +15,48 @@
 {{ lock_banner(locked_by) }}
 {% if read_only %}<p class="error">Editing is off while <code>ULMO_DISABLE_AUTH</code> is set: without a login anyone who can reach this page could change what runs on your hosts.</p>{% endif %}
 
+{% set notes = {"": "Inventory, ansible.cfg and anything else not in a folder", "files": "Files your playbooks copy or template"} %}
+{% macro file_row(f) %}
+<tr>
+  <td class="m-title" data-label="File"><a href="/files/edit?path={{ f.rel_path | urlencode }}">{{ f.label }}</a></td>
+  <td data-label="Size" class="muted">{{ f.size }} bytes</td>
+  <td data-label="Last edited" class="muted">{{ f.modified | local_time }}</td>
+  <td class="m-status"><a class="btn secondary sm" href="/files/edit?path={{ f.rel_path | urlencode }}">{{ 'View' if read_only or locked_by else 'Edit' }}</a></td>
+</tr>
+{% endmacro %}
+{% if not has_files %}
 <div class="card flush">
-  {% if not files %}
   <div class="empty-state">
     <p>No files yet.</p>
     <p class="muted">Upload playbooks, an inventory and <code>ansible.cfg</code> below, create a file, or import a git repository once in <a href="/settings">Settings</a>.</p>
   </div>
-  {% else %}
-  <table class="stack">
-    <thead><tr><th>File</th><th>Size</th><th></th></tr></thead>
+</div>
+{% endif %}
+{% for g in groups %}
+<div class="card flush">
+  <div class="card-head">
+    <h2>{{ (g.name ~ "/") if g.name else "Top level" }}{% if g.runs_here %} <span class="badge success">runs from here</span>{% endif %}</h2>
+    <span class="muted">{{ g.count }} file{{ "" if g.count == 1 else "s" }}</span>
+  </div>
+  {% if g.runs_here %}<p class="muted group-note">Playbooks run from here (the playbooks folder setting)</p>
+  {% elif g.name in notes %}<p class="muted group-note">{{ notes[g.name] }}</p>{% endif %}
+  <table class="stack files-table">
+    <colgroup><col><col class="c-size"><col class="c-mod"><col class="c-act"></colgroup>
+    <thead><tr><th>File</th><th>Size</th><th>Last edited</th><th></th></tr></thead>
     <tbody>
-    {% for f in files %}
-      <tr>
-        <td class="m-title" data-label="File"><a href="/files/edit?path={{ f.rel_path | urlencode }}">{{ f.rel_path }}</a></td>
-        <td data-label="Size" class="muted">{{ f.size }} bytes</td>
-        <td class="m-status"><a class="btn secondary sm" href="/files/edit?path={{ f.rel_path | urlencode }}">{{ 'View' if read_only or locked_by else 'Edit' }}</a></td>
-      </tr>
+    {% for f in g.direct %}{{ file_row(f) }}{% endfor %}
+    {% for sub in g.subs %}
+      <tr class="subrow"><td colspan="4">
+        <details>
+          <summary>{{ sub.name }}/ <span class="muted">· {{ sub.files | length }} file{{ "" if sub.files | length == 1 else "s" }}</span></summary>
+          <table class="stack inner files-table"><colgroup><col><col class="c-size"><col class="c-mod"><col class="c-act"></colgroup><tbody>{% for f in sub.files %}{{ file_row(f) }}{% endfor %}</tbody></table>
+        </details>
+      </td></tr>
     {% endfor %}
     </tbody>
   </table>
-  {% endif %}
 </div>
+{% endfor %}
 
 {% if not read_only %}
 <div class="card">

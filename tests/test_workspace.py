@@ -578,6 +578,7 @@ def test_editing_is_off_without_a_login():
         assert "Editing is off" in admin.get("/files").text and "Upload files" not in admin.get("/files").text
         assert admin.post("/files/save", data={"path": "a.yaml", "text": "x", "base": base}).status_code == 403
         assert admin.post("/files/delete", data={"path": "a.yaml", "base": base}).status_code == 403
+        assert admin.post("/files/move", data={"path": "a.yaml", "to": "old/a.yaml", "base": base}).status_code == 403
         for url, kw in (("/files/upload", {"files": [("uploads", ("b", b"b"))]}), ("/files/upload-zip", {"files": {"zip_file": ("a.zip", _zip([("z", "1")]))}}),
                         ("/files/restore", {"data": {"path": "a.yaml", "version": "20200101T000000000000Z", "base": base}})):
             r = admin.post(url, follow_redirects=False, **kw)
@@ -1209,6 +1210,117 @@ def test_the_editor_leaves_a_file_you_did_not_change_alone():
     assert workspace.file_bytes("crlf.conf") == b"a=1\r\nb=3\r\n"
     admin.post("/files/save", data={"path": "new.txt", "text": "one\r\ntwo\r\n", "base": ""})
     assert workspace.file_bytes("new.txt") == b"one\ntwo\n"
+
+
+def test_move():
+    reset()
+    workspace.store("playbooks/a.yaml", b"- hosts: all\n", base="")
+    workspace.store("playbooks/run.sh", b"#!/bin/sh\n", base="")
+    (Path(DATA_DIR) / "ansible" / "playbooks" / "run.sh").chmod(0o755)
+    base = workspace.read_file("playbooks/a.yaml")["version"]
+    # the edit page offers a move into old/ next to the file
+    page = admin.get("/files/edit?path=playbooks/a.yaml").text
+    assert 'action="/files/move"' in page and 'value="playbooks/old/a.yaml"' in page
+    r = admin.post("/files/move", data={"path": "playbooks/a.yaml", "to": "playbooks/old/a.yaml", "base": base}, follow_redirects=False)
+    assert r.status_code == 303 and "Moved" in r.headers["location"], r.headers["location"]
+    assert tree() == ["playbooks/old/a.yaml", "playbooks/run.sh"] and workspace.file_bytes("playbooks/old/a.yaml") == b"- hosts: all\n"
+    assert workspace.deleted_files() == [], "a moved file does not turn up as deleted"
+    # saved copies move with the file (and merge into the target's, if it had any)
+    base2 = workspace.read_file("playbooks/old/a.yaml")["version"]
+    workspace.store("playbooks/old/a.yaml", b"- hosts: web\n", base=base2)
+    assert len(workspace.list_versions("playbooks/old/a.yaml")) == 1
+    workspace.move("playbooks/old/a.yaml", "playbooks/a.yaml")
+    assert len(workspace.list_versions("playbooks/a.yaml")) == 1 and workspace.list_versions("playbooks/old/a.yaml") == []
+    assert workspace.deleted_files() == []
+    workspace.move("playbooks/a.yaml", "playbooks/old/a.yaml")
+    assert len(workspace.list_versions("playbooks/old/a.yaml")) == 1 and workspace.list_versions("playbooks/a.yaml") == []
+    assert workspace.deleted_files() == []
+    workspace.store("playbooks/old/a.yaml", b"- hosts: all\n")  # back to the original for the checks below
+    # a file already in an old/ folder is offered no further old/
+    assert 'value="playbooks/old/a.yaml"' in admin.get("/files/edit?path=playbooks/old/a.yaml").text
+    # moving is not editing: the last-edited date stays
+    target = Path(DATA_DIR) / "ansible" / "playbooks" / "old" / "a.yaml"
+    os.utime(target, (1_600_000_000, 1_600_000_000))
+    workspace.move("playbooks/old/a.yaml", "playbooks/a.yaml")
+    assert int((Path(DATA_DIR) / "ansible" / "playbooks" / "a.yaml").stat().st_mtime) == 1_600_000_000
+    workspace.move("playbooks/a.yaml", "playbooks/old/a.yaml")
+    # the exec bit travels; an empty folder left behind is removed
+    workspace.move("playbooks/run.sh", "bin/old/run.sh")
+    assert stat.S_IMODE((Path(DATA_DIR) / "ansible" / "bin" / "old" / "run.sh").stat().st_mode) == 0o755
+    assert "playbooks/run.sh" not in tree()
+    workspace.move("bin/old/run.sh", "run.sh")
+    assert not (Path(DATA_DIR) / "ansible" / "bin").exists() and (Path(DATA_DIR) / "ansible" / "run.sh").is_file()
+    # refusals: an existing target (both files untouched), the same path, a missing file, a bad path,
+    # a stale version, a target under a file
+    workspace.store("playbooks/b.yaml", b"b", base="")
+    for src, dst, base_, want in [
+        ("playbooks/b.yaml", "playbooks/old/a.yaml", None, 409),
+        ("playbooks/b.yaml", "playbooks/b.yaml", None, 400),
+        ("playbooks/nope.yaml", "playbooks/old/n.yaml", None, 400),
+        ("playbooks/b.yaml", "../x.yaml", None, 400),
+        ("playbooks/b.yaml", "playbooks/old/b.yaml", "0123456789abcdef", 409),
+        ("playbooks/b.yaml", "playbooks/b.yaml/inner.yaml", None, 400),
+    ]:
+        r = admin.post("/files/move", data={"path": src, "to": dst, "base": base_ or ""})
+        assert r.status_code == want, (src, dst, r.status_code)
+    assert workspace.file_bytes("playbooks/b.yaml") == b"b" and workspace.file_bytes("playbooks/old/a.yaml") == b"- hosts: all\n"
+    assert not (Path(DATA_DIR) / "x.yaml").exists()
+    # locked while a run is active
+    workspace.begin_run(77, "playbooks/b.yaml")
+    try:
+        assert admin.post("/files/move", data={"path": "playbooks/b.yaml", "to": "playbooks/old/b.yaml"}).status_code == 423
+        assert "playbooks/b.yaml" in tree()
+        assert 'action="/files/move"' not in admin.get("/files/edit?path=playbooks/b.yaml").text
+    finally:
+        workspace.end_run(77)
+
+
+def test_editor_language():
+    from app.routers.files import _language
+    for rel, text, want in [("playbooks/a.yaml", "", "yaml"), ("a.YML", "", "yaml"), ("files/x.sh", "", "bash"), ("t.conf.j2", "", "ini"), ("ansible.cfg", "", "ini"),
+                            ("x.service", "", "ini"), ("files/tool", "#!/bin/bash\n", "bash"), ("files/tool", "#!/usr/bin/env python3\n", "python"),
+                            ("files/Caddyfile", "a {\n}\n", ""), ("files/50unattended-upgrades", "x", ""), (".gitignore", "x", ""), ("x.bin", "#!\n", ""), ("README", "", "")]:
+        assert _language(rel, text) == want, (rel, _language(rel, text), want)
+    reset()
+    workspace.store("playbooks/a.yaml", b"- hosts: all\n", base="")
+    workspace.store("files/Caddyfile", b"a {\n}\n", base="")
+    page = admin.get("/files/edit?path=playbooks/a.yaml").text
+    assert 'data-lang="yaml"' in page and "highlight.min.js" in page
+    plain = admin.get("/files/edit?path=files/Caddyfile").text
+    assert 'data-lang=""' in plain and "highlight.min.js" not in plain
+    assert 'data-lang="yaml"' in admin.get("/files/edit?path=playbooks/new.yaml").text, "a new file is coloured by the name typed"
+
+
+def test_files_page_groups():
+    reset()
+    for rel in ["inventory.yaml", "ansible.cfg", "zeta/z.txt", "alpha/a.txt", "files/b.conf", "files/old/c.conf", "files/old/deep/d.conf", "playbooks/site.yaml", "playbooks/old/o.yaml"]:
+        workspace.store(rel, b"x", base="")
+    groups = workspace.group_files(workspace.list_files(), "playbooks")
+    # the top level, the playbooks folder, files, then the rest by name
+    assert [g["name"] for g in groups] == ["", "playbooks", "files", "alpha", "zeta"], [g["name"] for g in groups]
+    by = {g["name"]: g for g in groups}
+    assert [f["label"] for f in by[""]["direct"]] == ["ansible.cfg", "inventory.yaml"] and by[""]["count"] == 2
+    assert by["playbooks"]["runs_here"] and not by["files"]["runs_here"] and not by[""]["runs_here"]
+    assert [f["label"] for f in by["playbooks"]["direct"]] == ["site.yaml"] and by["playbooks"]["count"] == 2
+    old = by["files"]["subs"]
+    assert [s["name"] for s in old] == ["old"] and [f["label"] for f in old[0]["files"]] == ["c.conf", "deep/d.conf"]
+    assert by["files"]["count"] == 3
+    # a different playbooks folder moves the badge; "." means no badge and nothing reordered
+    assert [g["name"] for g in workspace.group_files(workspace.list_files(), "zeta")][:3] == ["", "zeta", "files"]
+    assert not any(g["runs_here"] for g in workspace.group_files(workspace.list_files(), "."))
+    assert [g["name"] for g in workspace.group_files(workspace.list_files(), ".")] == ["", "files", "alpha", "playbooks", "zeta"]
+    assert workspace.group_files([], "playbooks") == []
+    # the page shows them in that order, with the badge and the collapsed subfolder
+    page = admin.get("/files").text
+    assert page.index("Top level") < page.index(">playbooks/") < page.index(">files/") < page.index(">alpha/"), "order on the page"
+    shown = {f["rel_path"]: f["modified"] for f in workspace.list_files()}
+    assert shown["inventory.yaml"].tzinfo is not None and abs(time.time() - shown["inventory.yaml"].timestamp()) < 60
+    assert page.count('data-label="Last edited"') == len(shown) and 'class="local-time"' in page, "every file row shows when it was last edited"
+    assert page.count("<th>Last edited</th>") == len(workspace.group_files(workspace.list_files()))  # one header row per group
+    assert "runs from here" in page and "<summary>old/" in page and "deep/d.conf" in page
+    assert "No files yet" not in page
+    reset()
+    assert "No files yet" in admin.get("/files").text and "Top level" not in admin.get("/files").text
 
 
 def main():
