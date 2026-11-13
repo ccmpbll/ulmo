@@ -59,6 +59,36 @@ def ensure_symlinks() -> list[str]:
     return warnings
 
 
+def accepted_paths() -> list[str]:
+    """The paths an inventory's ansible_ssh_private_key_file may use to name a key saved here: under each
+    linked home's .ssh, or with ~ (Ansible expands it to the user's home, which is one of those)."""
+    return [f"{home.rstrip('/')}/.ssh/<name>" for home in SSH_KEY_LINK_HOMES] + ["~/.ssh/<name>"]
+
+
+def check_inventory_key(path: str, saved: set[str]) -> dict:
+    """What to tell the user about one key path from the inventory: {path, name, status, message}, where
+    status is "ok" (a saved key has that name), "missing" (it is under a linked home but no key of that
+    name is saved) or "other" (somewhere ulmo does not manage, or a templated value it cannot read)."""
+    homes = [f"{h.rstrip('/')}/.ssh/" for h in SSH_KEY_LINK_HOMES] + ["~/.ssh/"]
+    for prefix in homes:
+        if path.startswith(prefix):
+            name = path[len(prefix):]
+            if "/" in name or not name:
+                break  # a subfolder: not one of the saved keys
+            if name in saved:
+                return {"path": path, "name": name, "status": "ok", "message": "saved"}
+            return {"path": path, "name": name, "status": "missing", "message": f'no key named "{name}" is saved: add one with that name'}
+    if "{{" in path:
+        return {"path": path, "name": "", "status": "other", "message": "a templated value; ulmo cannot check it"}
+    return {"path": path, "name": "", "status": "other", "message": "not one of the saved keys: the file must exist inside the container (a mounted volume, say)"}
+
+
+def inventory_key_report(saved_names: list[str], key_files: dict[str, list[str]]) -> list[dict]:
+    """check_inventory_key for every key path the inventory names, with the hosts that use it."""
+    saved = set(saved_names)
+    return [{**check_inventory_key(path, saved), "hosts": hosts} for path, hosts in key_files.items()]
+
+
 def link_warnings() -> list[str]:
     """Warnings from the most recent ensure_symlinks() call (run at startup),
     for the Settings page — reading this isn't a filesystem operation."""

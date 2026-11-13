@@ -235,7 +235,9 @@ ulmo over HTTPS so tokens are not sent in clear.
 **Settings → SSH keys:** paste the private key(s) used to connect to managed hosts, for Ansible and the
 Commands page. They are symlinked into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the
 common `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` convention (set
-`ULMO_SSH_LINK_HOMES` if yours differs). Keys must be unencrypted. A private git remote needing its own
+`ULMO_SSH_LINK_HOMES` if yours differs). A key's **name** must be the file name in the inventory path
+(`/home/ansible/.ssh/ansible-ed25519` uses the key named `ansible-ed25519`); the page lists every key path
+the inventory names and whether a key with that name is saved. Keys must be unencrypted. A private git remote needing its own
 key (for Import from Git) can mount one in `docker-compose.yml`.
 
 ## Environment variables

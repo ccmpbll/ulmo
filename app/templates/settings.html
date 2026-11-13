@@ -87,19 +87,22 @@
       {% for w in ssh_link_warnings %}{{ w }}{% if not loop.last %} {% endif %}{% endfor %}
     </p>
     {% endif %}
-    <p class="muted">
-      Keys are saved under <code>&lt;home&gt;/.ssh/&lt;name&gt;</code> for whichever homes are
-      configured (default <code>/home/ansible</code> and <code>/root</code>), so the name you
-      pick should match what your inventory's <code>ansible_ssh_private_key_file</code> expects
-      for that host — e.g. <code>ansible-ed25519</code> as the default, or <code>chris-ed25519</code>
-      for a host that overrides it. Keys must be unencrypted — passphrase-protected keys can't be
-      used for unattended runs.
-    </p>
+    <h3>How keys are found</h3>
+    <p class="muted">Ansible finds a key by the path in your inventory's <code>ansible_ssh_private_key_file</code>. Each key you add here is saved under its <strong>name</strong> and linked at:</p>
+    <ul class="key-paths">
+      {% for p in key_paths %}<li><code>{{ p }}</code></li>{% endfor %}
+    </ul>
+    <p class="muted">So the name must match the file name in the inventory path. For <code>/home/ansible/.ssh/ansible-ed25519</code>, add a key named <code>ansible-ed25519</code>.</p>
+    <p class="muted">Keys must be unencrypted, since runs are unattended. The Commands page uses the same keys (a host's <code>ssh_key</code> is a key name).</p>
 
+    <h3 style="margin-top: 20px;">Saved keys</h3>
     {% if ssh_keys %}
     {% for key in ssh_keys %}
     <div class="user-row">
-      <span><code>{{ key.filename }}</code>{% if key.hint %} <span class="muted">({{ key.hint }})</span>{% endif %}</span>
+      <span>
+        <code>{{ key.filename }}</code>{% if key.hint %} <span class="muted">({{ key.hint }})</span>{% endif %}
+        <span class="muted key-meta">at {{ ssh_homes[0] }}/{{ key.filename }}{% if key.hosts %} · used by {{ key.hosts | join(', ') }}{% else %} · no inventory host uses it{% endif %}</span>
+      </span>
       <form method="post" action="/settings/ssh-key/{{ key.filename }}/delete" onsubmit="return confirm('Remove key {{ key.filename }}?');">
         <button type="submit" class="danger">Remove</button>
       </form>
@@ -110,6 +113,20 @@
     <p class="muted">No keys configured yet.</p>
     {% endif %}
 
+    {% if inventory_keys %}
+    <h3>Keys your inventory names</h3>
+    <p class="muted">Every <code>ansible_ssh_private_key_file</code> in the inventory, and whether a key with that name is saved here.</p>
+    {% for r in inventory_keys %}
+    <div class="user-row">
+      <span><code>{{ r.path }}</code> <span class="muted key-meta">{{ r.hosts | join(', ') }}</span></span>
+      <span class="badge {{ 'success' if r.status == 'ok' else 'failed' if r.status == 'missing' else 'cancelled' }}" title="{{ r.message }}">{{ 'saved' if r.status == 'ok' else 'missing' if r.status == 'missing' else 'not managed' }}</span>
+    </div>
+    {% if r.status != 'ok' %}<p class="muted key-note">{{ r.message }}</p>{% endif %}
+    {% endfor %}
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    {% endif %}
+
+    <h3>Add a key</h3>
     <form method="post" action="/settings/ssh-key" enctype="multipart/form-data">
       <label>Key name (matches the filename in <code>ansible_ssh_private_key_file</code> — leave
         blank to use the uploaded file's name)

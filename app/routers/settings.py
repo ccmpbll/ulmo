@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlmodel import Session, select
 
-from app.config import AUTH_DISABLED
+from app.config import AUTH_DISABLED, SSH_KEY_LINK_HOMES
 from app.database import engine
 from app.deps import require_login
 from app.routers.files import LOGIN_REQUIRED
 from app.models import PlaybookSchedule, User
-from app.services import git_import, scheduler, settings_store, ssh_keys
+from app.services import git_import, inventory, scheduler, settings_store, ssh_keys
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -28,6 +28,12 @@ TABS = (
 def settings_page(request: Request, error: str | None = None, ok: str | None = None, tab: str = "ansible"):
     with Session(engine) as session:
         users = session.exec(select(User).order_by(User.username)).all()
+    keys = ssh_keys.list_keys()
+    inventory_keys = []
+    if tab == "ssh":  # reads the inventory (cached), so only where it is shown
+        inventory_keys = ssh_keys.inventory_key_report([k["filename"] for k in keys], inventory.key_files())
+        for key in keys:
+            key["hosts"] = sorted({h for r in inventory_keys if r["name"] == key["filename"] for h in r["hosts"]})
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -38,8 +44,11 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
             "users": users,
             "error": error,
             "ok": ok,
-            "ssh_keys": ssh_keys.list_keys(),
+            "ssh_keys": keys,
             "ssh_link_warnings": ssh_keys.link_warnings(),
+            "ssh_homes": [f"{h.rstrip('/')}/.ssh" for h in SSH_KEY_LINK_HOMES],
+            "key_paths": ssh_keys.accepted_paths(),  # the same list the Inventory page shows
+            "inventory_keys": inventory_keys,
             "auth_disabled": AUTH_DISABLED,
         },
     )
