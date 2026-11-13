@@ -13,7 +13,7 @@ from app.templating import templates
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/ansible", response_class=HTMLResponse)
 def dashboard(request: Request):
     playbooks = git_sync.list_playbooks()
     tag_cache = playbook_tags.load_cache()
@@ -47,7 +47,7 @@ def view_playbook(request: Request, rel_path: str, _user=Depends(require_login))
     try:
         content = git_sync.read_playbook(rel_path)
     except ValueError:
-        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+        return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
     return templates.TemplateResponse(
         request, "playbook_view.html", {"rel_path": rel_path, "content": content}
     )
@@ -57,9 +57,9 @@ def view_playbook(request: Request, rel_path: str, _user=Depends(require_login))
 def sync(request: Request, user=Depends(require_login)):
     record = git_sync.sync_now(triggered_by=user.username)
     if record.status == "failed":
-        return RedirectResponse(f"/?error={quote(record.message[:200])}", status_code=303)
+        return RedirectResponse(f"/ansible?error={quote(record.message[:200])}", status_code=303)
     scheduler.reap_orphaned_schedules()
-    return RedirectResponse("/?ok=Sync+complete", status_code=303)
+    return RedirectResponse("/ansible?ok=Sync+complete", status_code=303)
 
 
 @router.post("/playbooks/run")
@@ -78,5 +78,5 @@ def run_playbook(
             limit=",".join(limit),
         )
     except ValueError:
-        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+        return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
     return RedirectResponse(f"/runs/{record.id}", status_code=303)

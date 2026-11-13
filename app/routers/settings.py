@@ -14,8 +14,18 @@ from app.templating import templates
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
+TABS = (
+    ("git", "Git sync"),
+    ("schedules", "Playbook schedules"),
+    ("ssh", "SSH keys"),
+    ("notify", "Notifications"),
+    ("backup", "Backup & restore"),
+    ("account", "Account & users"),
+)
+
+
 @router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, error: str | None = None, ok: str | None = None):
+def settings_page(request: Request, error: str | None = None, ok: str | None = None, tab: str = "git"):
     with Session(engine) as session:
         users = session.exec(select(User).order_by(User.username)).all()
     playbooks = git_sync.list_playbooks()
@@ -31,6 +41,8 @@ def settings_page(request: Request, error: str | None = None, ok: str | None = N
         request,
         "settings.html",
         {
+            "tabs": TABS,
+            "tab": tab if tab in dict(TABS) else "git",
             "settings": settings_store.get_all(),
             "users": users,
             "error": error,
@@ -63,7 +75,7 @@ def update_settings(
             raise ValueError
     except ValueError:
         return RedirectResponse(
-            "/settings?error=Recent+runs+to+show+must+be+a+positive+number", status_code=303
+            "/settings?tab=git&error=Recent+runs+to+show+must+be+a+positive+number", status_code=303
         )
 
     try:
@@ -72,7 +84,7 @@ def update_settings(
             raise ValueError
     except ValueError:
         return RedirectResponse(
-            "/settings?error=Run+timeout+must+be+0+or+a+positive+number", status_code=303
+            "/settings?tab=git&error=Run+timeout+must+be+0+or+a+positive+number", status_code=303
         )
 
     try:
@@ -81,7 +93,7 @@ def update_settings(
             raise ValueError
     except ValueError:
         return RedirectResponse(
-            "/settings?error=Saved+command+library+copies+must+be+a+number+from+1+to+500", status_code=303
+            "/settings?tab=git&error=Saved+command+library+copies+must+be+a+number+from+1+to+500", status_code=303
         )
 
     git_sync_cron = git_sync_cron.strip()
@@ -91,7 +103,7 @@ def update_settings(
             CronTrigger.from_crontab(git_sync_cron)
         except ValueError:
             return RedirectResponse(
-                "/settings?error=Invalid+git+sync+cron+expression", status_code=303
+                "/settings?tab=git&error=Invalid+git+sync+cron+expression", status_code=303
             )
 
     settings_store.set_many(
@@ -109,7 +121,7 @@ def update_settings(
         }
     )
     scheduler.reschedule(git_sync_cron.strip())
-    return RedirectResponse("/settings?ok=Settings+saved", status_code=303)
+    return RedirectResponse("/settings?tab=git&ok=Settings+saved", status_code=303)
 
 
 @router.get("/settings/backup")
@@ -128,14 +140,14 @@ async def restore_backup(request: Request, backup_file: UploadFile = File(...)):
         text = (await backup_file.read()).decode("utf-8", errors="replace")
         applied, ignored = settings_store.import_yaml(text)
     except ValueError as exc:
-        return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"/settings?tab=backup&error={quote(str(exc))}", status_code=303)
 
     scheduler.reschedule(settings_store.get("git_sync_cron"))
 
     message = f"Restored {len(applied)} setting(s)"
     if ignored:
         message += f"; ignored unknown keys: {', '.join(ignored)}"
-    return RedirectResponse(f"/settings?ok={quote(message)}", status_code=303)
+    return RedirectResponse(f"/settings?tab=backup&ok={quote(message)}", status_code=303)
 
 
 @router.post("/settings/ssh-key")
@@ -157,8 +169,8 @@ async def upload_ssh_key(
 
         ssh_keys.save_key(filename, content)
     except ValueError as exc:
-        return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+saved", status_code=303)
+        return RedirectResponse(f"/settings?tab=ssh&error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/settings?tab=ssh&ok=SSH+key+%22{quote(filename)}%22+saved", status_code=303)
 
 
 @router.post("/settings/ssh-key/{filename}/delete")
@@ -166,8 +178,8 @@ def remove_ssh_key(request: Request, filename: str):
     try:
         ssh_keys.delete_key(filename)
     except ValueError as exc:
-        return RedirectResponse(f"/settings?error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(f"/settings?ok=SSH+key+%22{quote(filename)}%22+removed", status_code=303)
+        return RedirectResponse(f"/settings?tab=ssh&error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/settings?tab=ssh&ok=SSH+key+%22{quote(filename)}%22+removed", status_code=303)
 
 
 @router.post("/settings/notifications")
@@ -181,7 +193,7 @@ def update_notifications(
 ):
     public_url = public_url.strip().rstrip("/")
     if public_url and not public_url.lower().startswith(("http://", "https://")):
-        return RedirectResponse("/settings?error=Public+URL+must+start+with+http%3A%2F%2F+or+https%3A%2F%2F", status_code=303)
+        return RedirectResponse("/settings?tab=notify&error=Public+URL+must+start+with+http%3A%2F%2F+or+https%3A%2F%2F", status_code=303)
     settings_store.set_many(
         {
             "notify_on": notify_on.strip(),
@@ -191,7 +203,7 @@ def update_notifications(
             "public_url": public_url,
         }
     )
-    return RedirectResponse("/settings?ok=Notification+settings+saved", status_code=303)
+    return RedirectResponse("/settings?tab=notify&ok=Notification+settings+saved", status_code=303)
 
 
 @router.post("/settings/playbook-schedule")
@@ -207,7 +219,7 @@ def update_playbook_schedule(
             CronTrigger.from_crontab(cron)
         except ValueError:
             return RedirectResponse(
-                f"/settings?error={quote(f'Invalid cron expression for {rel_path}')}",
+                f"/settings?tab=schedules&error={quote(f'Invalid cron expression for {rel_path}')}",
                 status_code=303,
             )
     with Session(engine) as session:
@@ -221,6 +233,6 @@ def update_playbook_schedule(
     scheduler.reschedule_playbook(rel_path, cron)
     action = "enabled" if cron else "disabled"
     return RedirectResponse(
-        f"/settings?ok={quote(f'Schedule {action} for {rel_path}')}",
+        f"/settings?tab=schedules&ok={quote(f'Schedule {action} for {rel_path}')}",
         status_code=303,
     )

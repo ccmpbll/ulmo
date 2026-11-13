@@ -17,7 +17,10 @@ router = APIRouter(dependencies=[Depends(require_login)])
 LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who can reach this page could widen what agents may do."
 
 
-def _page(request: Request, error: str | None = None, new_token: tuple[str, str] | None = None, token_kind: str = "agent"):
+TABS = (("agents", "Agents"), ("roles", "Roles"), ("tokens", "Change tokens"))
+
+
+def _page(request: Request, error: str | None = None, new_token: tuple[str, str] | None = None, token_kind: str = "agent", tab: str = "agents"):
     with Session(engine) as session:
         rows = session.exec(select(Agent).order_by(Agent.name)).all()
         roles = session.exec(select(Role).order_by(Role.name)).all()
@@ -28,6 +31,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
         request,
         "agents.html",
         {
+            "tabs": TABS,
+            "tab": tab,
             "agents": rows,
             "roles": roles,
             "grants": {r.id: [g for g in grants if g.role_id == r.id] for r in roles},
@@ -57,8 +62,8 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
     )
 
 
-def _back():
-    return RedirectResponse("/agents", status_code=303)
+def _back(tab: str = "agents"):
+    return RedirectResponse("/agents" if tab == "agents" else f"/agents?tab={tab}", status_code=303)
 
 
 def _whole_number(value: str, what: str) -> int | None:
@@ -73,8 +78,8 @@ def _whole_number(value: str, what: str) -> int | None:
 
 
 @router.get("/agents", response_class=HTMLResponse)
-def agents_page(request: Request):
-    return _page(request)
+def agents_page(request: Request, tab: str = "agents"):
+    return _page(request, tab=tab if tab in dict(TABS) else "agents")
 
 
 @router.post("/agents", response_class=HTMLResponse)
@@ -88,97 +93,97 @@ def create_agent(
 ):
     if AUTH_DISABLED:
         # Without a login anyone who can reach this page could mint a token.
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="agents", error=LOGIN_REQUIRED)
     try:
         agent, token = agents.create_agent(
             name, _whole_number(expires_days, "Expiry"), _whole_number(role_id, "Role"), _whole_number(max_per_hour, "The hourly limit")
         )
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="agents", error=str(exc))
     agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
     # Rendered directly (not redirected) so the token is shown exactly once and
     # never ends up in a URL, history entry or log line.
-    return _page(request, new_token=(agent.name, token))
+    return _page(request, tab="agents", new_token=(agent.name, token))
 
 
 @router.post("/agents/{agent_id}/toggle")
 def toggle_agent(request: Request, agent_id: int, user=Depends(require_login)):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="agents", error=LOGIN_REQUIRED)
     agents.toggle_enabled(agent_id)
     agents.admin_audit(user.username, "toggle agent", f"agent id {agent_id}")
-    return _back()
+    return _back("agents")
 
 
 @router.post("/agents/{agent_id}/limit")
 def set_agent_limit(request: Request, agent_id: int, max_per_hour: str = Form(""), user=Depends(require_login)):
     # A higher limit is a widening, so it is locked like the rest while auth is disabled.
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="agents", error=LOGIN_REQUIRED)
     try:
         agents.set_hourly_limit(agent_id, _whole_number(max_per_hour, "The hourly limit"))
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="agents", error=str(exc))
     agents.admin_audit(user.username, "set agent limit", f"agent id {agent_id}: {max_per_hour.strip() or 'default'} per hour")
-    return _back()
+    return _back("agents")
 
 
 @router.post("/agents/{agent_id}/delete")
 def delete_agent(agent_id: int, user=Depends(require_login)):
     agents.delete_agent(agent_id)
     agents.admin_audit(user.username, "delete agent", f"agent id {agent_id}")
-    return _back()
+    return _back("agents")
 
 
 @router.post("/agents/{agent_id}/role")
 def set_agent_role(request: Request, agent_id: int, role_id: str = Form(""), user=Depends(require_login)):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="agents", error=LOGIN_REQUIRED)
     try:
         agents.assign_role(agent_id, _whole_number(role_id, "Role"))
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="agents", error=str(exc))
     agents.admin_audit(user.username, "set agent role", f"agent id {agent_id} -> role id {role_id or 'none'}")
-    return _back()
+    return _back("agents")
 
 
 @router.post("/admin-tokens", response_class=HTMLResponse)
 def create_admin_token(request: Request, name: str = Form(...), expires_days: str = Form(""), user=Depends(require_login)):
     # A proposer token can only propose, but minting one is still locked while auth is disabled.
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="tokens", error=LOGIN_REQUIRED)
     try:
         row, token = proposals.create_token(name, _whole_number(expires_days, "Expiry"))
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="tokens", error=str(exc))
     agents.admin_audit(user.username, "create change token", row.name)
-    return _page(request, new_token=(row.name, token), token_kind="admin")
+    return _page(request, tab="tokens", new_token=(row.name, token), token_kind="admin")
 
 
 @router.post("/admin-tokens/{token_id}/toggle")
 def toggle_admin_token(request: Request, token_id: int, user=Depends(require_login)):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="tokens", error=LOGIN_REQUIRED)
     proposals.toggle_token(token_id)
     agents.admin_audit(user.username, "toggle change token", f"token id {token_id}")
-    return _back()
+    return _back("tokens")
 
 
 @router.post("/admin-tokens/{token_id}/delete")
 def delete_admin_token(token_id: int, user=Depends(require_login)):
     proposals.delete_token(token_id)
     agents.admin_audit(user.username, "delete change token", f"token id {token_id}")
-    return _back()
+    return _back("tokens")
 
 
 @router.post("/agent-runs/toggle")
 def toggle_agent_runs(enable: str = Form(""), user=Depends(require_login)):
     # Kill switch. Switching OFF is always allowed; switching back ON needs a login like any widening.
     if enable and AUTH_DISABLED:
-        return _back()
+        return _back("agents")
     agents.set_runs_enabled(bool(enable))
     agents.admin_audit(user.username, "agent runs " + ("on" if enable else "off"))
-    return _back()
+    return _back("agents")
 
 
 @router.post("/roles", response_class=HTMLResponse)
@@ -186,16 +191,16 @@ def create_role(request: Request, name: str = Form(...), user=Depends(require_lo
     try:
         role = agents.create_role(name)
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="roles", error=str(exc))
     agents.admin_audit(user.username, "create role", role.name)
-    return _back()
+    return _back("roles")
 
 
 @router.post("/roles/{role_id}/delete")
 def delete_role(role_id: int, user=Depends(require_login)):
     agents.delete_role(role_id)
     agents.admin_audit(user.username, "delete role", f"role id {role_id}")
-    return _back()
+    return _back("roles")
 
 
 @router.post("/roles/{role_id}/grants", response_class=HTMLResponse)
@@ -208,13 +213,13 @@ def add_grant(
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="roles", error=LOGIN_REQUIRED)
     try:
         grant = agents.add_grant(role_id, playbook, hosts, bool(requires_approval))
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="roles", error=str(exc))
     agents.admin_audit(user.username, "add grant", f"role id {role_id}: {grant.playbook} on {grant.hosts}" + (" (needs approval)" if grant.requires_approval else ""))
-    return _back()
+    return _back("roles")
 
 
 @router.post("/roles/{role_id}/commands", response_class=HTMLResponse)
@@ -225,13 +230,13 @@ def set_role_commands(
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="roles", error=LOGIN_REQUIRED)
     try:
         names = agents.set_role_commands(role_id, commands)
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="roles", error=str(exc))
     agents.admin_audit(user.username, "set role commands", f"role id {role_id}: {', '.join(names) or 'none'}")
-    return _back()
+    return _back("roles")
 
 
 @router.post("/roles/{role_id}/approval-commands", response_class=HTMLResponse)
@@ -243,29 +248,29 @@ def set_approval_commands(
 ):
     # Turning approval OFF for a command is a widening, so it is locked like the rest while auth is disabled.
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="roles", error=LOGIN_REQUIRED)
     try:
         names = agents.set_commands_needing_approval(role_id, commands)
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="roles", error=str(exc))
     agents.admin_audit(user.username, "set commands needing approval", f"role id {role_id}: {', '.join(names) or 'none'}")
-    return _back()
+    return _back("roles")
 
 
 @router.post("/grants/{grant_id}/approval")
 def toggle_grant_approval(request: Request, grant_id: int, user=Depends(require_login)):
     if AUTH_DISABLED:
-        return _page(request, error=LOGIN_REQUIRED)
+        return _page(request, tab="roles", error=LOGIN_REQUIRED)
     try:
         now = agents.toggle_grant_approval(grant_id)
     except ValueError as exc:
-        return _page(request, error=str(exc))
+        return _page(request, tab="roles", error=str(exc))
     agents.admin_audit(user.username, "grant approval", f"grant id {grant_id}: " + ("needs approval" if now else "runs at once"))
-    return _back()
+    return _back("roles")
 
 
 @router.post("/grants/{grant_id}/delete")
 def delete_grant(grant_id: int, user=Depends(require_login)):
     agents.delete_grant(grant_id)
     agents.admin_audit(user.username, "delete grant", f"grant id {grant_id}")
-    return _back()
+    return _back("roles")

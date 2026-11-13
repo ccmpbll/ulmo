@@ -96,47 +96,47 @@ def change_password(
     new_password_confirm: str = Form(...),
 ):
     if AUTH_DISABLED:
-        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=Auth+is+disabled", status_code=303)
     user = current_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
     if not verify_password(current_password, user.password_hash):
-        return RedirectResponse("/settings?error=Current+password+is+incorrect", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=Current+password+is+incorrect", status_code=303)
     if new_password != new_password_confirm:
-        return RedirectResponse("/settings?error=New+passwords+do+not+match", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=New+passwords+do+not+match", status_code=303)
     with Session(engine) as session:
         db_user = session.get(User, user.id)
         if db_user is None:
-            return RedirectResponse("/settings?error=User+account+no+longer+exists", status_code=303)
+            return RedirectResponse("/settings?tab=account&error=User+account+no+longer+exists", status_code=303)
         db_user.password_hash = hash_password(new_password)
         session.add(db_user)
         session.commit()
-    return RedirectResponse("/settings?ok=Password+updated", status_code=303)
+    return RedirectResponse("/settings?tab=account&ok=Password+updated", status_code=303)
 
 
 @router.post("/settings/users/add")
 def add_user(request: Request, username: str = Form(...), password: str = Form(...)):
     if AUTH_DISABLED:
-        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=Auth+is+disabled", status_code=303)
     if current_user(request) is None:
         return RedirectResponse("/login", status_code=303)
     if get_user_by_username(username.strip()):
-        return RedirectResponse("/settings?error=Username+already+exists", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=Username+already+exists", status_code=303)
     create_user(username.strip(), password)
-    return RedirectResponse("/settings?ok=User+added", status_code=303)
+    return RedirectResponse("/settings?tab=account&ok=User+added", status_code=303)
 
 
 @router.post("/settings/users/{user_id}/delete")
 def delete_user(request: Request, user_id: int):
     if AUTH_DISABLED:
-        return RedirectResponse("/settings?error=Auth+is+disabled", status_code=303)
+        return RedirectResponse("/settings?tab=account&error=Auth+is+disabled", status_code=303)
     requester = current_user(request)
     if requester is None:
         return RedirectResponse("/login", status_code=303)
     with Session(engine) as session:
         total = len(session.exec(select(User)).all())
         if total <= 1:
-            return RedirectResponse("/settings?error=Cannot+delete+the+only+user", status_code=303)
+            return RedirectResponse("/settings?tab=account&error=Cannot+delete+the+only+user", status_code=303)
         target = session.get(User, user_id)
         if target:
             session.delete(target)
@@ -144,4 +144,4 @@ def delete_user(request: Request, user_id: int):
     if requester.id == user_id:
         request.session.clear()
         return RedirectResponse("/login", status_code=303)
-    return RedirectResponse("/settings?ok=User+deleted", status_code=303)
+    return RedirectResponse("/settings?tab=account&ok=User+deleted", status_code=303)

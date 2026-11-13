@@ -3,6 +3,16 @@
   (they act on the rows currently shown), and an "N of M selected" count.
   items: list of (value, detail) pairs; selected: the values to tick.
 #}
+{#
+  Sections of one page, as a row of links with the current one underlined.
+  items: list of (href, label, current) triples.
+#}
+{% macro subnav(items) %}
+<div class="subnav">
+  {% for href, label, current in items %}<a href="{{ href }}"{% if current %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+</div>
+{% endmacro %}
+
 {% macro checklist(id, field, items, selected, empty="Nothing to choose from yet.") %}
 {% set ticked = namespace(n=0) %}
 {% for value, detail in items %}{% if value in selected %}{% set ticked.n = ticked.n + 1 %}{% endif %}{% endfor %}

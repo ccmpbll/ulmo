@@ -12,7 +12,7 @@ router = APIRouter(dependencies=[Depends(require_login)])
 
 @router.get("/logs")
 def sync_logs():
-    return RedirectResponse("/activity?tab=syncs", status_code=303)
+    return RedirectResponse("/?tab=syncs", status_code=303)
 
 
 @router.get("/logs/{log_id}", response_class=HTMLResponse)
@@ -20,5 +20,5 @@ def sync_log_detail(request: Request, log_id: int):
     with Session(engine) as session:
         log = session.get(SyncHistory, log_id)
     if log is None:
-        return RedirectResponse("/activity?tab=syncs", status_code=303)
+        return RedirectResponse("/?tab=syncs", status_code=303)
     return templates.TemplateResponse(request, "sync_log_detail.html", {"log": log})

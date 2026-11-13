@@ -24,7 +24,7 @@
   </p>
   {% if a.status == "failed" %}<p class="error">Approved, but it could not start: {{ a.note }}</p>{% endif %}
   {% if a.run_id %}
-  <p>{% if a.kind == "playbook" %}<a href="/runs/{{ a.run_id }}">Open run {{ a.run_id }}</a>{% else %}<a href="/activity?tab=commands">See it under Activity, command runs</a> (run {{ a.run_id }}){% endif %}</p>
+  <p>{% if a.kind == "playbook" %}<a href="/runs/{{ a.run_id }}">Open run {{ a.run_id }}</a>{% else %}<a href="/?tab=commands">See it under Activity, command runs</a> (run {{ a.run_id }}){% endif %}</p>
   {% endif %}
   {% endif %}
 </div>

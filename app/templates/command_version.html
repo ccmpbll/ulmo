@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Saved copy from {{ version.at | local_time if version else '' }}</h1>
-  <a class="btn secondary" href="/commands">Back to commands</a>
+  <a class="btn secondary" href="/commands?tab=copies">Back to commands</a>
 </div>
 <p class="muted">{% if version %}What changed after this copy was made: {{ version.change or 'not summarised' }}.{% endif %}</p>
 <div class="card">
@@ -19,7 +19,7 @@
     <input type="hidden" name="base" value="{{ base }}" />
     <div class="actions form-actions">
       <button type="submit" {{ 'disabled' if locked or not version }}>Restore this copy</button>
-      <a class="btn secondary" href="/commands">Back</a>
+      <a class="btn secondary" href="/commands?tab=copies">Back</a>
     </div>
   </form>
 </div>

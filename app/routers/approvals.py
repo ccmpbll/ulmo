@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
@@ -15,8 +15,8 @@ LOGIN_REQUIRED = "Turn off ULMO_DISABLE_AUTH first: without a login anyone who c
 
 
 @router.get("/approvals", response_class=HTMLResponse)
-def approvals_page(request: Request):
-    return templates.TemplateResponse(request, "approvals.html", {"pending": approvals.pending(), "recent": approvals.recent(), "proposals_pending": proposals.pending(), "proposals_recent": proposals.recent()})
+def approvals_page(request: Request, tab: str = "waiting"):
+    return templates.TemplateResponse(request, "approvals.html", {"tab": tab if tab == "history" else "waiting", "pending": approvals.pending(), "recent": approvals.recent(), "proposals_pending": proposals.pending(), "proposals_recent": proposals.recent()})
 
 
 @router.get("/approvals/{approval_id}", response_class=HTMLResponse)
@@ -28,7 +28,7 @@ def approval_page(request: Request, approval_id: int):
     return templates.TemplateResponse(request, "approval.html", {"a": approval, "error": request.session.pop("approval_error", ""), "locked": AUTH_DISABLED})
 
 
-def _decide(request: Request, approval_id: int, approve: bool, user):
+def _decide(request: Request, approval_id: int, approve: bool, user, back: str = ""):
     if approve and AUTH_DISABLED:
         request.session["approval_error"] = LOGIN_REQUIRED
         return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
@@ -39,14 +39,17 @@ def _decide(request: Request, approval_id: int, approve: bool, user):
         return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
     detail = f"{row.agent_name}: {row.line} on {row.host}" + (f" (could not start: {row.note})" if row.status == "failed" else "")
     agents.admin_audit(user.username, "approve request" if approve else "deny request", f"request {row.id}, {detail}")
+    if back == "overview":  # decided from the Overview: go back to it with a one-line result
+        request.session["flash"] = f"{'Approved' if approve else 'Denied'}: {row.agent_name} {row.target}" + (f" on {row.host}" if row.kind == "command" else "") + (f" (could not start: {row.note})" if row.status == "failed" else "")
+        return RedirectResponse("/", status_code=303)
     return RedirectResponse(f"/approvals/{approval_id}", status_code=303)
 
 
 @router.post("/approvals/{approval_id}/approve")
-def approve(request: Request, approval_id: int, user=Depends(require_login)):
-    return _decide(request, approval_id, True, user)
+def approve(request: Request, approval_id: int, back: str = Form(""), user=Depends(require_login)):
+    return _decide(request, approval_id, True, user, back)
 
 
 @router.post("/approvals/{approval_id}/deny")
-def deny(request: Request, approval_id: int, user=Depends(require_login)):
-    return _decide(request, approval_id, False, user)
+def deny(request: Request, approval_id: int, back: str = Form(""), user=Depends(require_login)):
+    return _decide(request, approval_id, False, user, back)

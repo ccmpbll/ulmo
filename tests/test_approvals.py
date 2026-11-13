@@ -116,6 +116,15 @@ commands.subprocess = SimpleNamespace(Popen=FakePopen, PIPE=-1, STDOUT=-2, DEVNU
 
 client = TestClient(app)
 admin = TestClient(app)
+
+
+def get_all(path, tabs):
+    """GET every tab of a page and join them: the page's content is split into tabs now, and most of
+    these checks care that a piece of text is on the page somewhere, not which tab holds it."""
+    from types import SimpleNamespace
+    pages = [admin.get(f"{path}?tab={t}") for t in tabs]
+    return SimpleNamespace(text="".join(p.text for p in pages), status_code=pages[0].status_code)
+
 sent: list[tuple] = []  # what the notifier would have pushed
 def _fake_post(url, data, name, headers=None):
     if name == "Pushover":
@@ -389,7 +398,7 @@ def test_role_page_keeps_and_sets_flags():
 
     r = admin.post(f"/roles/{role.id}/approval-commands", data={"commands": ["uptime"]}, follow_redirects=False)
     assert r.status_code == 303 and _asking(role) == ["uptime"]
-    assert "Commands that need your approval" in admin.get("/agents").text
+    assert "Commands that need your approval" in get_all("/agents", ("agents", "roles", "tokens")).text
     r = client.post(f"/roles/{role.id}/approval-commands", data={"commands": []}, headers=_h(_agent("sneaky")[1]), follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/login")
     assert _asking(role) == ["uptime"]
@@ -418,9 +427,9 @@ def test_notification_names_the_request():
 def test_page_and_nav():
     _, token, _ = _agent("shown", asking=["restart"])
     aid = _ask(token).json()["approval_id"]
-    page = admin.get("/approvals").text
+    page = get_all("/approvals", ("waiting", "history")).text
     assert "shown wants to run restart" in page and "docker restart sonarr" in page and f"/approvals/{aid}/approve" in page
-    agents_page = admin.get("/agents").text
+    agents_page = get_all("/agents", ("agents", "roles", "tokens")).text
     assert "Approvals <span" in agents_page, "the nav shows how many are waiting"
     assert '<label for="nav-toggle" class="menu-btn">Menu <span' in agents_page, "so does the phone menu button"
     assert 'href="/agents" class="active"' in agents_page and 'href="/approvals" class="active"' not in agents_page
@@ -513,7 +522,7 @@ def test_agent_deletion_clears_the_counter_and_the_page_shows_usage():
     agent, token, _ = _agent("counted-gone")
     assert _post(token, "uptime").status_code in (200, 202)
     agents.set_hourly_limit(agent.id, 9)
-    page = admin.get("/agents").text
+    page = get_all("/agents", ("agents", "roles", "tokens")).text
     assert "1 used in the last hour of 9" in page and 'class="stack"' in page and 'data-label="Per hour"' in page
     agents.delete_agent(agent.id)
     with Session(engine) as session:
@@ -570,7 +579,7 @@ def test_notes_on_requests():
     r = _post(token, "restart", params={"container": "sonarr"}, note="26 restarts\n in 24h  <b>bold</b>")
     aid = r.json()["approval_id"]
     assert _approval(aid).agent_note == "26 restarts in 24h <b>bold</b>", "whitespace is collapsed"
-    page = admin.get("/approvals").text
+    page = get_all("/approvals", ("waiting", "history")).text
     assert "noter says:" in page and "26 restarts in 24h &lt;b&gt;bold&lt;/b&gt;" in page and "<b>bold</b>" not in page, "shown escaped"
     detail = admin.get(f"/approvals/{aid}").text
     assert "noter says:" in detail and "&lt;b&gt;bold&lt;/b&gt;" in detail and "<b>bold</b>" not in detail, "escaped on the request page too"
@@ -698,7 +707,7 @@ def test_limit_is_set_by_admins_only():
     admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": "12"})
     with Session(engine) as session:
         assert session.get(Agent, agent.id).max_per_hour == 12
-    assert 'value="12"' in admin.get("/agents").text
+    assert 'value="12"' in get_all("/agents", ("agents", "roles", "tokens")).text
     admin.post(f"/agents/{agent.id}/limit", data={"max_per_hour": ""})
     with Session(engine) as session:
         assert session.get(Agent, agent.id).max_per_hour is None, "blank is the default"
@@ -768,7 +777,7 @@ def main():
     settings_store.set_many({"notify_pushover_token": "t", "notify_pushover_user": "u"})
     auth_module.create_user("admin", "pw-for-tests")
     r = admin.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)
-    assert r.status_code == 303 and admin.get("/agents").status_code == 200, "test login failed"
+    assert r.status_code == 303 and get_all("/agents", ("agents", "roles", "tokens")).status_code == 200, "test login failed"
     test_flagged_call_waits_unflagged_runs()
     test_only_an_admin_decides_and_approval_runs_what_was_asked()
     test_deny_runs_nothing()

@@ -48,6 +48,15 @@ for key in ("unraid-key", "ansible-ed25519"):
 client = TestClient(app)
 admin = TestClient(app)
 
+
+def get_all(path, tabs):
+    """GET every tab of a page and join them: the page's content is split into tabs now, and most of
+    these checks care that a piece of text is on the page somewhere, not which tab holds it."""
+    from types import SimpleNamespace
+    pages = [admin.get(f"{path}?tab={t}") for t in tabs]
+    return SimpleNamespace(text="".join(p.text for p in pages), status_code=pages[0].status_code)
+
+
 RESTART = {
     "description": "Restart a Docker container",
     "argv": ["docker", "restart", "{container}"],
@@ -471,8 +480,8 @@ def test_saved_copies_have_readable_times():
     cl.save_command("logs", LOGS)
     versions = cl.list_versions()
     assert versions and versions[0]["at"].tzinfo is not None and versions[0]["at"].year >= 2026
-    page = admin.get("/commands").text
-    assert '<time class="local-time"' in page.split("Saved copies")[1], "times go through the local_time filter"
+    page = get_all("/commands", ("hosts", "commands", "copies")).text
+    assert '<time class="local-time"' in page.split("Saved copies")[-1], "times go through the local_time filter"
 
 
 def test_yaml_keeps_the_way_you_write_it():
@@ -532,7 +541,7 @@ def test_saved_copies_say_what_changed():
     assert changes[-1] == "added host gandalf", "no copy is kept of the file that did not exist yet, so the oldest is after the first save"
 
     # The page lists the summaries and links to a viewer.
-    page = admin.get("/commands").text
+    page = get_all("/commands", ("hosts", "commands", "copies")).text
     assert "added host gandalf" in page and "changed command restart" in page
     assert f'/commands/history/{versions[0]["id"]}"' in page
 
@@ -662,7 +671,7 @@ def _form(client_, url, **data):
 
 def test_commands_page():
     _reset()
-    page = admin.get("/commands")
+    page = get_all("/commands", ("hosts", "commands", "copies"))
     assert page.status_code == 200 and "No hosts yet" in page.text and "No commands yet" in page.text
 
     # New command: starter text, then save.
@@ -701,7 +710,7 @@ def test_commands_page():
     r = _form(admin, "/commands/preview", name="ps", text=opt, samples="f=name=a")
     assert "--filter=name=a" in r.text
     assert _form(admin, "/commands/save", name="ps", text=opt, base=cl.current_version(), is_new="1").status_code == 303
-    assert "f (enum, optional)" in admin.get("/commands").text
+    assert "f (enum, optional)" in get_all("/commands", ("hosts", "commands", "copies")).text
     cl.delete_command("ps")
     r = _form(admin, "/commands/preview", name="restart", text="description: x\nargv: []\n", samples="")
     assert "argv must be" in r.text
@@ -715,7 +724,7 @@ def test_commands_page():
     assert r.status_code == 303
     host = cl.load()[0].hosts["gandalf"]
     assert (host.user, host.ssh_key, host.commands) == ("root", "unraid-key", ["restart"])
-    page = admin.get("/commands")
+    page = get_all("/commands", ("hosts", "commands", "copies"))
     assert "root@10.42.11.10:22" in page.text and "unraid-key" in page.text
     edit = admin.get("/commands?host=gandalf")
     assert "Edit host gandalf" in edit.text and "10.42.11.10" in edit.text
@@ -824,7 +833,7 @@ def test_checklist_pieces():
         assert needed in css, needed
     import re
     assert re.search(r"a\.btn[^{]*\{[^}]*display:\s*inline-block", css), "links styled as buttons must be laid out like buttons"
-    base = admin.get("/commands").text
+    base = get_all("/commands", ("hosts", "commands", "copies")).text
     assert '/static/filter.js?v=' in base, "the filter script is loaded on every page"
     assert admin.get("/static/filter.js").status_code == 200
     node = shutil.which("node")
@@ -835,25 +844,25 @@ def test_checklist_pieces():
     _reset()
     for i in range(8):
         cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
-    page = admin.get("/commands").text
+    page = get_all("/commands", ("hosts", "commands", "copies")).text
     assert 'data-filter="#host-commands"' in page and 'placeholder="Filter 8 items"' in page
     _reset()
     cl.save_command("only", {"description": "d", "argv": ["uptime"]})
-    assert "data-filter=" not in admin.get("/commands").text
+    assert "data-filter=" not in get_all("/commands", ("hosts", "commands", "copies")).text
     # Actions are buttons, not bare links.
     cl.save_host("h", {"address": "10.0.0.1", "user": "root", "commands": ["only"]})
-    page = admin.get("/commands").text
+    page = get_all("/commands", ("hosts", "commands", "copies")).text
     for label in ("Edit", "New command", "Download commands.yml"):
         assert f'class="btn' in page and label in page
     import re
     assert not re.findall(r'<a href="/commands[^"]*">(?:Edit|View|New command|Back|Cancel)</a>', page), "no plain-link actions"
     # The other pages' actions are buttons too: the editor, and a saved copy's page.
     editor = admin.get("/commands/edit?name=only").text
-    assert editor.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Cancel"
+    assert editor.count('class="btn secondary" href="/commands?tab=commands"') == 2, "Back to commands and Cancel"
     cl.save_command("only", {"description": "d2", "argv": ["uptime"]})
     version = cl.list_versions()[0]["id"]
     viewer = admin.get(f"/commands/history/{version}").text
-    assert viewer.count('class="btn secondary" href="/commands"') == 2, "Back to commands and Back"
+    assert viewer.count('class="btn secondary" href="/commands?tab=copies"') == 2, "Back to commands and Back"
     for html in (editor, viewer):
         assert not re.findall(r'<a href="/commands"[^>]*>(?:Back|Cancel|Back to commands)</a>', html), "no plain-link Back/Cancel"
     # A long Offers list is folded; a short one is shown.
@@ -861,7 +870,7 @@ def test_checklist_pieces():
     for i in range(8):
         cl.save_command(f"x{i}", {"description": "d", "argv": ["uptime"]})
     cl.save_host("busy", {"address": "10.0.0.2", "user": "root", "commands": [f"x{i}" for i in range(8)]})
-    page = admin.get("/commands").text
+    page = get_all("/commands", ("hosts", "commands", "copies")).text
     assert "<summary>8 commands</summary>" in page
 
 
@@ -879,13 +888,13 @@ def test_select_all_markup():
     # One item (or none) needs no toolbar.
     _reset()
     cl.save_command("only", {"description": "d", "argv": ["uptime"]})
-    assert "data-check=" not in admin.get("/commands").text
+    assert "data-check=" not in get_all("/commands", ("hosts", "commands", "copies")).text
     # The Agents page gets the same controls on every role's list.
     for i in range(3):
         cl.save_command(f"c{i}", {"description": f"d{i}", "argv": ["uptime"]})
     role = agents.create_role("select-all-role")
     agents.set_role_commands(role.id, ["c0", "c2"])
-    agents_page = admin.get("/agents").text
+    agents_page = get_all("/agents", ("agents", "roles", "tokens")).text
     assert f'data-target="#role-commands-{role.id}"' in agents_page and ">2 of 4 selected<" in agents_page.split(f'id="role-commands-{role.id}"')[0].rsplit('check-tools', 1)[1]
 
 
@@ -970,7 +979,7 @@ def main():
     init_db()
     auth_module.create_user("admin", "pw-for-tests")
     r = admin.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)
-    assert r.status_code == 303 and admin.get("/commands").status_code == 200, "test login failed"
+    assert r.status_code == 303 and get_all("/commands", ("hosts", "commands", "copies")).status_code == 200, "test login failed"
     test_commands_are_validated_strictly()
     test_parameter_validation()
     test_optional_parameters()

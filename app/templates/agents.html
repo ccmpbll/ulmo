@@ -2,7 +2,12 @@
 {% from "_macros.html" import checklist %}
 {% block title %}Agents - ulmo{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Agents</h1></div>
+<div class="page-header">
+  <div>
+    <h1>Agents</h1>
+    <p class="sub">Who can call ulmo, and what they are allowed to do.</p>
+  </div>
+</div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 {% if new_token %}
@@ -17,6 +22,11 @@
 </div>
 {% endif %}
 
+<div class="subnav">
+  {% for key, label in tabs %}<a href="/agents{{ '' if key == 'agents' else '?tab=' ~ key }}"{% if tab == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+</div>
+
+{% if tab == "agents" %}
 <div class="settings-section">
   <h2>Agent runs</h2>
   <div class="card">
@@ -95,6 +105,9 @@
 </div>
 </div>
 
+{% endif %}
+
+{% if tab == "tokens" %}
 <div class="settings-section">
   <h2>Change tokens</h2>
   <p class="muted">For scripts that propose changes to commands and roles (<code>/api/v1/admin</code>). A change token cannot run anything and cannot apply a change; every proposal waits on the Approvals page for you to approve it after seeing the diff.</p>
@@ -135,6 +148,9 @@
   </div>
 </div>
 
+{% endif %}
+
+{% if tab == "roles" %}
 <div class="settings-section">
   <h2>Roles</h2>
   <div class="card">
@@ -176,7 +192,7 @@
           <tr>
             <td data-label="Playbook">{{ g.playbook }}</td>
             <td class="muted" data-label="Hosts">{{ g.hosts.replace(',', ', ') }}</td>
-            <td>{% if g.requires_approval %}<span class="badge running">needs approval</span>{% endif %}</td>
+            <td>{% if g.requires_approval %}<span class="badge pending">needs approval</span>{% endif %}</td>
             <td class="actions-cell">
               <div class="actions">
                 <form method="post" action="/grants/{{ g.id }}/approval"><button type="submit" class="secondary">{{ 'Run at once' if g.requires_approval else 'Require approval' }}</button></form>
@@ -222,4 +238,5 @@
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}
