@@ -350,10 +350,12 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .nav-toggle:checked + .menu-btn { background: var(--accent); color: #fff; }
   .topbar nav, .topbar .spacer, .topbar .usermenu { display: none; }
   .nav-toggle:checked ~ nav { display: flex; order: 3; flex: 1 0 100%; flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: 8px; }
-  .topbar nav a { padding: 12px 2px; border-top: 1px solid var(--border); border-bottom: 0; margin: 0; font-size: 1rem; }
+  .topbar nav a { padding: 12px 2px; border-top: 1px solid var(--border); border-bottom: 0; margin: 0; font-size: 1rem; color: var(--text); }
   .topbar nav a.active { color: var(--accent); }
-  .topbar nav a[data-attn] { height: auto; margin: 6px 0; padding: 11px 10px; }
+  /* Approvals while something waits: a full-width yellow row, with the count at the far end, like every other row */
+  .topbar nav a[data-attn] { height: auto; margin: 6px 0; padding: 11px 10px; align-self: stretch; justify-content: space-between; color: var(--yellow); }
   .topbar nav a[data-attn].active { color: #f3cd5c; }
+  .topbar nav a:has(+ a[data-attn]) { border-bottom: 1px solid var(--border); }
   /* The user menu is not a dropdown here: Settings and Log out are just more rows */
   .nav-toggle:checked ~ .usermenu { display: block; order: 4; flex: 1 0 100%; }
   .usermenu-btn, .usermenu .caret { display: none; }
@@ -363,16 +365,32 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
   .usermenu .menu .ver { padding: 10px 2px 8px; border-top: 1px solid var(--border); }
   .container { padding: 16px 14px; }
 
-  /* A table marked "stack" becomes one block per row, each cell labelled by its column */
+  /* A table marked "stack" becomes one card per row: a two-column grid, each cell labelled by its column.
+     m-title is the row's name and m-status its badge (together the card's first line, neither labelled);
+     full spans both columns; an empty cell and the header row disappear. */
   table.stack thead { display: none; }
   table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
-  table.stack tr { padding: 12px 0; border-bottom: 1px solid var(--border); }
-  table.stack td { border: none; padding: 4px 0; }
+  table.stack tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 16px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  table.stack tbody tr:last-child { border-bottom: 0; }
+  table.stack td, .card.flush > table.stack td:first-child { width: auto; min-width: 0; padding: 0; border: none; overflow-wrap: break-word; }
+  table.stack td.full, table.stack td.actions-cell { grid-column: 1 / -1; }
+  table.stack td:empty { display: none; }
   table.stack td[data-label]:not([data-label=""])::before {
-    content: attr(data-label); display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    content: attr(data-label); display: block; margin-bottom: 3px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: normal;
   }
+  /* The name takes the whole first line and the badge sits over its right end, so a long name is not squeezed into half the width */
+  table.stack td.m-title { grid-column: 1 / -1; grid-row: 1; align-self: center; font-weight: 600; font-size: 1rem; }
+  table.stack td.m-title .muted { font-weight: normal; font-size: 0.85rem; }
+  table.stack td.m-status { grid-column: 1 / -1; grid-row: 1; justify-self: end; align-self: start; }
+  table.stack tr:has(td.m-status:not(:empty)) td.m-title { padding-right: 6rem; }
+  table.stack td.m-title[data-label]:not([data-label=""])::before, table.stack td.m-status[data-label]:not([data-label=""])::before { display: none; }
+  table.stack td.when { white-space: normal; }
   table.stack td.actions-cell { white-space: normal; }
   table.stack td.actions-cell .actions { justify-content: flex-start; flex-wrap: wrap; }
+  table.stack td select, table.stack td input[type="number"] { max-width: none; }
+  /* A role's grants sit inside a panel that already pads them */
+  .panel table.stack tr { padding-left: 0; padding-right: 0; }
+  .card.flush > p { padding: 12px 16px; margin: 0; }
 
   /* Settings schedule rows and the Play Recap would otherwise be squeezed or run off the screen */
   .schedule-row { grid-template-columns: 1fr; gap: 6px; }
@@ -410,6 +428,7 @@ textarea.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; fon
 .card.flush > table th:first-child, .card.flush > table td:first-child { padding-left: 16px; }
 .card.flush > .showing { padding: 10px 16px; margin: 0; font-size: 0.85rem; }
 .card.flush > .actions { padding: 12px 16px; margin: 0; }
+.card.flush > p { padding: 12px 16px; margin: 0; }
 
 @media (max-width: 760px) {
   .ask { flex-wrap: wrap; }

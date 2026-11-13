@@ -45,7 +45,7 @@
 
 <div class="settings-section">
   <h2>API agents</h2>
-  <div class="card">
+  <div class="card flush">
     <table class="stack">
       <thead>
         <tr><th>Name</th><th>Role</th><th>Status</th><th>Expires</th><th>Last used</th><th>Per hour</th><th></th></tr>
@@ -53,8 +53,8 @@
       <tbody>
         {% for a in agents %}
         <tr>
-          <td data-label="Name">{{ a.name }}</td>
-          <td data-label="Role">
+          <td data-label="Name" class="m-title">{{ a.name }}</td>
+          <td data-label="Role" class="full">
             <form method="post" action="/agents/{{ a.id }}/role">
               <select name="role_id" onchange="this.form.submit()">
                 <option value="">none (read only)</option>
@@ -62,10 +62,10 @@
               </select>
             </form>
           </td>
-          <td data-label="Status"><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
+          <td data-label="Status" class="m-status"><span class="badge {{ 'success' if a.enabled else 'cancelled' }}">{{ 'enabled' if a.enabled else 'disabled' }}</span></td>
           <td data-label="Expires">{{ a.expires_at | local_time if a.expires_at else 'never' }}</td>
           <td data-label="Last used">{{ a.last_used_at | local_ago }}</td>
-          <td data-label="Per hour">
+          <td data-label="Per hour" class="full">
             <form method="post" action="/agents/{{ a.id }}/limit" class="actions">
               <input type="number" name="max_per_hour" min="0" max="100000" value="{{ a.max_per_hour if a.max_per_hour is not none }}" placeholder="{{ default_per_hour }}" style="width: 5.5rem; margin: 0;" aria-label="Requests per hour for {{ a.name }}" />
               <button type="submit" class="secondary">Save</button>
@@ -81,7 +81,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="muted">No agents yet. Create one below to get a token.</td></tr>
+        <tr><td colspan="7" class="muted full">No agents yet. Create one below to get a token.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -110,7 +110,7 @@
 {% if tab == "tokens" %}
 <div class="settings-section">
   <p class="muted">For scripts that propose changes to commands and roles (<code>/api/v1/admin</code>). A change token cannot run anything and cannot apply a change; every proposal waits on the Approvals page for you to approve it after seeing the diff.</p>
-  <div class="card">
+  <div class="card flush">
     <table class="stack">
       <thead>
         <tr><th>Name</th><th>Status</th><th>Expires</th><th>Last used</th><th></th></tr>
@@ -118,8 +118,8 @@
       <tbody>
         {% for t in admin_tokens %}
         <tr>
-          <td data-label="Name">{{ t.name }}</td>
-          <td data-label="Status"><span class="badge {{ 'success' if t.enabled else 'cancelled' }}">{{ 'enabled' if t.enabled else 'disabled' }}</span></td>
+          <td data-label="Name" class="m-title">{{ t.name }}</td>
+          <td data-label="Status" class="m-status"><span class="badge {{ 'success' if t.enabled else 'cancelled' }}">{{ 'enabled' if t.enabled else 'disabled' }}</span></td>
           <td data-label="Expires">{{ t.expires_at | local_time if t.expires_at else 'never' }}</td>
           <td data-label="Last used">{{ t.last_used_at | local_ago }}</td>
           <td class="actions-cell" data-label="">
@@ -130,7 +130,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No change tokens yet. Create one below.</td></tr>
+        <tr><td colspan="5" class="muted full">No change tokens yet. Create one below.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -188,8 +188,8 @@
         <tbody>
           {% for g in grants[r.id] %}
           <tr>
-            <td data-label="Playbook">{{ g.playbook }}</td>
-            <td class="muted" data-label="Hosts">{{ g.hosts.replace(',', ', ') }}</td>
+            <td data-label="Playbook" class="m-title full">{{ g.playbook }}</td>
+            <td class="muted full" data-label="Hosts">{{ g.hosts.replace(',', ', ') }}</td>
             <td>{% if g.requires_approval %}<span class="badge pending">needs approval</span>{% endif %}</td>
             <td class="actions-cell">
               <div class="actions">

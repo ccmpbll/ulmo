@@ -555,6 +555,37 @@ def test_approve_is_hidden_without_a_login():
     admin.post(f"/approvals/{aid}/deny")
 
 
+def test_phone_tables():
+    """On a phone each table row is a card (LogLook's pattern): the name is the card's title, the status
+    badge sits on that line, wide cells span both columns, and the card carries its own padding. Every
+    stacked table says which cell is the title, and sits in a flush card (or a role panel)."""
+    templates = Path(__file__).resolve().parent.parent / "app" / "templates"
+    for f in templates.glob("*.html"):
+        text = f.read_text()
+        for m in re.finditer(r'<table class="stack">', text):
+            opener = re.findall(r'<div class="(card[^"]*|panel[^"]*)"', text[:m.start()])[-1]
+            assert opener.startswith("panel") or "flush" in opener.split(), f"{f.name}: a stacked table needs a flush card or a panel, not {opener!r}"
+        for table in re.findall(r'<table class="stack">(.*?)</table>', text, re.S):
+            real = [r for r in re.findall(r"<tr>(.*?)</tr>", table.split("<tbody>")[-1], re.S) if "colspan" not in r]
+            assert all("m-title" in r for r in real), f"{f.name}: every stacked row needs a title cell"
+    css = (Path(__file__).resolve().parent.parent / "app" / "static" / "style.css").read_text()
+    phone = css[css.index("table.stack thead { display: none; }"):]
+    for rule in ("table.stack tr { display: grid", "td.m-title", "td.m-status", "td.full, table.stack td.actions-cell { grid-column: 1 / -1; }", "td:empty { display: none; }", ".card.flush > table.stack td:first-child"):
+        assert rule in phone, f"phone CSS lacks {rule!r}"
+    menu = css[css.index(".nav-toggle:checked ~ nav"):]
+    assert "align-self: stretch; justify-content: space-between" in menu.split("a[data-attn].active")[0], "on a phone the Approvals row spans the menu like the others"
+    assert ".topbar nav a:has(+ a[data-attn])" in menu and "color: var(--text); }" in menu.split("a.active")[0], "the rows above it keep their divider and every link has the same colour"
+    for tab in ("playbooks", "commands", "syncs", "requests", "changes", "all"):
+        page = admin.get(f"/?tab={tab}").text
+        rows = re.findall(r"<tr>(.*?)</tr>", page.split("<tbody>")[-1].split("</tbody>")[0], re.S)
+        rows = [r for r in rows if "colspan" not in r]
+        assert rows and all(r.count("m-title") == 1 for r in rows), f"{tab}: one title cell per row"
+        if tab in ("playbooks", "commands", "syncs", "all"):
+            assert all(r.count("m-status") <= 1 for r in rows) and any("m-status" in r for r in rows), f"{tab}: the status badge sits on the title line"
+    agents_page = admin.get("/agents").text
+    assert 'class="card flush">\n    <table class="stack">' in agents_page and 'data-label="Name" class="m-title"' in agents_page
+
+
 def test_runs_are_listed_by_start_time():
     from datetime import timedelta
 
@@ -703,6 +734,7 @@ def main():
     test_ansible_rows()
     test_settings_forms_are_separate()
     test_approve_is_hidden_without_a_login()
+    test_phone_tables()
     test_runs_are_listed_by_start_time()
     test_old_list_pages_redirect_and_detail_pages_stay()
     test_change_log_is_bounded()
