@@ -9,6 +9,7 @@ Run directly: python3 tests/test_workspace.py
 """
 import io
 import os
+import re
 import shutil
 import stat
 import sys
@@ -1289,6 +1290,26 @@ def test_editor_language():
     plain = admin.get("/files/edit?path=files/Caddyfile").text
     assert 'data-lang=""' in plain and "highlight.min.js" not in plain
     assert 'data-lang="yaml"' in admin.get("/files/edit?path=playbooks/new.yaml").text, "a new file is coloured by the name typed"
+
+
+def test_line_numbers():
+    reset()
+    workspace.store("playbooks/three.yaml", b"- hosts: all\n  tasks: []\n# end\n", base="")
+    workspace.store("playbooks/nonl.yaml", b"- hosts: all\n# no newline at the end", base="")
+    workspace.store("playbooks/empty.yaml", b"", base="")
+
+    def nums(name):
+        m = re.search(r'<pre class="code-nums" aria-hidden="true">(.*?)</pre>', admin.get(f"/playbooks/view?rel_path=playbooks/{name}").text, re.S)
+        assert m, f"{name}: no line numbers on the viewer"
+        return m.group(1).split("\n")
+    assert nums("three.yaml") == ["1", "2", "3"], "a trailing newline does not make a fourth line"
+    assert nums("nonl.yaml") == ["1", "2"]
+    assert nums("empty.yaml") == ["1"]
+    # the editor has the gutter for coloured and plain files alike (the numbers themselves are drawn by the page's script)
+    for path in ("playbooks/three.yaml", "playbooks/new.yaml"):
+        assert 'id="file-gutter"' in admin.get(f"/files/edit?path={path}").text, path
+    workspace.store("files/plain", b"x\n", base="")
+    assert 'id="file-gutter"' in admin.get("/files/edit?path=files/plain").text
 
 
 def test_files_page_groups():

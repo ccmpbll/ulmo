@@ -15,7 +15,7 @@ from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
 from app.models import Agent, Approval, Grant, RoleCommand, utcnow
-from app.services import agent_runs
+from app.services import agent_runs, file_access, workspace
 
 EXPIRY = timedelta(minutes=15)  # a request nobody decided on this long is dropped
 MAX_PENDING_PER_AGENT = 10  # so a stuck workflow cannot bury the real requests
@@ -95,6 +95,9 @@ def enqueue(model, owner_column, owner_id: int, is_same: Callable, cap: int, cap
         return row, True
 
 
+FILE_EXPIRY = timedelta(hours=24)  # an edit is read through by a person, so a day, not minutes
+
+
 def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: str, agent_note: str = "", before_new: Callable[[], None] | None = None) -> tuple[Approval, bool]:
     """Record a request, or return the identical one already waiting (a workflow that retries
     must not pile up copies, each of which could run). `before_new` runs only when a new row
@@ -107,7 +110,7 @@ def create(agent: Agent, kind: str, target: str, host: str, params: dict, line: 
         MAX_PENDING_PER_AGENT, f"{MAX_PENDING_PER_AGENT} requests from this agent are already waiting for approval", KEEP,
         lambda: Approval(
             agent_id=agent.id, agent_name=agent.name, kind=kind, target=target, host=host, params=params_json, line=line, agent_note=agent_note,
-            expires_at=utcnow() + EXPIRY,
+            expires_at=utcnow() + (FILE_EXPIRY if kind == "file" else EXPIRY),
         ),
         before_new,
     )
@@ -137,6 +140,9 @@ def decide(approval_id: int, approve: bool, admin: str) -> Approval:
     """Record the decision, once, and on approval start the run (agent_runs repeats every check a
     direct call gets). Raises ValueError if the request is not pending."""
     expire_stale()
+    if approve and (peek := get(approval_id)) is not None and peek.kind == "file" and peek.status == "pending" and workspace.active_runs():
+        # Not decided: the request stays pending, to approve again once the run is over.
+        raise ValueError(f"The files are read-only while run #{workspace.active_runs()[0]['run_id']} is going. Try again when it finishes.")
     with Session(engine) as session:
         # One conditional UPDATE: two admins (or two taps) cannot both decide the same request.
         result = session.exec(
@@ -149,14 +155,26 @@ def decide(approval_id: int, approve: bool, admin: str) -> Approval:
         if result.rowcount != 1:
             raise ValueError("No such request." if row is None else f"This request is already {row.status}.")
         session.expunge(row)
+    if row.kind == "file" and not approve:
+        _forget_text(approval_id)  # the proposed text is only kept while it waits
     if not approve:
         return row
     try:
-        run_id = agent_runs.start_approved(row)
-        update_values = {"run_id": run_id}
+        if row.kind == "file":
+            update_values = {"note": file_access.apply(row)[:300]}
+        else:
+            update_values = {"run_id": agent_runs.start_approved(row)}
     except Exception as exc:  # noqa: BLE001 - whatever stopped it is shown to the admin
         update_values = {"status": "failed", "note": str(getattr(exc, "reason", exc))[:300]}
+    if row.kind == "file":
+        update_values["params"] = "{}"
     with Session(engine) as session:
         session.exec(update(Approval).where(Approval.id == approval_id).values(**update_values))
         session.commit()
         return session.get(Approval, approval_id)
+
+
+def _forget_text(approval_id: int) -> None:
+    with Session(engine) as session:
+        session.exec(update(Approval).where(Approval.id == approval_id).values(params="{}"))
+        session.commit()

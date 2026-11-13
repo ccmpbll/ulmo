@@ -88,6 +88,16 @@ def require_unlocked() -> None:
             raise Locked(f"Run #{first}{more} is in progress, so the files can't be changed until it finishes.")
 
 
+_move_listeners: list = []
+
+
+def on_move(callback) -> None:
+    """Call `callback(src, dst)` after a file is moved, before the listing listeners run, so what is
+    keyed by path (schedules, grants) can follow it."""
+    if callback not in _move_listeners:
+        _move_listeners.append(callback)
+
+
 def on_listing_change(callback) -> None:
     """Call `callback()` after a file is created or deleted (the playbook list may have changed)."""
     if callback not in _listeners:
@@ -185,6 +195,84 @@ def group_files(files: list[dict], playbooks_dir: str = "") -> list[dict]:
     first = ["", runs_from, "files"]
     names = [n for n in dict.fromkeys(first) if n in groups] + sorted(n for n in groups if n not in first)
     return [{**groups[n], "subs": [{"name": k, "files": v} for k, v in sorted(groups[n]["subs"].items())], "runs_here": bool(n) and n == runs_from} for n in names]
+
+
+def is_playbook_path(rel: str) -> bool:
+    """True if `rel` is where a playbook lives: directly in the playbooks folder, .yaml/.yml, and not
+    one of the files that folder holds besides playbooks. Whether the file exists does not matter."""
+    try:
+        rel = clean(rel)
+    except ValueError:
+        return False
+    subdir = settings_store.get("playbooks_subdir").strip("/")
+    subdir = "" if subdir == "." else subdir
+    folder, _, name = rel.rpartition("/")
+    return folder == subdir and name.lower().endswith((".yaml", ".yml")) and name not in EXCLUDE_FILES and not name.startswith(TMP_PREFIX)
+
+
+def keep_line_endings(rel: str, text: str) -> str:
+    """`text` (with \\n line breaks) in the line endings `rel` already uses: a file that mostly has CRLF
+    stays CRLF, and a file nothing changed in apart from that is left as it is, byte for byte."""
+    try:
+        old = file_bytes(rel)
+        old_text = old.decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return text
+    if old_text.replace("\r\n", "\n") == text:
+        return old_text
+    crlf = old.count(b"\r\n")
+    return text.replace("\n", "\r\n") if crlf > old.count(b"\n") - crlf else text
+
+
+_digests: dict[str, tuple[int, int, str]] = {}  # path -> (size, mtime_ns, sha256 hex): large files are hashed once
+
+
+def _file_digest(path: Path) -> str:
+    info = path.stat()
+    key = str(path)
+    cached = _digests.get(key)
+    if cached and cached[:2] == (info.st_size, info.st_mtime_ns):
+        return cached[2]
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(block)
+    _digests[key] = (info.st_size, info.st_mtime_ns, h.hexdigest())
+    return _digests[key][2]
+
+
+def revision() -> str:
+    """A short digest of every file in the workspace (paths and contents): two runs with the same
+    revision ran the same files."""
+    h = hashlib.sha256()
+    for f in list_files():
+        h.update(f["rel_path"].encode() + b"\0" + _file_digest(WORKSPACE_DIR / f["rel_path"]).encode() + b"\n")
+    return h.hexdigest()[:16]
+
+
+def file_version(rel: str) -> str | None:
+    """The version digest of a file, or None if it does not exist."""
+    try:
+        return version_of(file_bytes(rel))
+    except ValueError:
+        return None
+
+
+def where_is_version(rel: str, digest: str) -> dict:
+    """Where the file `rel` with this digest is now: {"state": "current"} if the file is unchanged,
+    {"state": "saved", "id": <saved copy id>, "at": <when>} if a saved copy holds it, else {"state": "gone"}."""
+    try:
+        if version_of(file_bytes(rel)) == digest:
+            return {"state": "current"}
+    except ValueError:
+        pass
+    try:
+        for copy in list_versions(rel):
+            if version_of(version_bytes(rel, copy["id"])) == digest:
+                return {"state": "saved", "id": copy["id"], "at": copy["at"]}
+    except ValueError:
+        pass
+    return {"state": "gone"}
 
 
 def has_files() -> bool:
@@ -446,6 +534,11 @@ def move(src: str, dst: str, base: str | None = None) -> str:
         while parent != WORKSPACE_DIR and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
             parent = parent.parent
+        for callback in list(_move_listeners):
+            try:
+                callback(src, dst)
+            except Exception:  # noqa: BLE001
+                logger.exception("Workspace move listener failed")
     _after_change([src, dst], listing_changed=True)
     return dst
 
@@ -598,6 +691,33 @@ def check_syntax(rel: str, text: str) -> str | None:
         where = f" at line {mark.line + 1}" if mark else ""
         return f"{rel} is not valid YAML{where}: {getattr(exc, 'problem', None) or exc}"
     return None
+
+
+SYNTAX_CHECK_SECONDS = 30
+
+
+def check_playbook(rel: str) -> str | None:
+    """A warning from `ansible-playbook --syntax-check` for a saved playbook, else None. It sees what a run
+    would (the workspace's ansible.cfg, inventory, roles, installed collections); the file must already be
+    saved. Never blocks anything, and says nothing if ansible-playbook is not installed."""
+    if not is_playbook_path(rel):
+        return None
+    exe = shutil.which("ansible-playbook")
+    if exe is None:
+        return None
+    cmd = [exe, "--syntax-check"]
+    inventory_file = resolve_within(settings_store.get("inventory_path").strip("/") or "inventory.yaml")
+    if inventory_file is not None and inventory_file.is_file():
+        cmd += ["-i", str(inventory_file)]
+    env = {**os.environ, "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_DIR), "ANSIBLE_FORCE_COLOR": "false", "ANSIBLE_NOCOLOR": "1"}
+    try:
+        done = subprocess.run(cmd + [clean(rel)], cwd=WORKSPACE_DIR, env=env, capture_output=True, text=True, timeout=SYNTAX_CHECK_SECONDS)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode == 0:
+        return None
+    lines = [ln for ln in (done.stderr or done.stdout).splitlines() if ln.strip() and not ln.startswith("[WARNING]")]
+    return f"ansible-playbook --syntax-check failed: {' '.join(lines)[:400]}"
 
 
 # --- after a change ---------------------------------------------------------------------------------

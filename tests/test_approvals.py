@@ -523,7 +523,7 @@ def test_agent_deletion_clears_the_counter_and_the_page_shows_usage():
     assert _post(token, "uptime").status_code in (200, 202)
     agents.set_hourly_limit(agent.id, 9)
     page = get_all("/agents", ("agents", "roles", "tokens")).text
-    assert "1 used in the last hour of 9" in page and 'class="stack"' in page and 'data-label="Per hour"' in page
+    assert "1 used in the last hour of 9" in page and 'class="stack"' in page and 'class="mini-label hour-label">Per hour' in page
     agents.delete_agent(agent.id)
     with Session(engine) as session:
         assert session.exec(select(AgentRequest).where(AgentRequest.agent_id == agent.id)).first() is None, "a reused id starts at zero"

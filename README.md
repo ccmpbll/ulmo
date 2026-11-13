@@ -73,7 +73,24 @@ GET  /api/v1/catalog           what this agent may run
 POST /api/v1/runs              start a playbook: {"playbook": "playbooks/x.yml", "limit": ["web1"]}
 POST /api/v1/runs/{id}/cancel  cancel a run this agent started
 GET  /api/v1/approvals/{id}    a request of this agent waiting for approval (see Approvals)
+GET  /api/v1/files             the files this agent may read (its "files" setting)
+GET  /api/v1/files/content?path=...   one file as text, with its version
+POST /api/v1/files/edits       propose a new version of a file; waits for your approval
 ```
+
+**Files.** Each agent has a **files** setting on the Agents page: *no files* (the default), *playbooks
+only* (read the `.yaml`/`.yml` files in the playbooks folder, and propose edits to them or new ones)
+or *all files* (the same for anything in the workspace, including `files/` and `ansible.cfg`, so
+configs with keys in them become readable to that agent). An agent never writes: `POST /api/v1/files/edits`
+with `{"path", "text", "base", "note"}` (`text` is the whole new file, `base` the `version` from the
+read, `""` to create) answers `202` and an Approval appears. It is refused up front for a path
+outside the agent's scope, a stale `base` (409), no change, hidden or direction-override characters, a
+binary file, or more than 256 KB. The approval page shows the diff with line numbers and the roles
+granted that playbook. Approving saves it through the same locked, versioned write as the Files
+page (a saved copy of the old file is kept, a CRLF file stays CRLF) and warns if
+`ansible-playbook --syntax-check` fails; it is refused, and stays pending, while a playbook runs, and
+fails if the file changed after the agent read it or the agent lost its access. An edit waits 24 hours
+for a decision, and the proposed text is dropped once it is decided.
 
 **Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
 create a **role**, add a **grant** (one playbook plus the hosts it may target), and assign the

@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_login
 from app.models import RunHistory
-from app.services import runner
+from app.services import runner, workspace
 from app.services.log_tail import LogTailer
 from app.templating import templates
 
@@ -28,8 +28,12 @@ def run_detail(request: Request, run_id: int):
         return RedirectResponse("/?tab=playbooks", status_code=303)
     log, log_pos = runner.read_log(run_id)
     recap = runner.get_recap(run_id)
+    ran = {
+        "playbook": workspace.where_is_version(run.playbook, run.playbook_rev) if run.playbook_rev else None,
+        "workspace_same": workspace.revision() == run.workspace_rev if run.workspace_rev else None,
+    }
     return templates.TemplateResponse(
-        request, "run_detail.html", {"run": run, "log": log, "log_pos": log_pos, "recap": recap}
+        request, "run_detail.html", {"run": run, "log": log, "log_pos": log_pos, "recap": recap, "ran": ran}
     )
 
 

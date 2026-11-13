@@ -50,6 +50,7 @@ def _page(request: Request, error: str | None = None, new_token: tuple[str, str]
             "host_items": [(h, "") for h in inventory.list_hosts()],
             "runs_enabled": agents.runs_enabled(),
             "default_per_hour": agents.DEFAULT_MAX_PER_HOUR,
+            "file_modes": [("none", "no files"), ("playbooks", "playbooks only"), ("all", "all files (includes files/)")],
             "used_last_hour": {a.id: agents.requests_last_hour(a) for a in rows},
             "error": error,
             "new_token": new_token,
@@ -89,6 +90,7 @@ def create_agent(
     expires_days: str = Form(""),
     role_id: str = Form(""),
     max_per_hour: str = Form(""),
+    file_access: str = Form("none"),
     user=Depends(require_login),
 ):
     if AUTH_DISABLED:
@@ -96,11 +98,11 @@ def create_agent(
         return _page(request, tab="agents", error=LOGIN_REQUIRED)
     try:
         agent, token = agents.create_agent(
-            name, _whole_number(expires_days, "Expiry"), _whole_number(role_id, "Role"), _whole_number(max_per_hour, "The hourly limit")
+            name, _whole_number(expires_days, "Expiry"), _whole_number(role_id, "Role"), _whole_number(max_per_hour, "The hourly limit"), file_access
         )
     except ValueError as exc:
         return _page(request, tab="agents", error=str(exc))
-    agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}")
+    agents.admin_audit(user.username, "create agent", f"{agent.name}, role id {agent.role_id}, files: {agent.file_access}")
     # Rendered directly (not redirected) so the token is shown exactly once and
     # never ends up in a URL, history entry or log line.
     return _page(request, tab="agents", new_token=(agent.name, token))
@@ -125,6 +127,19 @@ def set_agent_limit(request: Request, agent_id: int, max_per_hour: str = Form(""
     except ValueError as exc:
         return _page(request, tab="agents", error=str(exc))
     agents.admin_audit(user.username, "set agent limit", f"agent id {agent_id}: {max_per_hour.strip() or 'default'} per hour")
+    return _back("agents")
+
+
+@router.post("/agents/{agent_id}/files")
+def set_agent_files(request: Request, agent_id: int, file_access: str = Form(...), user=Depends(require_login)):
+    # Reading files, and proposing edits to them, is a widening like a role: locked while auth is disabled.
+    if AUTH_DISABLED:
+        return _page(request, tab="agents", error=LOGIN_REQUIRED)
+    try:
+        mode = agents.set_file_access(agent_id, file_access)
+    except ValueError as exc:
+        return _page(request, tab="agents", error=str(exc))
+    agents.admin_audit(user.username, "set agent file access", f"agent id {agent_id}: {mode}")
     return _back("agents")
 
 

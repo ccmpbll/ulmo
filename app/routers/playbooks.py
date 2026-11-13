@@ -46,7 +46,7 @@ def view_playbook(request: Request, rel_path: str, _user=Depends(require_login))
     except ValueError:
         return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
     return templates.TemplateResponse(
-        request, "playbook_view.html", {"rel_path": rel_path, "content": content}
+        request, "playbook_view.html", {"rel_path": rel_path, "content": content, "line_numbers": "\n".join(str(i) for i in range(1, content.count("\n") + (0 if content.endswith("\n") else 1) + 1))}
     )
 
 

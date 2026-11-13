@@ -12,6 +12,14 @@
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 {% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
+{% if run.playbook_rev %}
+<p class="muted">Playbook version <code>{{ run.playbook_rev }}</code>:
+  {% if ran.playbook.state == "current" %}the file has not changed since.
+  {% elif ran.playbook.state == "saved" %}the file has changed since; that version is the <a href="/files/version?path={{ run.playbook | urlencode }}&version={{ ran.playbook.id }}">saved copy from {{ ran.playbook.at | local_time }}</a>.
+  {% else %}the file has changed since, and no saved copy of that version is left.{% endif %}
+  {% if run.workspace_rev %}All files, revision <code>{{ run.workspace_rev }}</code>: {{ 'unchanged since.' if ran.workspace_same else 'something in the workspace has changed since.' }}{% endif %}
+</p>
+{% endif %}
 
 {% if run.status == "running" %}
 <div class="card" id="progress-panel">

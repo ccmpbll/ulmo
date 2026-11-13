@@ -8,8 +8,8 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 # create_all only creates missing tables, not missing columns on tables that
 # already exist — this project doesn't use Alembic, so patch them by hand.
 _ADDED_COLUMNS = {
-    "runhistory": [("tags", "TEXT"), ("limit", "TEXT")],
-    "agent": [("role_id", "INTEGER"), ("max_per_hour", "INTEGER")],
+    "runhistory": [("tags", "TEXT"), ("limit", "TEXT"), ("playbook_rev", "TEXT"), ("workspace_rev", "TEXT")],
+    "agent": [("role_id", "INTEGER"), ("max_per_hour", "INTEGER"), ("file_access", "TEXT DEFAULT 'none'")],
     "approval": [("agent_note", "TEXT DEFAULT ''")],
     "grant": [("requires_approval", "BOOLEAN DEFAULT 0")],
     "rolecommand": [("requires_approval", "BOOLEAN DEFAULT 0")],

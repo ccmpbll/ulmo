@@ -28,6 +28,8 @@ class RunHistory(SQLModel, table=True):
     return_code: Optional[int] = None
     tags: Optional[str] = None  # comma-separated --tags used for this run, if any
     limit: Optional[str] = None  # comma-separated --limit hosts, if any
+    playbook_rev: Optional[str] = None  # digest of the playbook file as it was when the run started
+    workspace_rev: Optional[str] = None  # digest of every file in the workspace at that moment
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: Optional[datetime] = None
 
@@ -46,6 +48,7 @@ class Agent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     last_used_at: Optional[datetime] = None
     max_per_hour: Optional[int] = None  # runs, commands and approval requests per hour; None = the default, 0 = no limit
+    file_access: str = "none"  # none | playbooks (read, and propose edits to, playbooks) | all (any workspace file)
 
 
 class Role(SQLModel, table=True):
@@ -138,8 +141,8 @@ class Approval(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     agent_id: int = Field(index=True)
     agent_name: str = ""
-    kind: str  # command | playbook
-    target: str  # command name or playbook rel_path
+    kind: str  # command | playbook | file (an edit to a workspace file)
+    target: str  # command name, or playbook / file rel_path
     host: str  # the host for a command; comma-separated --limit hosts for a playbook
     params: str = "{}"  # JSON of the validated command values
     line: str = ""  # what would run, as shown to the admin; checked again when approved

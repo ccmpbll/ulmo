@@ -35,7 +35,7 @@ from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
 from app.models import AdminToken, Approval, Proposal, Role, RoleCommand, utcnow
-from app.services import agents, approvals, command_library as cl, commands
+from app.services import agents, approvals, command_library as cl, commands, textcheck
 
 TOKEN_PREFIX = "ulmo_admin_"
 EXPIRY = timedelta(hours=24)  # a human reads these, so a day, not minutes
@@ -52,8 +52,6 @@ SPECS = {  # operation -> (required keys, optional keys)
     "role_set_approval": (("role", "command", "needs_approval"), ()),
 }
 LIBRARY_OPS = ("save_command", "delete_command", "host_offer")
-# Printable but invisible: fillers, a blank braille cell, the combining grapheme joiner, variation selectors.
-INVISIBLE = {0x034F, 0x115F, 0x1160, 0x2800, 0x3164, 0xFFA0, *range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0)}
 
 
 class Unavailable(ValueError):
@@ -132,7 +130,7 @@ def _plain_text(value) -> None:
     would make the diff an admin reads differ from what is saved and run (the note is cleaned the
     same way). Newlines and tabs are fine, the YAML dump shows them as escapes."""
     if isinstance(value, str):
-        bad = next((c for c in value if (not c.isprintable() and c not in "\n\t") or ord(c) in INVISIBLE), None)
+        bad = textcheck.bad_char(value)
         if bad:
             _bad(f"contains a control, zero-width, invisible or direction-override character (U+{ord(bad):04X})")
     elif isinstance(value, dict):

@@ -24,13 +24,13 @@
   {% for a in ask_approvals %}
   <div class="ask">
     <div class="what">
-      <div class="title"><a href="/approvals/{{ a.id }}">{{ a.agent_name }} wants to run {{ a.target }}</a></div>
+      <div class="title"><a href="/approvals/{{ a.id }}">{{ a.agent_name }} wants to {{ 'edit' if a.kind == 'file' else 'run' }} {{ a.target }}</a></div>
       <code>{{ a.line }}</code>
       {% if a.agent_note %}<div class="meta"><span>{{ a.agent_name }} says:</span> {{ a.agent_note }}</div>{% endif %}
       <div class="meta">{% if a.kind == "command" %}on {{ a.host }} · {% endif %}expires {{ a.expires_at | local_time }}</div>
     </div>
     <div class="btns">
-      {% if not locked %}<form method="post" action="/approvals/{{ a.id }}/approve"><input type="hidden" name="back" value="overview" /><button type="submit">Approve</button></form>{% endif %}
+      {% if a.kind == "file" %}<a class="btn" href="/approvals/{{ a.id }}">See the changes</a>{% elif not locked %}<form method="post" action="/approvals/{{ a.id }}/approve"><input type="hidden" name="back" value="overview" /><button type="submit">Approve</button></form>{% endif %}
       <form method="post" action="/approvals/{{ a.id }}/deny"><input type="hidden" name="back" value="overview" /><button type="submit" class="danger">Deny</button></form>
     </div>
   </div>
