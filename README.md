@@ -11,12 +11,13 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 
 - Lists your playbooks with inline tag (`--tags`) and host (`--limit`)
   selection; live colorized log streaming, cancel, and a configurable run timeout (default 60 min)
-- Live per-task progress and a structured Play Recap on completion
+- Live per-task progress and a structured Play Recap on completion. A finished run that used `--tags` says how many of the playbook's tasks ran and lists the ones left out because no tag matched
+- Each run records the playbook's version and a revision of all the files; the run page says whether the playbook has changed since and links to the saved copy it ran
 - An **Overview** landing page: what is waiting on you (approve or deny agent requests right there), what is
   running now, and the activity log of playbook runs, command runs, git imports, API requests and changes: newest first,
   paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 imports are kept (a run's log
   goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
-- **Ansible** (top bar): Playbooks, Inventory and **Files** tabs. Files is where ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`, `files/`): browse, edit in the browser, upload files or a zip, create, delete, download everything as a zip. Each save keeps the old contents as a saved copy you can compare and Restore; an edit made from a stale page is refused, not merged. **The files are read-only while a playbook run is active**, so a run never sees them change; the page says which run and offers Cancel. Editing is switched off while `ULMO_DISABLE_AUTH` is set, and so are Import from Git and the Ansible settings (which include extra `ansible-playbook` arguments). A YAML file that does not parse is still saved, with a warning. Zip uploads keep the executable bit; an edit keeps a file's CRLF line endings.
+- **Ansible** (top bar): Playbooks, Inventory and **Files** tabs. Files is where ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`, `files/`): browse (grouped by folder, with size and last edited), edit in the browser with syntax colours and line numbers, upload files or a zip, create, move, delete, download everything as a zip. Each save keeps the old contents as a saved copy you can compare and Restore; an edit made from a stale page is refused, not merged. **The files are read-only while a playbook run is active**, so a run never sees them change; the page says which run and offers Cancel. Editing is switched off while `ULMO_DISABLE_AUTH` is set, and so are Import from Git and the Ansible settings (which include extra `ansible-playbook` arguments). A YAML file that does not parse, or a playbook that fails `ansible-playbook --syntax-check`, is still saved, with a warning. Moving a playbook takes its saved copies, grants and schedule with it. Zip uploads keep the executable bit; an edit keeps a file's CRLF line endings.
 - Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run)
 - No outside network needed: the syntax highlighter and log colouring ship in `app/static/vendor/`
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
@@ -28,9 +29,10 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 - JSON API for scripts and automation (n8n etc.): per-agent bearer tokens, roles that say which
   playbooks on which hosts, and which commands, an agent may run, optional approval by you before a
   call runs, an hourly request limit per agent, a kill switch, and an audit log (see below)
-- **Change proposals**: scripts (Claude Code, n8n, curl) can read `commands.yml` and the roles and
-  *propose* changes to commands and roles through a separate token; you approve each one with a diff
-  (see "Proposing changes" below)
+- **Change proposals**: scripts (Claude Code, n8n, curl) can read `commands.yml`, the roles and the
+  workspace files, and *propose* changes to commands, roles and any file (playbooks included) through a
+  separate token; you approve each one with a diff (see "Proposing changes" below). Agents can read the
+  playbooks but never write a file
 - SQLite-backed login (first run creates the admin account), or `ULMO_DISABLE_AUTH=true` to skip it
 
 ## Running
@@ -198,10 +200,10 @@ agent (0 is no limit), and the Agents page shows how many it has used in the las
 limit, a new request answers `429 rate limit: N requests per hour`. Raising a limit is locked while
 `ULMO_DISABLE_AUTH` is set.
 
-### Proposing changes (commands and roles)
+### Proposing changes (commands, roles and files)
 
-Commands and roles are edited on the Commands and Agents pages, and scripts can ask for the same
-edits through the proposals API. A script **cannot change anything itself**: it sends a proposal,
+Commands and roles are edited on the Commands and Agents pages and files on the Files page, and scripts
+can ask for the same edits through the proposals API. A script **cannot change anything itself**: it sends a proposal,
 ulmo checks it, and it waits on the **Approvals** page (section "Change proposals") for you to
 approve it after reading the diff.
 
@@ -209,8 +211,9 @@ Create a **change token** under Agents -> Change tokens (shown once; only its ha
 have an expiry). It is not an agent token: an agent token is refused on `/api/v1/admin`, a change
 token is refused on every agent route, and neither is a login. A change token can read, and propose;
 it cannot run a command, cannot approve its own proposal, and cannot reach any admin page. What it
-can read is the whole of `commands.yml`: host addresses, SSH user names and key file names (not key
-contents or passwords), so hand one only to a tool you would trust with that.
+can read is the whole of `commands.yml` (host addresses, SSH user names and key file names, not key
+contents or passwords) and every text file in the workspace, including `files/`, where keys and configs
+may be, so hand one only to a tool you would trust with that.
 
 ```
 GET  /api/v1/admin/commands.yml        the file as it is on disk
