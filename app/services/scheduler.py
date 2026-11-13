@@ -1,4 +1,5 @@
 import logging
+from datetime import timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -76,6 +77,13 @@ def reschedule_playbook(rel_path: str, cron: str) -> None:
             logger.exception("Scheduled run for %r failed unexpectedly", path_copy)
 
     scheduler.add_job(_run, trigger, id=job_id, replace_existing=True)
+
+
+def next_run(rel_path: str):
+    """When this playbook's schedule fires next, as a UTC datetime, or None if it has no live job."""
+    job = scheduler.get_job(PLAYBOOK_JOB_PREFIX + rel_path)
+    when = getattr(job, "next_run_time", None) if job else None
+    return when.astimezone(timezone.utc) if when else None
 
 
 def reschedule_all_playbooks() -> None:

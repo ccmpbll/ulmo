@@ -1,22 +1,74 @@
 {% extends "base.html" %}
-{% block title %}Activity - ulmo{% endblock %}
+{% block title %}Overview - ulmo{% endblock %}
 {% macro url(tab, page=1, extra={}) -%}
-/activity?tab={{ tab }}&page={{ page }}{% for k, v in extra.items() %}&{{ k }}={{ v | urlencode }}{% endfor %}
+/?tab={{ tab }}&page={{ page }}{% for k, v in extra.items() %}&{{ k }}={{ v | urlencode }}{% endfor %}
 {%- endmacro %}
-{% macro took(r) -%}
-{%- if r.finished_at -%}
-{%- set secs = (r.finished_at - r.started_at).total_seconds() -%}
+{% macro took(started, finished) -%}
+{%- if finished -%}
+{%- set secs = (finished - started).total_seconds() -%}
 {%- if secs < 120 %}{{ secs | round(1) }} s{% else %}{{ (secs / 60) | round(1) }} min{% endif -%}
 {%- else -%}-{%- endif -%}
 {%- endmacro %}
 {% block content %}
-<div class="page-header"><h1>Activity</h1></div>
-<div class="actions tabs">
-  {% for key, label in tabs %}<a class="btn {{ '' if tab == key else 'secondary' }}" href="/activity?tab={{ key }}">{{ label }}</a>{% endfor %}
+<div class="page-header">
+  <div>
+    <h1>Overview</h1>
+    <p class="sub">What needs you, what is running, and what has happened lately.</p>
+  </div>
+</div>
+{% if flash %}<p class="ok">{{ flash }}</p>{% endif %}
+
+{% if ask_approvals or ask_proposals %}
+<div class="card flush needs">
+  <div class="card-head"><h2>Needs you <span class="muted">· {{ (ask_approvals | length) + (ask_proposals | length) }} waiting</span></h2><a href="/approvals">All approvals &rarr;</a></div>
+  {% for a in ask_approvals %}
+  <div class="ask">
+    <div class="what">
+      <div class="title"><a href="/approvals/{{ a.id }}">{{ a.agent_name }} wants to run {{ a.target }}</a></div>
+      <code>{{ a.line }}</code>
+      {% if a.agent_note %}<div class="meta"><span>{{ a.agent_name }} says:</span> {{ a.agent_note }}</div>{% endif %}
+      <div class="meta">{% if a.kind == "command" %}on {{ a.host }} · {% endif %}expires {{ a.expires_at | local_time }}</div>
+    </div>
+    <div class="btns">
+      {% if not locked %}<form method="post" action="/approvals/{{ a.id }}/approve"><input type="hidden" name="back" value="overview" /><button type="submit">Approve</button></form>{% endif %}
+      <form method="post" action="/approvals/{{ a.id }}/deny"><input type="hidden" name="back" value="overview" /><button type="submit" class="danger">Deny</button></form>
+    </div>
+  </div>
+  {% endfor %}
+  {% for p in ask_proposals %}
+  <div class="ask">
+    <div class="what">
+      <div class="title"><a href="/proposals/{{ p.id }}">{{ p.token_name }} proposes a change</a></div>
+      {% if p.note %}<div class="meta"><span>{{ p.token_name }} says:</span> {{ p.note }}</div>{% endif %}
+      <div class="meta">expires {{ p.expires_at | local_time }}</div>
+    </div>
+    <div class="btns"><a class="btn secondary" href="/proposals/{{ p.id }}">Review the diff</a></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card flush"><div class="clear"><span class="tick">&#10003;</span>Nothing needs you right now.<span class="spacer"></span><a href="/approvals">View approval history &rarr;</a></div></div>
+{% endif %}
+
+{% if running %}
+<div class="running-strip">
+  <span class="badge running">running</span>
+  <div class="running-list">
+    {% for r in running %}
+    <div>{% if r.href %}<a href="{{ r.href }}"><strong>{{ r.label }}</strong></a>{% else %}<strong>{{ r.label }}</strong>{% endif %} <span class="muted">· {{ r.kind | lower }} · started by {{ r.by }} · {{ r.at | local_time }}</span></div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<h2 class="section-title">Activity</h2>
+<div class="subnav">
+  {% for key, label in tabs %}<a href="/?tab={{ key }}"{% if tab == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
 </div>
 
+{% if tab != "all" %}
 <div class="card">
-  <form method="get" action="/activity" class="filters">
+  <form method="get" action="/" class="filters">
     <input type="hidden" name="tab" value="{{ tab }}" />
     <div class="form-grid">
       {% if tab == "playbooks" %}
@@ -95,15 +147,32 @@
     </div>
     <div class="actions">
       <button type="submit" class="secondary">Apply</button>
-      {% if filters %}<a class="btn secondary" href="/activity?tab={{ tab }}">Reset</a>{% endif %}
+      {% if filters %}<a class="btn secondary" href="/?tab={{ tab }}">Reset</a>{% endif %}
       <span class="muted" style="margin-left: auto;">{% if total %}Showing {{ first }} to {{ last }} of {{ total }}{% else %}Nothing to show{% endif %}</span>
     </div>
   </form>
 </div>
+{% endif %}
 
-<div class="card">
+<div class="card flush">
   <table class="stack">
-    {% if tab == "playbooks" %}
+    {% if tab == "all" %}
+    <thead><tr><th>When</th><th>Type</th><th>What</th><th>Started by</th><th>Status</th><th>Took</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td data-label="When" class="when">{{ r.at | local_ago }}</td>
+        <td data-label="Type"><span class="kind {{ r.kind }}">{{ r.kind }}</span></td>
+        <td data-label="What">{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}{% if r.detail %}<br /><span class="muted">{{ r.detail }}</span>{% endif %}</td>
+        <td data-label="Started by" class="muted">{{ r.by }}</td>
+        <td data-label="Status">{% if r.status %}<span class="badge {{ r.status }}">{{ r.status_text }}</span>{% endif %}</td>
+        <td data-label="Took" class="muted">{{ took(r.started_at, r.finished_at) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">Nothing has happened yet.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% elif tab == "playbooks" %}
     <thead><tr><th>Started</th><th>Playbook</th><th>Status</th><th>Started by</th><th>Took</th><th></th></tr></thead>
     <tbody>
       {% for r in rows %}
@@ -112,7 +181,7 @@
         <td data-label="Playbook">{{ r.playbook }}{% if r.tags or r.limit %}<br /><span class="muted">{% if r.tags %}tags: {{ r.tags }}{% endif %}{% if r.tags and r.limit %} · {% endif %}{% if r.limit %}limit: {{ r.limit }}{% endif %}</span>{% endif %}</td>
         <td data-label="Status"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
         <td data-label="Started by">{{ r.triggered_by }}</td>
-        <td data-label="Took" class="muted">{{ took(r) }}</td>
+        <td data-label="Took" class="muted">{{ took(r.started_at, r.finished_at) }}</td>
         <td data-label="" class="actions-cell"><a class="btn secondary" href="/runs/{{ r.id }}">View</a></td>
       </tr>
       {% else %}
@@ -129,7 +198,7 @@
         <td data-label="Host">{{ c.host }}</td>
         <td data-label="Command">{{ c.command }}<br /><code class="muted">{{ c.line }}</code></td>
         <td data-label="Status"><span class="badge {{ 'success' if c.status == 'success' else ('running' if c.status == 'running' else 'failed') }}">{{ c.status }}</span>{% if c.return_code not in (None, 0) %} <span class="muted">rc {{ c.return_code }}</span>{% endif %}</td>
-        <td data-label="Took" class="muted">{{ took(c) }}</td>
+        <td data-label="Took" class="muted">{{ took(c.started_at, c.finished_at) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="muted">No command runs{{ ' match' if filters }}.</td></tr>
@@ -143,7 +212,7 @@
         <td data-label="Started">{{ r.started_at | local_time }}</td>
         <td data-label="Status"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
         <td data-label="Started by">{{ r.triggered_by }}</td>
-        <td data-label="Took" class="muted">{{ took(r) }}</td>
+        <td data-label="Took" class="muted">{{ took(r.started_at, r.finished_at) }}</td>
         <td data-label="" class="actions-cell"><a class="btn secondary" href="/logs/{{ r.id }}">View</a></td>
       </tr>
       {% else %}
@@ -175,6 +244,7 @@
     </tbody>
     {% endif %}
   </table>
+  {% if tab == "all" %}<p class="muted showing">{% if total %}Showing {{ first }} to {{ last }} of {{ total }}{% else %}Nothing to show{% endif %}</p>{% endif %}
   {% if pages > 1 %}
   <div class="actions form-actions">
     {% if page > 1 %}<a class="btn secondary" href="{{ url(tab, page - 1, filters) }}">Newer</a>{% endif %}

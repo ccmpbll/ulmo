@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
   <h1>{{ 'New command' if is_new else 'Edit ' ~ original }}</h1>
-  <a class="btn secondary" href="/commands">Back to commands</a>
+  <a class="btn secondary" href="/commands?tab=commands">Back to commands</a>
 </div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="card">
@@ -24,7 +24,7 @@
     <div class="actions form-actions">
       <button type="submit">Save</button>
       <button type="submit" formaction="/commands/preview" class="secondary">Preview</button>
-      <a class="btn secondary" href="/commands">Cancel</a>
+      <a class="btn secondary" href="/commands?tab=commands">Cancel</a>
     </div>
   </form>
 </div>

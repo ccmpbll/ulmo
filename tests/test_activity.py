@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 DATA_DIR = tempfile.mkdtemp(prefix="ulmo-test-")
@@ -33,7 +34,7 @@ import app.auth as auth_module  # noqa: E402
 from app.database import engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.config import RUNNER_DATA_DIR  # noqa: E402
-from app.models import AdminAudit, AgentAudit, AgentRun, CommandRun, RunHistory, SyncHistory  # noqa: E402
+from app.models import AdminAudit, AgentAudit, AgentRun, Approval, CommandRun, Proposal, RunHistory, SyncHistory, utcnow  # noqa: E402
 from app.routers import activity as activity_module  # noqa: E402
 from app.services import agents, retention, scheduler  # noqa: E402
 
@@ -128,9 +129,9 @@ def test_filters():
     assert _showing(admin.get("/activity?tab=commands&status=exploded").text).endswith("of 60"), "an unknown status is ignored, not an error"
     # Filters survive paging.
     page = admin.get("/activity?tab=requests&agent=n8n")  # 81 rows: two pages
-    assert 'href="/activity?tab=requests&page=2&agent=n8n"' in page.text
+    assert 'href="/?tab=requests&page=2&agent=n8n"' in page.text
     older = admin.get("/activity?tab=requests&page=2&agent=n8n")
-    assert _showing(older.text) == "Showing 51 to 81 of 81" and 'href="/activity?tab=requests&page=1&agent=n8n"' in older.text
+    assert _showing(older.text) == "Showing 51 to 81 of 81" and 'href="/?tab=requests&page=1&agent=n8n"' in older.text
     assert "Reset" in page.text and "Reset" not in admin.get("/activity?tab=requests").text
 
 
@@ -163,7 +164,7 @@ def test_other_pages_do_not_repeat_the_logs():
     commands_page = admin.get("/commands").text
     for title in ("Recent changes", "Recent API requests", "Recent command runs"):
         assert title not in agents_page and title not in commands_page, f"{title!r} lives on the Activity page now"
-    assert '<a href="/activity">Activity</a>' in agents_page and '<a href="/activity">Activity</a>' in commands_page, "reachable from the top bar"
+    assert '<a href="/">Overview</a>' in agents_page and '<a href="/">Overview</a>' in commands_page, "reachable from the top bar"
 
     # And those pages no longer read the log tables at all.
     statements = []
@@ -193,10 +194,10 @@ def test_change_log_is_bounded():
 
 
 def test_playbook_and_sync_tabs():
-    page = admin.get("/activity")
+    page = admin.get("/?tab=playbooks")
     assert page.status_code == 200
-    assert 'class="btn " href="/activity?tab=playbooks"' in page.text, "Playbook runs is the default tab and shown as active"
-    labels = ["Playbook runs", "Command runs", "Syncs", "API requests", "Changes"]
+    assert 'href="/?tab=playbooks" class="active" aria-current="page">Playbook runs</a>' in page.text, "the chosen tab is shown as active"
+    labels = ["All", "Playbook runs", "Command runs", "Syncs", "API requests", "Changes"]
     positions = [page.text.index(f">{label}</a>") for label in labels]
     assert positions == sorted(positions), "tab order"
     assert _rows(page.text) == 50 and _showing(page.text) == "Showing 1 to 50 of 70"
@@ -217,7 +218,7 @@ def test_playbook_and_sync_tabs():
     assert "&lt;b&gt;x&lt;/b&gt;" in page.text and "<b>x</b>" not in page.text, "playbook names are escaped"
     assert _showing(admin.get("/activity", params={"tab": "playbooks", "playbook": "' OR 1=1 --"}).text) == "Nothing to show"
     filtered = admin.get("/activity?tab=playbooks&status=success&playbook=playbooks/os-update.yaml")
-    assert 'href="/activity?tab=playbooks&page=2' not in filtered.text, "a short filtered list has no pager"
+    assert 'href="/?tab=playbooks&page=2' not in filtered.text, "a short filtered list has no pager"
 
     syncs = admin.get("/activity?tab=syncs")
     assert _rows(syncs.text) == 50 and _showing(syncs.text) == "Showing 1 to 50 of 55"
@@ -236,6 +237,322 @@ def test_playbook_and_sync_tabs():
         session.commit()
     going = admin.get("/activity?tab=playbooks&playbook=playbooks/still-going.yaml").text
     assert ">running<" in going and '<td data-label="Took" class="muted">-</td>' in going
+
+
+def test_top_bar():
+    """Settings and Log out live in the user menu, the nav has no Settings link, and the
+    switched-off banner shows on every page while agent runs are off."""
+    page = admin.get("/activity").text
+    head = page.split("</header>")[0]
+    nav = head.split("<nav>")[1].split("</nav>")[0]
+    assert "Settings" not in nav, "Settings is in the user menu, not the nav"
+    assert re.findall(r">([A-Za-z]+)(?: <span[^>]*>\d+</span>)?</a>", nav) == ["Overview", "Approvals", "Ansible", "Commands", "Agents"]
+    menu = head.split('id="user-menu"')[1]
+    assert '<a href="/settings">Settings</a>' in menu and 'action="/logout"' in menu, "the menu has Settings and Log out"
+    assert 'class="killbar"' not in page, "no banner while agent runs are on"
+    admin.post("/agent-runs/toggle", data={})
+    try:
+        for path in ("/activity", "/agents", "/"):
+            assert 'class="killbar"' in admin.get(path).text, f"banner on {path} while agent runs are off"
+    finally:
+        admin.post("/agent-runs/toggle", data={"enable": "1"})
+    assert 'class="killbar"' not in admin.get("/activity").text, "banner gone once they are back on"
+    settings_head = admin.get("/settings").text.split("</header>")[0]
+    assert 'class="usermenu-btn active"' in settings_head, "the user menu is marked while you are in Settings"
+
+
+def _times(html: str) -> list[str]:
+    """The timestamps of the main table's rows, in page order."""
+    body = html.split("<tbody>")[-1].split("</tbody>")[0]
+    return re.findall(r'<time class="local-time" datetime="([^"]+)"', body)
+
+
+def test_overview_all_tab():
+    """/ is the Overview; its log defaults to All: the five logs merged, newest first."""
+    r = admin.get("/activity?tab=requests&page=2&agent=n8n", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/?tab=requests&page=2&agent=n8n", "the old address keeps its query"
+    assert client.get("/", follow_redirects=False).headers["location"] == "/login", "login-only"
+
+    page = admin.get("/")
+    assert page.status_code == 200 and "<h1>Overview</h1>" in page.text
+    assert 'href="/?tab=all" class="active" aria-current="page">All</a>' in page.text, "All is the default tab"
+    total = sum(len(_all(m)) for m in (AgentAudit, AdminAudit, CommandRun, RunHistory, SyncHistory))
+    assert total >= 314, "the seeded rows are all counted"
+    assert _rows(page.text) == 50 and _showing(page.text) == f"Showing 1 to 50 of {total}"
+    times = _times(page.text)
+    assert times == sorted(times, reverse=True), "newest first across all five logs"
+    kinds = set(re.findall(r'<span class="kind (\w+)">', "".join(admin.get(f"/?page={n}").text for n in range(1, 8))))
+    assert kinds == {"playbook", "command", "sync", "request", "change"}, "every kind of row appears and says what it is"
+    assert _showing(admin.get("/?page=7").text) == f"Showing 301 to {total} of {total}" and _rows(admin.get("/?page=7").text) == total - 300
+    assert _showing(admin.get("/?page=999").text) == f"Showing 301 to {total} of {total}", "a page past the end is clamped"
+    assert 'href="/?tab=all&page=2"' in page.text and "Reset" not in page.text and 'class="filters"' not in page.text, "All has a pager and no filters"
+    # Every row on page 1..7 appears exactly once.
+    seen = sum(_rows(admin.get(f"/?page={n}").text) for n in range(1, 8))
+    assert seen == total, "the merge neither drops nor repeats rows"
+    # Rows from different logs interleave by time: a request and then a change made after everything seeded lead the list.
+    agents.audit("n8n", "GET", "/api/v1/newest-marker", 200, "")
+    agents.admin_audit("admin", "newest-change-marker", "")
+    first = re.findall(r"<tr>(.*?)</tr>", admin.get("/").text.split("<tbody>")[-1], re.S)[:2]
+    assert "newest-change-marker" in first[0] and "newest-marker" in first[1] and "newest-change-marker" not in first[1], "the merge orders rows across logs"
+    total += 2
+    assert "SECRET-OUTPUT" not in page.text, "command output stays out of the log"
+    assert "<script>alert(1)</script>" not in admin.get("/").text and "<b>x</b>" not in page.text, "what rows show is escaped"
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in "".join(admin.get(f"/?page={n}").text for n in range(1, 8))
+    for tab in ("playbooks", "commands", "syncs", "requests", "changes"):
+        assert admin.get(f"/?tab={tab}").status_code == 200
+    assert admin.get("/?tab=nonsense").text.count('class="active" aria-current="page">All</a>') == 1, "an unknown tab falls back to All"
+
+
+def _wait(kind="command", target="docker-restart", host="gandalf", note="Jellyfin stopped answering."):
+    with Session(engine) as session:
+        row = Approval(agent_id=1, agent_name="n8n", kind=kind, target=target, host=host, line="docker restart jellyfin", agent_note=note,
+                       expires_at=utcnow() + timedelta(minutes=15))
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def test_overview_needs_you_and_running():
+    quiet = admin.get("/").text
+    assert "Nothing needs you right now" in quiet and 'class="card flush needs"' not in quiet and 'href="/approvals">View approval history' in quiet
+
+    aid = _wait(note="<img src=x onerror=alert(1)>")
+    with Session(engine) as session:
+        prop = Proposal(token_id=1, token_name="n8n-changes", note="add gravity", expires_at=utcnow() + timedelta(hours=24))
+        session.add(prop)
+        session.commit()
+        session.refresh(prop)
+        pid = prop.id
+    page = admin.get("/").text
+    assert 'class="card flush needs"' in page and "Nothing needs you right now" not in page and "2 waiting" in page
+    assert "n8n wants to run docker-restart" in page and "docker restart jellyfin" in page and "on gandalf" in page
+    assert "<img src=x" not in page and "&lt;img src=x" in page, "the agent's note is shown escaped"
+    assert f'action="/approvals/{aid}/approve"' in page and f'action="/approvals/{aid}/deny"' in page and 'name="back" value="overview"' in page
+    assert f'href="/proposals/{pid}">Review the diff' in page and f"/proposals/{pid}/approve" not in page, "a proposal is only decided on its own page, after the diff"
+    assert 'href="/approvals">View approval history' not in page
+    nav = page.split("</header>")[0]
+    assert 'href="/approvals" data-attn' in nav and "Approvals <span" in nav, "the nav is lit too"
+
+    # Deciding from the Overview comes back to it with a one-line result; elsewhere it stays on the request's page.
+    r = admin.post(f"/approvals/{aid}/deny", data={"back": "overview"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    after = admin.get("/").text
+    assert "Denied: n8n docker-restart on gandalf" in after and f"/approvals/{aid}/deny" not in after
+    assert "Denied: n8n" not in admin.get("/").text, "the result is shown once"
+    other = _wait()
+    for bad in ("", "elsewhere", "https://evil.example/", "//evil.example"):
+        r = admin.post(f"/approvals/{other}/deny", data={"back": bad}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == f"/approvals/{other}", f"back={bad!r} is ignored"
+        other = _wait()
+    admin.post(f"/approvals/{other}/deny", data={"back": "overview"})  # leave nothing pending
+    with Session(engine) as session:
+        session.delete(session.get(Proposal, pid))
+        session.commit()
+    assert "Nothing needs you right now" in admin.get("/").text
+
+    # Running now: an unfinished run shows under the log's heading, linked to its own page.
+    with Session(engine) as session:
+        run = RunHistory(playbook="playbooks/still-going-overview.yaml", status="running", triggered_by="admin")
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+    page = admin.get("/").text
+    assert 'class="running-strip"' in page and f'href="/runs/{run.id}"><strong>playbooks/still-going-overview.yaml' in page
+    with Session(engine) as session:
+        session.delete(session.get(RunHistory, run.id))
+        session.commit()
+    assert "still-going-overview" not in admin.get("/").text, "a finished or removed run leaves the strip"
+
+
+def test_ansible_page_moved():
+    page = admin.get("/ansible")
+    assert page.status_code == 200 and "<h1>Ansible</h1>" in page.text and 'href="/ansible" class="active"' in page.text.split("</header>")[0]
+    inv = admin.get("/inventory").text
+    assert 'href="/ansible" class="active"' in inv.split("</header>")[0], "Inventory is part of Ansible in the nav"
+    assert 'href="/ansible"' in inv and 'class="active" aria-current="page">Inventory</a>' in inv
+
+
+def test_page_tabs():
+    """Agents, Commands, Settings and Approvals are split into tabs (?tab=...): the default tab
+    shows its own sections only, an unknown tab falls back to it, and every action returns to the
+    tab it was done on."""
+    def active(html):
+        return re.findall(r'class="active" aria-current="page">([^<]+)</a>', html.split("</header>")[1])
+
+    # Agents
+    a = admin.get("/agents").text
+    assert active(a) == ["Agents"] and "API agents" in a and "Agent runs" in a and "New role" not in a and "Create a change token" not in a
+    r = admin.get("/agents?tab=roles").text
+    assert active(r) == ["Roles"] and "New role" in r and "API agents" not in r
+    t = admin.get("/agents?tab=tokens").text
+    assert active(t) == ["Change tokens"] and "Create a change token" in t and "New role" not in t
+    assert active(admin.get("/agents?tab=nonsense").text) == ["Agents"], "an unknown tab shows the default"
+    resp = admin.post("/roles", data={"name": "tabbed"}, follow_redirects=False)
+    assert resp.status_code == 303 and resp.headers["location"] == "/agents?tab=roles", "making a role returns to Roles"
+    resp = admin.post("/roles", data={"name": "tabbed"}, follow_redirects=False)  # a duplicate is refused on the same tab
+    assert resp.status_code == 400 and active(resp.text) == ["Roles"]
+    made = admin.post("/admin-tokens", data={"name": "tab-token"})
+    assert made.status_code == 200 and active(made.text) == ["Change tokens"] and "ulmo_admin_" in made.text, "a new token is shown on its own tab"
+    from app.services import proposals as proposal_service
+    token_id = proposal_service.list_tokens()[0].id
+    assert admin.post(f"/admin-tokens/{token_id}/toggle", follow_redirects=False).headers["location"] == "/agents?tab=tokens"
+    assert admin.post("/agent-runs/toggle", data={"enable": "1"}, follow_redirects=False).headers["location"] == "/agents"
+
+    # Commands
+    c = admin.get("/commands").text
+    assert active(c) == ["SSH hosts"] and "Add a host" in c and "Command library" not in c.split("</nav>")[-1] and "New command" not in c
+    assert active(admin.get("/commands?tab=commands").text) == ["Commands"] and "New command" in admin.get("/commands?tab=commands").text
+    assert active(admin.get("/commands?tab=copies").text) == ["Saved copies"]
+    assert active(admin.get("/commands?tab=nonsense").text) == ["SSH hosts"]
+    assert "Add a host" not in admin.get("/commands?tab=commands").text
+
+    # Settings
+    g = admin.get("/settings").text
+    assert active(g) == ["Git sync"] and "Git repository URL" in g and "Pushover" not in g and "Add key" not in g
+    assert active(admin.get("/settings?tab=ssh").text) == ["SSH keys"] and "Add key" in admin.get("/settings?tab=ssh").text
+    n = admin.get("/settings?tab=notify").text
+    assert active(n) == ["Notifications"] and "Pushover" in n and "Git repository URL" not in n
+    assert "Download backup" in admin.get("/settings?tab=backup").text
+    acct = admin.get("/settings?tab=account").text
+    assert active(acct) == ["Account &amp; users"] and "Change your password" in acct and "Users" in acct and "Git repository URL" not in acct
+    assert active(admin.get("/settings?tab=nonsense").text) == ["Git sync"]
+    resp = admin.post("/settings/notifications", data={"public_url": "ftp://nope"}, follow_redirects=False)
+    assert resp.headers["location"].startswith("/settings?tab=notify&error="), "a refused notification setting shows on its tab"
+    resp = admin.post("/settings", data={"git_sync_cron": "not a cron"}, follow_redirects=False)
+    assert resp.headers["location"].startswith("/settings?tab=git&"), "the git form returns to its tab"
+    resp = admin.post("/settings/users/password", data={"current_password": "wrong", "new_password": "x", "new_password_confirm": "x"}, follow_redirects=False)
+    assert resp.headers["location"] == "/settings?tab=account&error=Current+password+is+incorrect"
+
+    # Approvals
+    w = admin.get("/approvals").text
+    assert active(w)[0].startswith("Waiting") and "Waiting for you" in w and "Recent decisions" not in w
+    h = admin.get("/approvals?tab=history").text
+    assert active(h) == ["History"] and "Recent decisions" in h and "Recent proposals" in h and "Waiting for you" not in h
+    assert active(admin.get("/approvals?tab=nonsense").text)[0].startswith("Waiting")
+    aid = _wait()
+    assert "Waiting (1)" in admin.get("/approvals").text, "the Waiting tab counts what is waiting"
+    admin.post(f"/approvals/{aid}/deny")
+    assert "Waiting (" not in admin.get("/approvals").text
+
+
+def test_times_carry_their_timezone():
+    """The database returns UTC timestamps without a zone; the <time> tag must say UTC, or a browser
+    reads the digits as its own local time (hours off). A relative one is flagged for the script."""
+    from datetime import datetime, timezone as tz
+    from app.templating import local_ago, local_time
+    naive = datetime(2026, 1, 2, 3, 4, 5)
+    assert 'datetime="2026-01-02T03:04:05+00:00"' in local_time(naive), "a naive timestamp is UTC"
+    east = datetime(2026, 1, 2, 3, 4, 5, tzinfo=tz(timedelta(hours=-5)))
+    assert 'datetime="2026-01-02T08:04:05+00:00"' in local_time(east), "an aware one is converted to UTC"
+    assert "data-relative" in local_ago(naive) and "data-relative" not in local_time(naive)
+    assert local_time(None) == "-" and local_ago(None) == "-"
+    page = admin.get("/").text
+    assert re.search(r'<time class="local-time" datetime="[^"]+\+00:00" data-relative>', page), "the Overview's When column is relative"
+    js = Path(__file__).resolve().parent.parent / "app" / "static" / "local-time.js"
+    assert 'hasAttribute("data-relative")' in js.read_text() and "htmx" not in js.read_text()
+
+
+def test_nothing_loads_from_the_internet():
+    """highlight.js and ansi_up are served from /static/vendor and htmx (unused) is gone, so the
+    pages work on a network with no outside access."""
+    templates = Path(__file__).resolve().parent.parent / "app" / "templates"
+    for f in templates.glob("*.html"):
+        text = f.read_text()
+        assert not re.search(r'<(script|link)[^>]+(src|href)="https?://', text), f"{f.name} loads from another site"
+    for name in ("highlight.min.js", "atom-one-dark.min.css", "ansi_up.js"):
+        r = admin.get(f"/static/vendor/{name}")
+        assert r.status_code == 200 and len(r.content) > 500, name
+    assert "htmx" not in admin.get("/").text
+
+
+def test_ansible_rows():
+    """Each playbook shows its last run and schedule and is scheduled in place; the old Recent Runs
+    table and the schedule form under Settings are gone."""
+    from app.routers import playbooks as playbooks_module  # noqa: F401
+    from app.services import git_sync, inventory
+    real = (git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts)
+    git_sync.list_playbooks = lambda: [{"name": "rowtest.yml", "rel_path": "playbooks/rowtest.yml"}, {"name": "unrun.yml", "rel_path": "playbooks/unrun.yml"}]
+    git_sync.repo_synced = lambda: True
+    inventory.list_hosts = lambda: ["web1"]
+    scheduler.scheduler.start()
+    try:
+        with Session(engine) as session:
+            run = RunHistory(playbook="playbooks/rowtest.yml", status="success", triggered_by="admin")
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+        page = admin.get("/ansible").text
+        assert "Recent Runs" not in page and ">Playbooks</a>" in page and ">Inventory</a>" in page
+        assert f'href="/runs/{run.id}"><span class="badge success">success</span></a>' in page and "Never run" in page and "Not scheduled" in page
+        assert page.count('action="/settings/playbook-schedule"') == 2 and ">Schedule</summary>" in page
+        # Run sits beside the name, outside the form that holds the tag and host boxes, tied to it by id.
+        for n in (1, 2):
+            assert f'<button type="submit" form="run-{n}" class="run-btn">Run</button>' in page and f'<form method="post" action="/playbooks/run" class="playbook-run-form" id="run-{n}">' in page
+        assert page.count('name="rel_path" value="playbooks/rowtest.yml"') == 2, "the run form and the schedule form each name the playbook"
+
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": "0 3 * * *"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/ansible?ok=Schedule%20enabled"), "back on the Ansible page"
+        page = admin.get("/ansible").text
+        assert "<code>0 3 * * *</code>" in page and "· next <time" in page and ">Edit schedule</summary>" in page
+        nxt = scheduler.next_run("playbooks/rowtest.yml")
+        assert nxt is not None and nxt.utcoffset() == timedelta(0) and nxt > utcnow(), "the next run is a UTC time in the future"
+        assert scheduler.next_run("playbooks/unrun.yml") is None
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": "nope"}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ansible?error="), "a bad schedule is refused where it was typed"
+        assert "<code>0 3 * * *</code>" in admin.get("/ansible").text, "and the old one is kept"
+        r = admin.post("/settings/playbook-schedule", data={"rel_path": "playbooks/rowtest.yml", "cron": ""}, follow_redirects=False)
+        assert r.headers["location"].startswith("/ansible?ok=Schedule%20disabled") and "<code>" not in admin.get("/ansible").text.split("playbook-row", 2)[1]
+        assert scheduler.next_run("playbooks/rowtest.yml") is None
+
+        settings_page = admin.get("/settings?tab=git").text
+        assert "Playbook Schedules" not in settings_page and "schedules" not in admin.get("/settings").text.split("</nav>")[0]
+        # Sync is on both tabs and returns to the tab it was pressed on.
+        assert 'name="back" value="inventory"' in admin.get("/inventory").text
+        for back, where in (("", "/ansible?"), ("inventory", "/inventory?"), ("anything-else", "/ansible?")):
+            r = admin.post("/sync", data={"back": back}, follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"].startswith(where), (back, r.headers["location"])
+        with Session(engine) as session:
+            session.delete(session.get(RunHistory, run.id))
+            session.commit()
+    finally:
+        scheduler.scheduler.shutdown(wait=False)
+        git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts = real
+
+
+def test_settings_forms_are_separate():
+    """Git sync and Run limits are two forms with two handlers; saving one never touches the other."""
+    page = admin.get("/settings").text
+    assert 'action="/settings"' in page and 'action="/settings/limits"' in page and "recent_runs_count" not in page
+    git_form = page.split('action="/settings"')[1].split("</form>")[0]
+    assert "run_timeout_minutes" not in git_form and "command_history_keep" not in git_form and "git_repo_url" in git_form
+    limits_form = page.split('action="/settings/limits"')[1].split("</form>")[0]
+    assert "run_timeout_minutes" in limits_form and "git_repo_url" not in limits_form
+    from app.services import settings_store
+    assert admin.post("/settings/limits", data={"run_timeout_minutes": "11", "command_history_keep": "12"}).status_code == 200
+    admin.post("/settings", data={"git_repo_url": "https://git.example/x.git", "git_branch": "dev"})
+    assert settings_store.get("run_timeout_minutes") == "11" and settings_store.get("command_history_keep") == "12", "saving git settings leaves the limits alone"
+    admin.post("/settings/limits", data={"run_timeout_minutes": "30", "command_history_keep": "13"})
+    assert settings_store.get("git_repo_url") == "https://git.example/x.git" and settings_store.get("git_branch") == "dev", "saving limits leaves git settings alone"
+    for bad in ("-1", "x"):
+        r = admin.post("/settings/limits", data={"run_timeout_minutes": bad, "command_history_keep": "5"}, follow_redirects=False)
+        assert "error=" in r.headers["location"] and settings_store.get("run_timeout_minutes") == "30", bad
+    settings_store.set_many({"git_repo_url": "", "git_branch": "main", "run_timeout_minutes": "60", "command_history_keep": "20"})
+
+
+def test_approve_is_hidden_without_a_login():
+    """While ULMO_DISABLE_AUTH is set nobody is signed in, so the Overview offers Deny and the
+    request's own page, not Approve."""
+    aid = _wait()
+    real = activity_module.AUTH_DISABLED
+    activity_module.AUTH_DISABLED = True
+    try:
+        page = admin.get("/").text
+        assert f'action="/approvals/{aid}/deny"' in page and f'action="/approvals/{aid}/approve"' not in page
+    finally:
+        activity_module.AUTH_DISABLED = real
+    assert f'action="/approvals/{aid}/approve"' in admin.get("/").text
+    admin.post(f"/approvals/{aid}/deny")
 
 
 def test_runs_are_listed_by_start_time():
@@ -273,9 +590,9 @@ def _all(model):
 
 def test_old_list_pages_redirect_and_detail_pages_stay():
     r = admin.get("/runs", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/activity?tab=playbooks"
+    assert r.status_code == 303 and r.headers["location"] == "/?tab=playbooks"
     r = admin.get("/logs", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/activity?tab=syncs"
+    assert r.status_code == 303 and r.headers["location"] == "/?tab=syncs"
     for url in ("/runs", "/logs"):
         anon = client.get(url, follow_redirects=False)
         assert anon.status_code == 303 and anon.headers["location"].startswith("/login"), "still login-only"
@@ -284,15 +601,15 @@ def test_old_list_pages_redirect_and_detail_pages_stay():
     assert admin.get(f"/runs/{run.id}").status_code == 200
     sync = _all(SyncHistory)[0]
     detail = admin.get(f"/logs/{sync.id}")
-    assert detail.status_code == 200 and 'href="/activity?tab=syncs"' in detail.text and "Back to activity" in detail.text
+    assert detail.status_code == 200 and 'href="/?tab=syncs"' in detail.text and "Back to activity" in detail.text
     r = admin.get("/runs/99999999", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/activity?tab=playbooks"
+    assert r.status_code == 303 and r.headers["location"] == "/?tab=playbooks"
     r = admin.get("/logs/99999999", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/activity?tab=syncs"
+    assert r.status_code == 303 and r.headers["location"] == "/?tab=syncs"
 
     nav = admin.get("/activity").text.split("</header>")[0]
     assert ">Run History<" not in nav and ">Sync Logs<" not in nav, "both live under Activity now"
-    assert '<a href="/activity" class="active" aria-current="page">Activity</a>' in nav, "the page you are on is marked"
+    assert '<a href="/" class="active" aria-current="page">Overview</a>' in nav, "the page you are on is marked"
 
 
 def test_history_is_pruned():
@@ -376,6 +693,16 @@ def main():
     test_security_and_privacy()
     test_other_pages_do_not_repeat_the_logs()
     test_playbook_and_sync_tabs()
+    test_top_bar()
+    test_overview_all_tab()
+    test_overview_needs_you_and_running()
+    test_ansible_page_moved()
+    test_page_tabs()
+    test_times_carry_their_timezone()
+    test_nothing_loads_from_the_internet()
+    test_ansible_rows()
+    test_settings_forms_are_separate()
+    test_approve_is_hidden_without_a_login()
     test_runs_are_listed_by_start_time()
     test_old_list_pages_redirect_and_detail_pages_stay()
     test_change_log_is_bounded()

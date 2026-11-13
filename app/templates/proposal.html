@@ -38,7 +38,7 @@
     {% if p.decided_by %}by <strong>{{ p.decided_by }}</strong> {{ p.decided_at | local_time }}{% endif %}
   </p>
   {% if p.status == "failed" %}<p class="error">Approved, but it could not be applied: {{ p.result }}</p>{% endif %}
-  {% if p.status == "applied" %}<p><a href="/commands">See the saved copies on the Commands page</a></p>{% endif %}
+  {% if p.status == "applied" %}<p><a href="/commands?tab=copies">See the saved copies on the Commands page</a></p>{% endif %}
   {% endif %}
 </div>
 {% endblock %}

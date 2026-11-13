@@ -5,32 +5,48 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}ulmo{% endblock %}</title>
   <link rel="icon" href="/static/logo.png?v={{ STATIC_VERSION }}" />
-  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <link rel="stylesheet" href="/static/style.css?v={{ STATIC_VERSION }}" />
+  <noscript><style>.usermenu .menu { position: static; display: block; box-shadow: none; }</style></noscript>
 </head>
 <body>
   {% set user = current_user(request) %}
   {% if user %}
+  {% if not agent_runs_on() %}
+  <div class="killbar" role="status">
+    <span><strong>Agent runs are switched off.</strong> No agent can start a run until you switch them back on.</span>
+    <a href="/agents">Go to Agents</a>
+  </div>
+  {% endif %}
   <header class="topbar">
-    <a class="brand" href="/">ulmo</a><span class="version">{{ APP_VERSION }}</span>
+    <a class="brand" href="/"><img class="mark" src="/static/logo.png?v={{ STATIC_VERSION }}" alt="" />ulmo</a>
     {% set waiting = pending_approvals() %}
     <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Show the menu" />
-    <label for="nav-toggle" class="menu-btn">Menu{% if waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</label>
+    <label for="nav-toggle" class="menu-btn">Menu{% if waiting %} <span class="navcount">{{ waiting }}</span>{% endif %}</label>
     {% set path = request.url.path %}
     <nav>
-      {% for href, label in [("/", "Playbooks"), ("/inventory", "Inventory"), ("/agents", "Agents"), ("/approvals", "Approvals"), ("/commands", "Commands"), ("/activity", "Activity"), ("/settings", "Settings")] %}
-      {% set here = (path == "/" or path.startswith(("/runs", "/playbooks"))) if href == "/" else path.startswith(href) %}
-      <a href="{{ href }}"{% if here %} class="active" aria-current="page"{% endif %}>{{ label }}{% if href == "/approvals" and waiting %} <span class="badge running">{{ waiting }}</span>{% endif %}</a>
+      {% for href, label in [("/", "Overview"), ("/approvals", "Approvals"), ("/ansible", "Ansible"), ("/commands", "Commands"), ("/agents", "Agents")] %}
+      {% set here = (path == "/") if href == "/" else (path.startswith(("/ansible", "/runs", "/playbooks", "/inventory")) if href == "/ansible" else path.startswith(href)) %}
+      {% set attn = href == "/approvals" and waiting %}
+      <a href="{{ href }}"{% if here %} class="active" aria-current="page"{% endif %}{% if attn %} data-attn{% endif %}>{{ label }}{% if attn %} <span class="navcount">{{ waiting }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
-    {% if AUTH_DISABLED %}
-    <span class="who muted">auth disabled</span>
-    {% else %}
-    <form method="post" action="/logout" class="logout-form">
-      <span class="who">{{ user.username }}</span>
-      <button type="submit">Log out</button>
-    </form>
-    {% endif %}
+    <span class="spacer"></span>
+    <div class="usermenu">
+      <button type="button" class="usermenu-btn{% if path.startswith('/settings') %} active{% endif %}" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu">
+        <span class="avatar">{{ (user.username or "?")[:1] | upper }}</span><span class="uname">{{ user.username }}</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="menu" id="user-menu">
+        <a href="/settings"{% if path.startswith("/settings") %} aria-current="page"{% endif %}>Settings</a>
+        <div class="sep"></div>
+        {% if AUTH_DISABLED %}
+        <div class="ver">Auth disabled</div>
+        {% else %}
+        <form method="post" action="/logout"><button type="submit">Log out</button></form>
+        {% endif %}
+        <div class="sep"></div>
+        <div class="ver">ulmo {{ APP_VERSION }}</div>
+      </div>
+    </div>
   </header>
   {% endif %}
   <main class="container">
@@ -38,5 +54,6 @@
   </main>
   <script src="/static/local-time.js?v={{ STATIC_VERSION }}"></script>
   <script src="/static/filter.js?v={{ STATIC_VERSION }}"></script>
+  <script src="/static/menu.js?v={{ STATIC_VERSION }}"></script>
 </body>
 </html>

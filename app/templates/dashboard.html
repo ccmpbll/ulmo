@@ -1,21 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Playbooks - ulmo{% endblock %}
+{% from "_macros.html" import subnav %}
+{% block title %}Ansible - ulmo{% endblock %}
 {% block content %}
 {% if request.query_params.get("error") %}<p class="error">{{ request.query_params.get("error") }}</p>{% endif %}
 {% if request.query_params.get("ok") %}<p class="ok">{{ request.query_params.get("ok") }}</p>{% endif %}
 
 <div class="page-header">
-  <h1>Playbooks</h1>
+  <div>
+    <h1>Ansible</h1>
+    <p class="sub">Playbooks and inventory from the synced git repo.</p>
+  </div>
   <form method="post" action="/sync">
-    <button type="submit" class="sync-btn">Sync from Git</button>
+    <button type="submit" class="secondary">Sync from Git</button>
   </form>
 </div>
+{{ subnav([("/ansible", "Playbooks", true), ("/inventory", "Inventory", false)]) }}
 
-<div class="card">
+<div class="card flush">
   {% if not repo_synced %}
-  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then click "Sync from Git".</p>
+  <div class="empty-state">
+    <p>No repo synced yet.</p>
+    <p class="muted">Set the git repository in <a href="/settings">Settings</a>, then press "Sync from Git".</p>
+  </div>
   {% elif not playbooks %}
-  <p class="muted">No playbooks found in the configured subdirectory.</p>
+  <div class="empty-state">
+    <p>No playbooks found in the configured subdirectory.</p>
+    <p class="muted">Check the playbooks subdirectory in <a href="/settings">Settings</a>.</p>
+  </div>
   {% else %}
   {% for pb in playbooks %}
   <div class="playbook-row">
@@ -23,8 +34,26 @@
       <a class="playbook-name" href="/playbooks/view?rel_path={{ pb.rel_path | urlencode }}">{{ pb.name }}</a>
       <span class="playbook-path">{{ pb.rel_path }}</span>
     </div>
-    <form method="post" action="/playbooks/run" class="playbook-run-form">
+    <div class="playbook-facts">
+      <span class="fact">
+        {% if pb.last_run %}Last run <a href="/runs/{{ pb.last_run.id }}"><span class="badge {{ pb.last_run.status }}">{{ pb.last_run.status }}</span></a> {{ pb.last_run.started_at | local_ago }}{% else %}<span class="muted">Never run</span>{% endif %}
+      </span>
+      <span class="fact">
+        {% if pb.cron %}Runs <code>{{ pb.cron }}</code>{% if pb.next_run %} · next {{ pb.next_run | local_ago }}{% endif %}{% else %}<span class="muted">Not scheduled</span>{% endif %}
+        <details class="schedule-details">
+          <summary>{{ "Edit schedule" if pb.cron else "Schedule" }}</summary>
+          <form method="post" action="/settings/playbook-schedule" class="schedule-form">
+            <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
+            <input type="text" name="cron" value="{{ pb.cron }}" placeholder="*/30 * * * *  (blank = off)" aria-label="Cron schedule for {{ pb.name }}" />
+            <button type="submit" class="secondary sm">Save</button>
+          </form>
+        </details>
+      </span>
+    </div>
+    <button type="submit" form="run-{{ loop.index }}" class="run-btn">Run</button>
+    <form method="post" action="/playbooks/run" class="playbook-run-form" id="run-{{ loop.index }}">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
+      {% if pb.tags or pb.tag_error or hosts %}
       <div class="run-options">
         {% if pb.tags %}
         <div class="chip-section">
@@ -55,32 +84,10 @@
         </details>
         {% endif %}
       </div>
-      <button type="submit">Run</button>
+      {% endif %}
     </form>
   </div>
   {% endfor %}
   {% endif %}
-</div>
-
-<div class="page-header"><h2>Recent Runs</h2></div>
-<div class="card">
-  <table>
-    <thead><tr><th>Playbook</th><th>Status</th><th>Started</th></tr></thead>
-    <tbody>
-      {% for run in recent_runs %}
-      <tr>
-        <td>
-          <a href="/runs/{{ run.id }}">{{ run.playbook }}</a>
-          {% if run.tags %}<span class="muted"> ({{ run.tags }})</span>{% endif %}
-          {% if run.limit %}<span class="muted"> [{{ run.limit }}]</span>{% endif %}
-        </td>
-        <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
-        <td>{{ run.started_at | local_time }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="3" class="muted">No runs yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </div>
 {% endblock %}

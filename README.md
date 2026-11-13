@@ -12,14 +12,16 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 - Lists playbooks from the synced repo with inline tag (`--tags`) and host (`--limit`)
   selection; live colorized log streaming, cancel, and a configurable run timeout (default 60 min)
 - Live per-task progress and a structured Play Recap on completion
-- One **Activity** page for playbook runs, command runs, git syncs, API requests and changes: newest first,
-  paged, filterable. History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
+- An **Overview** landing page: what is waiting on you (approve or deny agent requests right there), what is
+  running now, and the activity log of playbook runs, command runs, git syncs, API requests and changes: newest first,
+  paged, filterable (the All tab merges them). History is pruned: the newest 500 playbook runs and 500 syncs are kept (a run's log
   goes with it; runs in progress are never touched), 500 command runs, 500 approvals and 5,000 each of requests and changes.
-- View playbook/inventory YAML, syntax highlighted (read-only)
-- Per-playbook cron schedules, independent of the git sync schedule
+- **Ansible** (top bar): the playbooks and the inventory as two tabs; view their YAML, syntax highlighted (read-only)
+- Per-playbook cron schedules, set on each playbook's row on the Ansible page (with its last run and next run), independent of the git sync schedule
+- No outside network needed: the syntax highlighter and log colouring ship in `app/static/vendor/`
 - Run notifications via Pushover and/or [ntfy](https://ntfy.sh) — every run or failures only
 - "Sync from Git" installs collections from the repo's `requirements.yaml`; each sync's full output is
-  under Activity -> Syncs
+  under Overview -> Syncs
 - Settings backup/restore as YAML
 - **Commands**: a separate allowlist of fixed SSH commands with typed blanks and the hosts that offer
   them, edited in the UI with saved copies. A host signs in with an SSH key or a password (see below)
@@ -80,13 +82,13 @@ that playbook; matching is exact, so wildcards, groups and `a:b` patterns are re
 reads a name as a host *or* a group, so a host that shares its name with a group cannot be
 granted or used, and everything is refused while the inventory cannot be read. Runs go through
 the same code as the Run button (same `ansible-runner` call, no extra variables or check mode)
-and show up under Activity -> Playbook runs as `agent:<name>`.
+and show up under Overview -> Playbook runs as `agent:<name>`.
 
 Guard rails: a run is refused (409) while another run of the same playbook is going on any of
 the same hosts (a UI run with no limit counts as all hosts), and at most 5 agent runs go at
 once (429). **Agent runs** on the page is a kill switch: when off, no agent can start a run
 (reading and cancelling still work); it is deliberately not part of Settings backup/restore.
-Every change made on the Agents and Commands pages, and every API request and command run, is listed on the **Activity** page (paged, with filters).
+Every change made on the Agents and Commands pages, and every API request and command run, is listed on the **Overview** page (paged, with filters).
 
 **Running commands over SSH.** This is a separate construct from Ansible: its own hosts and its
 own commands, managed on the **Commands** page and stored in one file, `commands.yml` in the data
@@ -279,7 +281,7 @@ Serve ulmo over HTTPS so tokens are not sent in clear.
 
 ## SSH access to target hosts
 
-**Settings → SSH Keys** (first section on the page) — paste the private key(s) used to connect to managed
+**Settings → SSH keys** — paste the private key(s) used to connect to managed
 hosts, for Ansible and for the Commands page. Symlinked
 into the container at `/home/ansible/.ssh` and `/root/.ssh` to match the common
 `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` inventory convention, so no

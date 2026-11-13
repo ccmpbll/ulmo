@@ -68,6 +68,15 @@ inventory.list_groups = lambda: ["all", "ungrouped"]
 
 client = TestClient(app)  # no login: scripts and agents
 admin = TestClient(app)   # signed in
+
+
+def get_all(path, tabs):
+    """GET every tab of a page and join them: the page's content is split into tabs now, and most of
+    these checks care that a piece of text is on the page somewhere, not which tab holds it."""
+    from types import SimpleNamespace
+    pages = [admin.get(f"{path}?tab={t}") for t in tabs]
+    return SimpleNamespace(text="".join(p.text for p in pages), status_code=pages[0].status_code)
+
 sent: list[tuple] = []
 
 
@@ -217,7 +226,7 @@ def test_tokens_are_separate_credentials():
 def test_token_creation_page():
     r = admin.post("/admin-tokens", data={"name": "pagetoken", "expires_days": "30"})
     assert r.status_code == 200 and "ulmo_admin_" in r.text and r.headers["cache-control"] == "no-store"
-    assert "pagetoken" in admin.get("/agents").text and "ulmo_admin_" not in admin.get("/agents").text, "the token is shown once"
+    assert "pagetoken" in get_all("/agents", ("agents", "roles", "tokens")).text and "ulmo_admin_" not in get_all("/agents", ("agents", "roles", "tokens")).text, "the token is shown once"
     assert admin.post("/admin-tokens", data={"name": "pagetoken"}).status_code == 400, "names are unique"
     assert admin.post("/admin-tokens", data={"name": "bad name!"}).status_code == 400
     assert admin.post("/admin-tokens", data={"name": "x", "expires_days": "soon"}).status_code == 400
@@ -280,9 +289,9 @@ def test_proposal_changes_nothing_and_is_shown_and_notified():
     assert sent and "proposer" in sent[0][0] and "pfsense-update-check" in sent[0][1] and sent[0][2] == f"https://ulmo.example/proposals/{pid}", sent
     settings_store.set_many({"public_url": ""})
 
-    page = admin.get("/approvals").text
+    page = get_all("/approvals", ("waiting", "history")).text
     assert "Change proposals" in page and f"/proposals/{pid}" in page and "proposer" in page
-    assert "Approvals <span" in admin.get("/agents").text, "the nav counts waiting proposals"
+    assert "Approvals <span" in get_all("/agents", ("agents", "roles", "tokens")).text, "the nav counts waiting proposals"
     detail = admin.get(f"/proposals/{pid}").text
     assert "pfsense-update-check" in detail and "The host would receive: timeout -k 5 60 pfSense-upgrade -c" in detail
     assert "pfSense update check for the nightly sweep" in detail and f"/proposals/{pid}/approve" in detail
@@ -603,7 +612,7 @@ def test_note_is_escaped_and_cleaned():
     body = {**PF, "description": "<img src=x onerror=alert(1)>"}
     pid2 = _propose(token, [{"op": "save_command", "name": "html", "body": body}]).json()["id"]
     assert "<img src=x" not in admin.get(f"/proposals/{pid2}").text
-    assert "<img src=x" not in admin.get("/approvals").text
+    assert "<img src=x" not in get_all("/approvals", ("waiting", "history")).text
 
 
 def test_locked_while_auth_is_disabled():
@@ -936,7 +945,7 @@ def main():
     settings_store.set_many({"notify_pushover_token": "t", "notify_pushover_user": "u"})
     auth_module.create_user("admin", "pw-for-tests")
     r = admin.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)
-    assert r.status_code == 303 and admin.get("/agents").status_code == 200, "test login failed"
+    assert r.status_code == 303 and get_all("/agents", ("agents", "roles", "tokens")).status_code == 200, "test login failed"
     test_tokens_are_separate_credentials()
     test_token_creation_page()
     test_reads()

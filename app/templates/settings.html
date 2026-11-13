@@ -1,12 +1,70 @@
 {% extends "base.html" %}
 {% block title %}Settings - ulmo{% endblock %}
 {% block content %}
-<h1>Settings</h1>
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="sub">Git sync, SSH keys, notifications, backups and accounts.</p>
+  </div>
+</div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
 
+<div class="split">
+  <nav class="sidenav" aria-label="Settings sections">
+    {% for key, label in tabs %}<a href="/settings?tab={{ key }}"{% if tab == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+  </nav>
+  <div class="split-body">
+{% if tab == "git" %}
 <div class="settings-section">
-  <h2>SSH Keys</h2>
+  <h2>Git sync</h2>
+  <div class="card">
+    <form method="post" action="/settings">
+      <label>Git repository URL
+        <input type="text" name="git_repo_url" value="{{ settings.git_repo_url }}" placeholder="https://git.example.com/Home/Ansible.git" />
+      </label>
+      <label>Branch
+        <input type="text" name="git_branch" value="{{ settings.git_branch }}" />
+      </label>
+      <label>Playbooks subdirectory
+        <input type="text" name="playbooks_subdir" value="{{ settings.playbooks_subdir }}" />
+      </label>
+      <label>Inventory path (file or directory, relative to repo root)
+        <input type="text" name="inventory_path" value="{{ settings.inventory_path }}" placeholder="inventory.yaml" />
+      </label>
+      <label>Requirements path (relative to repo root — blank auto-discovers requirements.yaml at repo root, then playbooks subdirectory)
+        <input type="text" name="requirements_path" value="{{ settings.requirements_path }}" placeholder="requirements.yaml" />
+      </label>
+      <label>Sync schedule (cron, 5-field — blank disables scheduled sync)
+        <input type="text" name="git_sync_cron" value="{{ settings.git_sync_cron }}" placeholder="*/30 * * * *" />
+      </label>
+      <label>Extra ansible-playbook args
+        <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
+      </label>
+      <button type="submit">Save git sync settings</button>
+    </form>
+  </div>
+</div>
+
+<div class="settings-section">
+  <h2>Run limits</h2>
+  <div class="card">
+    <form method="post" action="/settings/limits">
+      <div class="form-grid">
+        <label>Run timeout, minutes (0 = no timeout)
+          <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
+        </label>
+        <label>Saved copies of the command library to keep (for Restore)
+          <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
+        </label>
+      </div>
+      <button type="submit">Save run limits</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if tab == "ssh" %}
+<div class="settings-section">
   <div class="card">
     {% if ssh_link_warnings %}
     <p class="error">
@@ -55,88 +113,9 @@
     </form>
   </div>
 </div>
-
+{% endif %}
+{% if tab == "notify" %}
 <div class="settings-section">
-  <h2>Git Sync</h2>
-  <div class="card">
-    <form method="post" action="/settings">
-      <label>Git repository URL
-        <input type="text" name="git_repo_url" value="{{ settings.git_repo_url }}" placeholder="https://git.example.com/Home/Ansible.git" />
-      </label>
-      <label>Branch
-        <input type="text" name="git_branch" value="{{ settings.git_branch }}" />
-      </label>
-      <label>Playbooks subdirectory
-        <input type="text" name="playbooks_subdir" value="{{ settings.playbooks_subdir }}" />
-      </label>
-      <label>Inventory path (file or directory, relative to repo root)
-        <input type="text" name="inventory_path" value="{{ settings.inventory_path }}" placeholder="inventory.yaml" />
-      </label>
-      <label>Requirements path (relative to repo root — blank auto-discovers requirements.yaml at repo root, then playbooks subdirectory)
-        <input type="text" name="requirements_path" value="{{ settings.requirements_path }}" placeholder="requirements.yaml" />
-      </label>
-      <label>Sync schedule (cron, 5-field — blank disables scheduled sync)
-        <input type="text" name="git_sync_cron" value="{{ settings.git_sync_cron }}" placeholder="*/30 * * * *" />
-      </label>
-      <label>Extra ansible-playbook args
-        <input type="text" name="extra_args" value="{{ settings.extra_args }}" placeholder="--tags foo --limit bar" />
-      </label>
-      <hr style="border-color: var(--border); margin: 16px 0;" />
-      <label>Recent runs to show on dashboard
-        <input type="number" name="recent_runs_count" value="{{ settings.recent_runs_count }}" min="1" step="1" />
-      </label>
-      <label>Run timeout, minutes (0 = no timeout)
-        <input type="number" name="run_timeout_minutes" value="{{ settings.run_timeout_minutes }}" min="0" step="1" />
-      </label>
-      <label>Saved copies of the command library to keep (for Restore)
-        <input type="number" name="command_history_keep" value="{{ settings.command_history_keep }}" min="1" max="500" step="1" />
-      </label>
-      <button type="submit">Save settings</button>
-    </form>
-  </div>
-</div>
-
-<div class="settings-section">
-  <h2>Backup &amp; Restore</h2>
-  <div class="card">
-    <p class="muted">
-      Backs up the settings above (git repo, schedule, etc.) as a YAML file. SSH keys and user
-      accounts are <strong>not</strong> included — those are credentials, not config, so they're
-      kept out of a file you might share or store loosely.
-    </p>
-    <a class="btn secondary" href="/settings/backup">Download backup</a>
-    <hr style="border-color: var(--border); margin: 16px 0;" />
-    <form method="post" action="/settings/restore" enctype="multipart/form-data">
-      <label>Restore from backup file
-        <input type="file" name="backup_file" accept=".yaml,.yml" required />
-      </label>
-      <button type="submit" class="secondary">Restore</button>
-    </form>
-  </div>
-</div>
-
-<div class="settings-section">
-  <h2>Authentication</h2>
-  <div class="card">
-    {% if auth_disabled %}
-    <p class="muted">
-      Login is currently <strong>disabled</strong> via the <code>ULMO_DISABLE_AUTH</code>
-      environment variable — every request is treated as a single anonymous user, and password /
-      user management is unavailable. Unset that variable and restart the container to re-enable
-      login.
-    </p>
-    {% else %}
-    <p class="muted">
-      To run ulmo without a login screen (e.g. behind your own reverse proxy or VPN-only
-      network), set the <code>ULMO_DISABLE_AUTH=true</code> environment variable and restart
-      the container.
-    </p>
-    {% endif %}
-  </div>
-</div>
-
-<div class="settings-section">
-  <h2>Notifications</h2>
   <div class="card">
     <form method="post" action="/settings/notifications">
       <label>Notify on
@@ -163,24 +142,43 @@
     </form>
   </div>
 </div>
-
+{% endif %}
+{% if tab == "backup" %}
 <div class="settings-section">
-  <h2>Playbook Schedules</h2>
   <div class="card">
-    {% if playbooks %}
-    {% for pb in playbooks %}
-    <form method="post" action="/settings/playbook-schedule" class="schedule-row">
-      <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      <div class="schedule-name">
-        <span class="playbook-name">{{ pb.name }}</span>
-        <span class="muted" style="font-size:0.78rem;">{{ pb.rel_path }}</span>
-      </div>
-      <input type="text" name="cron" value="{{ pb.cron }}" placeholder="*/30 * * * *  (blank = disabled)" class="schedule-cron" />
-      <button type="submit" class="secondary">Save</button>
+    <p class="muted">
+      Backs up the settings above (git repo, schedule, etc.) as a YAML file. SSH keys and user
+      accounts are <strong>not</strong> included — those are credentials, not config, so they're
+      kept out of a file you might share or store loosely.
+    </p>
+    <a class="btn secondary" href="/settings/backup">Download backup</a>
+    <hr style="border-color: var(--border); margin: 16px 0;" />
+    <form method="post" action="/settings/restore" enctype="multipart/form-data">
+      <label>Restore from backup file
+        <input type="file" name="backup_file" accept=".yaml,.yml" required />
+      </label>
+      <button type="submit" class="secondary">Restore</button>
     </form>
-    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% if tab == "account" %}
+<div class="settings-section">
+  <h2>Authentication</h2>
+  <div class="card">
+    {% if auth_disabled %}
+    <p class="muted">
+      Login is currently <strong>disabled</strong> via the <code>ULMO_DISABLE_AUTH</code>
+      environment variable — every request is treated as a single anonymous user, and password /
+      user management is unavailable. Unset that variable and restart the container to re-enable
+      login.
+    </p>
     {% else %}
-    <p class="muted">Sync a repo first to see playbooks here.</p>
+    <p class="muted">
+      To run ulmo without a login screen (e.g. behind your own reverse proxy or VPN-only
+      network), set the <code>ULMO_DISABLE_AUTH=true</code> environment variable and restart
+      the container.
+    </p>
     {% endif %}
   </div>
 </div>
@@ -218,4 +216,7 @@
   </div>
 </div>
 {% endif %}
+{% endif %}
+  </div>
+</div>
 {% endblock %}

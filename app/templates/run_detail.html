@@ -7,7 +7,7 @@
     <form method="post" action="/runs/{{ run.id }}/cancel" onsubmit="return confirm('Cancel this run?');" id="cancel-form">
       <button type="submit" class="danger" id="cancel-btn" {% if run.status != "running" %}disabled{% endif %}>Cancel</button>
     </form>
-    <a class="btn secondary" href="/">Back to playbooks</a>
+    <a class="btn secondary" href="/ansible">Back to playbooks</a>
   </div>
 </div>
 {% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
@@ -49,7 +49,7 @@
   </table>
 </div>
 
-<script src="https://unpkg.com/ansi_up@5.2.1/ansi_up.js"></script>
+<script src="/static/vendor/ansi_up.js"></script>
 <script>
   const logEl = document.getElementById("log");
   const ansiUp = new AnsiUp();

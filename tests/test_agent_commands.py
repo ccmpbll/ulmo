@@ -94,6 +94,15 @@ client = TestClient(app)
 admin = TestClient(app)
 
 
+def get_all(path, tabs):
+    """GET every tab of a page and join them: the page's content is split into tabs now, and most of
+    these checks care that a piece of text is on the page somewhere, not which tab holds it."""
+    from types import SimpleNamespace
+    pages = [admin.get(f"{path}?tab={t}") for t in tabs]
+    return SimpleNamespace(text="".join(p.text for p in pages), status_code=pages[0].status_code)
+
+
+
 class FakeStdout:
     def __init__(self, proc):
         self.proc = proc
@@ -625,7 +634,7 @@ def test_agents_page_roles_ui():
     role = agents.create_role("ui-role")
     r = admin.post(f"/roles/{role.id}/commands", data={"commands": ["restart", "logs"]}, follow_redirects=False)
     assert r.status_code == 303 and agents.role_commands(role.id) == ["logs", "restart"]
-    page = admin.get("/agents").text
+    page = get_all("/agents", ("agents", "roles", "tokens")).text
     assert 'value="restart" checked' in page and 'value="logs" checked' in page, "the role's commands are ticked"
     assert 'value="say" checked' not in page.split(f'id="role-commands-{role.id}"')[1].split("</form>")[0], "and the others are not"
     assert "runs on gandalf" in page
@@ -638,7 +647,7 @@ def test_agents_page_roles_ui():
     with Session(engine) as session:
         session.add(RoleCommand(role_id=role.id, command="vanished"))
         session.commit()
-    assert "vanished is no longer in the command library" in admin.get("/agents").text
+    assert "vanished is no longer in the command library" in get_all("/agents", ("agents", "roles", "tokens")).text
     admin.post(f"/roles/{role.id}/commands", data={"commands": ["logs"]})
     assert agents.role_commands(role.id) == ["logs"]
 
@@ -664,7 +673,7 @@ def main():
     init_db()
     auth_module.create_user("admin", "pw-for-tests")
     r = admin.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)
-    assert r.status_code == 303 and admin.get("/agents").status_code == 200, "test login failed"
+    assert r.status_code == 303 and get_all("/agents", ("agents", "roles", "tokens")).status_code == 200, "test login failed"
     test_ssh_command()
     test_probe()
     test_default_deny_and_validation()

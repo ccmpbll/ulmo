@@ -87,6 +87,15 @@ client = TestClient(app)  # an API caller
 admin = TestClient(app)  # a logged-in browser
 
 
+def get_all(path, tabs):
+    """GET every tab of a page and join them: the page's content is split into tabs now, and most of
+    these checks care that a piece of text is on the page somewhere, not which tab holds it."""
+    from types import SimpleNamespace
+    pages = [admin.get(f"{path}?tab={t}") for t in tabs]
+    return SimpleNamespace(text="".join(p.text for p in pages), status_code=pages[0].status_code)
+
+
+
 def _h(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
@@ -304,7 +313,7 @@ def test_admin_side():
         follow_redirects=False,
     )
     assert r.status_code == 303
-    page = admin.get("/agents").text
+    page = get_all("/agents", ("agents", "roles", "tokens")).text
     assert "ui-role" in page and "playbooks/restart.yml" in page and "db1, web1" in page
 
     r = admin.post(f"/roles/{role.id}/grants", data={"playbook": "playbooks/restart.yml", "hosts": ["ghost"]})
@@ -605,7 +614,7 @@ def main():
     init_db()
     auth_module.create_user("admin", "pw-for-tests")
     r = admin.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)
-    assert r.status_code == 303 and admin.get("/agents").status_code == 200, "test login failed"
+    assert r.status_code == 303 and get_all("/agents", ("agents", "roles", "tokens")).status_code == 200, "test login failed"
     test_default_deny()
     test_granted_run_uses_the_runner_unchanged()
     test_kill_switch()

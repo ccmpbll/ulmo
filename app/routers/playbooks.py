@@ -6,14 +6,14 @@ from sqlmodel import Session, select
 
 from app.database import engine
 from app.deps import require_login
-from app.models import RunHistory
+from app.models import PlaybookSchedule, RunHistory
 from app.services import git_sync, inventory, playbook_tags, runner, scheduler, settings_store
 from app.templating import templates
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/ansible", response_class=HTMLResponse)
 def dashboard(request: Request):
     playbooks = git_sync.list_playbooks()
     tag_cache = playbook_tags.load_cache()
@@ -21,21 +21,19 @@ def dashboard(request: Request):
         result = tag_cache.get(pb["rel_path"], playbook_tags.EMPTY_RESULT)
         pb["tags"] = result["tags"]
         pb["tag_error"] = result["error"]
-    try:
-        recent_runs_count = max(1, int(settings_store.get("recent_runs_count")))
-    except ValueError:
-        recent_runs_count = 5
-
     with Session(engine) as session:
-        recent_runs = session.exec(
-            select(RunHistory).order_by(RunHistory.started_at.desc()).limit(recent_runs_count)
-        ).all()
+        crons = {s.rel_path: s.cron for s in session.exec(select(PlaybookSchedule)).all()}
+        for pb in playbooks:
+            pb["last_run"] = session.exec(
+                select(RunHistory).where(RunHistory.playbook == pb["rel_path"]).order_by(RunHistory.started_at.desc(), RunHistory.id.desc()).limit(1)
+            ).first()
+            pb["cron"] = crons.get(pb["rel_path"], "")
+            pb["next_run"] = scheduler.next_run(pb["rel_path"]) if pb["cron"] else None
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "playbooks": playbooks,
-            "recent_runs": recent_runs,
             "repo_synced": git_sync.repo_synced(),
             "hosts": inventory.list_hosts(),
         },
@@ -47,19 +45,20 @@ def view_playbook(request: Request, rel_path: str, _user=Depends(require_login))
     try:
         content = git_sync.read_playbook(rel_path)
     except ValueError:
-        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+        return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
     return templates.TemplateResponse(
         request, "playbook_view.html", {"rel_path": rel_path, "content": content}
     )
 
 
 @router.post("/sync")
-def sync(request: Request, user=Depends(require_login)):
+def sync(request: Request, back: str = Form(""), user=Depends(require_login)):
     record = git_sync.sync_now(triggered_by=user.username)
+    page = "/inventory" if back == "inventory" else "/ansible"  # the tab the button was pressed on
     if record.status == "failed":
-        return RedirectResponse(f"/?error={quote(record.message[:200])}", status_code=303)
+        return RedirectResponse(f"{page}?error={quote(record.message[:200])}", status_code=303)
     scheduler.reap_orphaned_schedules()
-    return RedirectResponse("/?ok=Sync+complete", status_code=303)
+    return RedirectResponse(f"{page}?ok=Sync+complete", status_code=303)
 
 
 @router.post("/playbooks/run")
@@ -78,5 +77,5 @@ def run_playbook(
             limit=",".join(limit),
         )
     except ValueError:
-        return RedirectResponse("/?error=Unknown+playbook", status_code=303)
+        return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
     return RedirectResponse(f"/runs/{record.id}", status_code=303)

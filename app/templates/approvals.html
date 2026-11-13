@@ -1,10 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Approvals - ulmo{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Approvals</h1></div>
-<p class="muted">What agents asked to run that needs your say-so. Nothing runs until you approve it, and a request nobody decides on expires after 15 minutes.</p>
+<div class="page-header">
+  <div>
+    <h1>Approvals</h1>
+    <p class="sub">What agents asked to run that needs your say-so. Nothing runs until you approve it, and a request nobody decides on expires after 15 minutes.</p>
+  </div>
+</div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% set n_waiting = (pending | length) + (proposals_pending | length) %}
+<div class="subnav">
+  <a href="/approvals"{% if tab == "waiting" %} class="active" aria-current="page"{% endif %}>Waiting{% if n_waiting %} ({{ n_waiting }}){% endif %}</a>
+  <a href="/approvals?tab=history"{% if tab == "history" %} class="active" aria-current="page"{% endif %}>History</a>
+</div>
 
+{% if tab == "waiting" %}
 <div class="card">
   <div class="section-head"><h3>Waiting for you</h3></div>
   {% for a in pending %}
@@ -39,22 +49,9 @@
   <p class="empty">No proposals are waiting.</p>
   {% endfor %}
 </div>
-<div class="card">
-  <div class="section-head"><h3>Recent proposals</h3></div>
-  {% for p in proposals_recent %}
-  <div class="decision">
-    <div class="decision-head">
-      <a href="/proposals/{{ p.id }}">{{ p.token_name }}: proposal {{ p.id }}</a>
-      <span class="badge {{ p.badge }}">{{ p.status }}</span>
-    </div>
-    <div class="muted decision-meta">{{ p.created_at | local_time }}{% if p.decided_by %} · {{ p.decided_by }}{% endif %}</div>
-  </div>
-  {% else %}
-  <p class="empty">No proposals yet.</p>
-  {% endfor %}
 </div>
-</div>
-
+{% else %}
+<div class="settings-section">
 <h2>Agent requests</h2>
 <div class="card">
   <div class="section-head"><h3>Recent decisions</h3></div>
@@ -71,4 +68,24 @@
   <p class="empty">No decisions yet.</p>
   {% endfor %}
 </div>
+</div>
+
+<div class="settings-section">
+<h2>Change proposals</h2>
+<div class="card">
+  <div class="section-head"><h3>Recent proposals</h3></div>
+  {% for p in proposals_recent %}
+  <div class="decision">
+    <div class="decision-head">
+      <a href="/proposals/{{ p.id }}">{{ p.token_name }}: proposal {{ p.id }}</a>
+      <span class="badge {{ p.badge }}">{{ p.status }}</span>
+    </div>
+    <div class="muted decision-meta">{{ p.created_at | local_time }}{% if p.decided_by %} · {{ p.decided_by }}{% endif %}</div>
+  </div>
+  {% else %}
+  <p class="empty">No proposals yet.</p>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
 {% endblock %}

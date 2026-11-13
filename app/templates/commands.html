@@ -3,17 +3,23 @@
 {% block title %}Commands - ulmo{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>Commands</h1>
+  <div>
+    <h1>Commands</h1>
+    <p class="sub">What agents may run over SSH, and where. A command is a fixed command line with typed blanks; a host lists the commands it offers. A role then decides which commands an agent may use (on the <a href="/agents">Agents</a> page). All of it is stored in one file, <code>commands.yml</code>.</p>
+  </div>
   <a class="btn secondary" href="/commands/download">Download commands.yml</a>
 </div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% if ok %}<p class="ok">{{ ok }}</p>{% endif %}
 {% if locked %}<p class="error">Changes are disabled while ULMO_DISABLE_AUTH is set.</p>{% endif %}
 {% if load_error %}<p class="error">commands.yml on disk does not parse, so the last good copy is in use: {{ load_error }}</p>{% endif %}
-<p class="muted">What agents may run over SSH, and where. A command is a fixed command line with typed blanks; a host lists the commands it offers. A role then decides which commands an agent may use (on the <a href="/agents">Agents</a> page). All of it is stored in one file, <code>commands.yml</code>.</p>
 
+<div class="subnav">
+  {% for key, label in tabs %}<a href="/commands{{ '' if key == 'hosts' else '?tab=' ~ key }}"{% if tab == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+</div>
+
+{% if tab == "hosts" %}
 <div class="settings-section">
-  <h2>Hosts</h2>
   <div class="card">
     <table class="stack">
       <thead><tr><th>Host</th><th>Connects as</th><th>Signs in with</th><th>Offers</th><th></th></tr></thead>
@@ -37,7 +43,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No hosts yet.</td></tr>
+        <tr><td colspan="5" class="muted">No hosts yet. Add one below, then choose which commands it offers.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -85,6 +91,9 @@
   </div>
 </div>
 
+{% endif %}
+
+{% if tab == "commands" %}
 <div class="settings-section">
   <div class="section-head">
     <h2 style="border: 0; padding: 0; margin: 0;">Commands</h2>
@@ -108,15 +117,17 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No commands yet.</td></tr>
+        <tr><td colspan="5" class="muted">No commands yet. Press "New command" to write the first one.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
+{% endif %}
+
+{% if tab == "copies" %}
 <div class="settings-section">
-  <h2>Saved copies</h2>
   <div class="card">
     <p class="muted">Every change keeps the copy it replaced. Each line says what the change after that copy was; open one to see what restoring it would undo. The number kept is set under Settings.</p>
     <table class="stack">
@@ -143,4 +154,5 @@
     </table>
   </div>
 </div>
+{% endif %}
 {% endblock %}
