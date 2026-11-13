@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import AUTH_DISABLED
 from app.deps import require_login
-from app.services import agents, approvals, file_access, proposals
+from app.services import agents, approvals, proposals
 from app.templating import templates
 
 # Where an admin decides what agents asked to run. Cookie-session login only, so an agent
@@ -25,8 +25,7 @@ def approval_page(request: Request, approval_id: int):
     if approval is None:
         return RedirectResponse("/approvals", status_code=303)
     # The reason for a refused decision comes from the session, not the URL, so a link cannot put its own text on this page.
-    edit = file_access.view(approval) if approval.kind == "file" and approval.status == "pending" else None
-    return templates.TemplateResponse(request, "approval.html", {"a": approval, "edit": edit, "error": request.session.pop("approval_error", ""), "locked": AUTH_DISABLED})
+    return templates.TemplateResponse(request, "approval.html", {"a": approval, "error": request.session.pop("approval_error", ""), "locked": AUTH_DISABLED})
 
 
 def _decide(request: Request, approval_id: int, approve: bool, user, back: str = ""):

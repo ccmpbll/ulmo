@@ -14,6 +14,13 @@ Operations (library changes are applied first, in order, then role changes, in o
     host_offer         {host, add?, remove?}           commands a host offers (delta, strict)
     role_allow         {role, add?: [{command, needs_approval}], remove?}
     role_set_approval  {role, command, needs_approval}
+    save_file          {path, text, base}              create or replace one workspace file (any file, not only a playbook)
+
+File edits are their own kind of proposal: a proposal that has a save_file operation has only save_file
+operations (a file and a command are applied by different code, and mixing them could leave one done and
+the other not). `text` is the whole new file; `base` is the version the file was read at, "" to create
+it, so an edit made against a file that has since changed is refused. They are applied together or not
+at all, through the same locked, version-checked write the Files page uses, and not while a playbook runs.
 
 Deltas are strict: adding what is already there or removing what is not fails, so a stale
 proposal fails instead of silently doing something else. Hosts' addresses, users, keys and
@@ -34,8 +41,8 @@ from datetime import timedelta
 from sqlmodel import Session, delete, func, select, update
 
 from app.database import engine
-from app.models import AdminToken, Approval, Proposal, Role, RoleCommand, utcnow
-from app.services import agents, approvals, command_library as cl, commands, textcheck
+from app.models import AdminToken, Approval, Grant, Proposal, Role, RoleCommand, utcnow
+from app.services import agents, approvals, command_library as cl, commands, textcheck, workspace
 
 TOKEN_PREFIX = "ulmo_admin_"
 EXPIRY = timedelta(hours=24)  # a human reads these, so a day, not minutes
@@ -50,8 +57,12 @@ SPECS = {  # operation -> (required keys, optional keys)
     "host_offer": (("host",), ("add", "remove")),
     "role_allow": (("role",), ("add", "remove")),
     "role_set_approval": (("role", "command", "needs_approval"), ()),
+    "save_file": (("path", "text", "base"), ()),
 }
 LIBRARY_OPS = ("save_command", "delete_command", "host_offer")
+FILE_OPS = ("save_file",)
+MAX_FILE_TEXT = 256 * 1024  # a file an admin must read through, per file
+MAX_FILE_TOTAL = 1024 * 1024  # and per proposal
 
 
 class Unavailable(ValueError):
@@ -150,6 +161,10 @@ def _check_op(op) -> dict:
         _bad(f"unknown operation {kind!r}; use one of: {', '.join(SPECS)}")
     required, optional = SPECS[kind]
     _keys(op, required, optional + ("op",))
+    if kind in FILE_OPS:
+        if not all(isinstance(op[k], str) for k in required):
+            _bad("path, text and base must be text")
+        op = {**op, "text": op["text"].replace("\r\n", "\n")}  # a browser or a Windows script sends CRLF; the file keeps its own endings
     _plain_text(op)
     return op
 
@@ -267,7 +282,7 @@ def summarize(ops: list[dict]) -> str:
     """A short line naming what the operations touch, for the audit log and the notification."""
     parts = []
     for op in ops:
-        target = op.get("name") or op.get("host") or op.get("role") or "?"
+        target = op.get("name") or op.get("host") or op.get("role") or op.get("path") or "?"
         parts.append(f"{op.get('op')} {target}" + (f" ({op['command']})" if op.get("op") == "role_set_approval" else ""))
     return "; ".join(parts)
 
@@ -290,6 +305,115 @@ class Plan:
     @property
     def diff(self) -> str:
         return "\n".join(part for part in (self.library_diff, self.roles_diff) if part)
+
+
+@dataclass
+class FilePlan:
+    """What applying a file proposal would do: one entry per file, and the writes that make it so."""
+    edits: list
+    writes: list  # (path, bytes, base)
+    diff: str
+    digest: str
+    previews: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    kind: str = "files"
+
+
+def count_changes(old: str, new: str) -> tuple[int, int]:
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old.splitlines(), new.splitlines(), autojunk=False).get_opcodes():
+        removed += i2 - i1 if tag in ("replace", "delete") else 0
+        added += j2 - j1 if tag in ("replace", "insert") else 0
+    return added, removed
+
+
+def diff_rows(old: str, new: str, context: int = 3) -> list[dict]:
+    """A diff for the proposal page, with line numbers: rows of {kind: ctx|add|del|gap, old_no, new_no, text}.
+    A gap row stands for lines left out because nothing near them changed."""
+    a, b = old.splitlines(), new.splitlines()
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    rows: list[dict] = []
+    seen_a = 0  # lines of `a` shown or skipped so far
+    for group in matcher.get_grouped_opcodes(context):
+        first = group[0]
+        if first[1] > seen_a:
+            rows.append({"kind": "gap", "skipped": first[1] - seen_a})
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                rows += [{"kind": "ctx", "old_no": i + 1, "new_no": j + 1, "text": a[i]} for i, j in zip(range(i1, i2), range(j1, j2))]
+            else:
+                rows += [{"kind": "del", "old_no": i + 1, "new_no": None, "text": a[i]} for i in range(i1, i2)]
+                rows += [{"kind": "add", "old_no": None, "new_no": j + 1, "text": b[j]} for j in range(j1, j2)]
+        seen_a = group[-1][2]
+    if rows and seen_a < len(a):
+        rows.append({"kind": "gap", "skipped": len(a) - seen_a})
+    return rows
+
+
+def _plan_files(ops: list) -> FilePlan:
+    """Plan a proposal of save_file operations against the files as they are now."""
+    checked = []
+    for i, op in enumerate(ops, 1):
+        try:
+            checked.append(_check_op(op))
+        except ValueError as exc:
+            raise ValueError(f"op {i}: {exc}") from None
+    if any(op["op"] not in FILE_OPS for op in checked):
+        _bad("file edits cannot be mixed with command or role changes: send them as separate proposals")
+    edits, writes, seen, total = [], [], set(), 0
+    for i, op in enumerate(checked, 1):
+        try:
+            rel = workspace.clean(op["path"])
+            if rel in seen:
+                _bad(f"{rel} is edited twice")
+            seen.add(rel)
+            text = op["text"]
+            if len(text.encode()) > MAX_FILE_TEXT:
+                _bad(f"{rel}: a file edit is limited to {MAX_FILE_TEXT // 1024} KB")
+            total += len(text.encode())
+            if total > MAX_FILE_TOTAL:
+                _bad(f"a proposal is limited to {MAX_FILE_TOTAL // 1024} KB of file text")
+            try:
+                current = workspace.read_file(rel)
+            except ValueError:
+                current = None
+            if current is not None and current["text"] is None:
+                _bad(f"{rel} is binary or too large to edit as text")
+            if op["base"] != (current["version"] if current else ""):
+                if current is None:
+                    _bad(f"{rel} does not exist; send base as an empty string to create it")
+                if op["base"] == "":
+                    _bad(f"{rel} already exists; read it and send its version as base")
+                _bad(f"{rel} changed since it was read, so this edit no longer fits")
+            body = workspace.keep_line_endings(rel, text)
+            if current is not None and body == current["text"]:
+                _bad(f"{rel}: this changes nothing")
+        except ValueError as exc:
+            raise ValueError(f"op {i} (save_file): {exc}") from None
+        old = None if current is None else current["text"]
+        added, removed = count_changes(old or "", text)
+        with Session(engine) as session:
+            grants = session.exec(select(Grant).where(Grant.playbook == rel)).all()
+            role_names = {r.id: r.name for r in session.exec(select(Role)).all()}
+        edits.append({
+            "path": rel, "is_new": current is None, "rows": diff_rows(old or "", text), "added": added, "removed": removed,
+            "grants": [{"role": role_names.get(g.role_id, "?"), "hosts": g.hosts.split(","), "requires_approval": g.requires_approval} for g in grants],
+            "is_playbook": workspace.is_playbook_path(rel),
+        })
+        writes.append((rel, body.encode(), op["base"]))
+    try:
+        workspace.check_collisions([w[0] for w in writes])
+    except ValueError as exc:
+        _bad(f"op (save_file): {exc}")
+    diff = "\n".join(
+        _diff("" if e["is_new"] else (workspace.read_file(e["path"])["text"] or ""), t, e["path"], 2)
+        for e, t in ((e, o["text"]) for e, o in zip(edits, checked))
+    )
+    shown = json.dumps([[e["path"], w[2], o["text"]] for e, w, o in zip(edits, writes, checked)], sort_keys=True)
+    added_text = "".join(o["text"] for o in checked)
+    odd = sorted({c for c in added_text if ord(c) > 127})
+    warnings = [f"The new text has non-ASCII characters, which can look like plain letters: {', '.join(f'{c} (U+{ord(c):04X})' for c in odd[:20])}"] if odd else []
+    return FilePlan(edits, writes, diff, hashlib.sha256(shown.encode()).hexdigest(), [], warnings)
 
 
 def roles_state() -> dict[str, dict[str, bool]]:
@@ -317,6 +441,8 @@ def plan(ops: list) -> Plan:
     operation is wrong (Unavailable if commands.yml does not parse)."""
     if not isinstance(ops, list) or not 1 <= len(ops) <= MAX_OPS:
         _bad(f"send between 1 and {MAX_OPS} operations")
+    if any(isinstance(op, dict) and op.get("op") in FILE_OPS for op in ops):
+        return _plan_files(ops)
     with cl.LOCK:
         library, error = cl.load()
         if error:
@@ -407,6 +533,22 @@ def _write_roles(target: dict, current: dict) -> None:
         raise
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"the roles could not be updated: {exc}") from None
+
+
+def _apply_files(plan_: FilePlan) -> str:
+    """Write a file plan, all or nothing. Returns a warning for the admin (a playbook that does not
+    parse or pass --syntax-check), or "". The write is refused while a playbook runs."""
+    try:
+        workspace.store_checked(plan_.writes)
+    except workspace.Locked as exc:
+        raise ValueError(str(exc)) from None
+    warnings = []
+    for rel, data, _base in plan_.writes:
+        text = data.decode("utf-8", errors="replace")
+        warning = workspace.check_syntax(rel, text) or workspace.check_playbook(rel)
+        if warning:
+            warnings.append(warning)
+    return " ".join(warnings)
 
 
 def _apply(plan_: Plan) -> None:
@@ -541,10 +683,16 @@ def decide(proposal_id: int, approve: bool, admin: str, seen: str = "") -> Propo
                 status, result = "failed", str(exc)
             else:
                 if not hmac.compare_digest(current.digest.encode(), (seen or "").encode()):
-                    _bad("This proposal, commands.yml or the roles changed since you opened it. Reload the page and look again.")
+                    _bad("This proposal, commands.yml, the roles or the files changed since you opened it. Reload the page and look again.")
+                if isinstance(current, FilePlan) and workspace.active_runs():
+                    # Not decided: it stays pending, to approve again once the run is over.
+                    _bad(f"The files are read-only while run #{workspace.active_runs()[0]['run_id']} is going. Try again when it finishes.")
                 try:
-                    _apply(current)
-                    status = "applied"
+                    if isinstance(current, FilePlan):
+                        status, result = "applied", _apply_files(current)
+                    else:
+                        _apply(current)
+                        status = "applied"
                 except Exception as exc:  # noqa: BLE001 - whatever stopped it is shown to the admin; nothing was half-applied
                     status, result = "failed", str(exc)
         with Session(engine) as session:

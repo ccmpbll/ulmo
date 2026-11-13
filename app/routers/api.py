@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from app.database import engine
 from app.deps import require_agent
 from app.models import Agent, Approval, CommandRun, RunHistory
-from app.services import agent_runs, agents, approvals, command_library, commands, file_access, workspace, inventory, notifier, playbook_tags, runner
+from app.services import agent_runs, agents, approvals, command_library, commands, workspace, inventory, notifier, playbook_tags, runner
 
 # JSON API for agents (n8n, scripts). It can read playbooks, hosts and runs,
 # and start playbooks its role has a grant for (see agents.check_run). Runs go
@@ -78,6 +78,21 @@ def playbooks():
     }
 
 
+@router.get("/playbooks/content")
+def playbook_content(path: str, request: Request, agent: Agent = Depends(require_agent)):
+    """A playbook's text, with its `version`. Only the playbooks that /playbooks lists: nothing else in the
+    workspace (files/, ansible.cfg, the inventory) is readable with an agent token."""
+    if path not in {pb["rel_path"] for pb in workspace.list_playbooks()}:
+        _deny(request, agent, 404, "Unknown playbook")
+    try:
+        info = workspace.read_file(path)
+    except ValueError:
+        _deny(request, agent, 404, "Unknown playbook")
+    if info["text"] is None:
+        _deny(request, agent, 415, "That playbook is not readable as text")
+    return {"path": path, "version": info["version"], "text": info["text"]}
+
+
 @router.get("/hosts")
 def hosts():
     return {"hosts": inventory.list_hosts()}
@@ -97,47 +112,6 @@ def run_detail(run_id: int):
     if run is None:
         raise HTTPException(404, "Run not found")
     return {**_run_json(run), "recap": runner.get_recap(run_id), "log": _log_tail(run_id)}
-
-
-@router.get("/files")
-def list_files(request: Request, agent: Agent = Depends(require_agent)):
-    """The files this agent may read (its `file_access` setting decides which): none, the playbooks, or all."""
-    try:
-        files = file_access.list_for(agent)
-    except file_access.Refused as exc:
-        _deny(request, agent, exc.status, exc.reason)
-    return {"access": agent.file_access, "files": [{**f, "modified": _iso(f["modified"])} for f in files]}
-
-
-@router.get("/files/content")
-def file_content(path: str, request: Request, agent: Agent = Depends(require_agent)):
-    """One file as text, with its `version`: send that back as `base` when proposing an edit."""
-    try:
-        return file_access.read_for(agent, path)
-    except file_access.Refused as exc:
-        _deny(request, agent, exc.status, exc.reason)
-
-
-class FileEditRequest(BaseModel):
-    path: str = Field(max_length=300)
-    text: str = Field(max_length=file_access.MAX_TEXT_BYTES)  # the whole new contents of the file
-    base: str = Field(max_length=64)  # the `version` it was read at; "" to create a file that does not exist
-    note: str | None = Field(None, max_length=500)  # shown to the admin
-
-
-@router.post("/files/edits", status_code=202)
-def propose_file_edit(body: FileEditRequest, request: Request, response: Response, agent: Agent = Depends(require_agent)):
-    """Propose a new version of a file. Nothing is written: an admin sees the diff on the Approvals
-    page and approves or denies it. Poll GET /approvals/{id}."""
-    try:
-        rel, text = file_access.check_edit(agent, body.path, body.text, body.base)
-        try:
-            old = workspace.read_file(rel)["text"]
-        except ValueError:
-            old = None
-    except file_access.Refused as exc:
-        _deny(request, agent, exc.status, exc.reason)
-    return _request_approval(request, response, agent, "file", rel, "", {"base": body.base, "text": text}, file_access.line_for(rel, old, text), body.note)
 
 
 DEFAULT_WAIT = 20  # seconds POST /commands waits for the result before answering "still running"
@@ -198,7 +172,6 @@ def catalog(agent: Agent = Depends(require_agent)):
     needing = approvals.commands_needing(agent)
     return {
         "runs_enabled": agents.runs_enabled(),
-        "files": file_access.mode_of(agent),
         "playbooks": [
             {"playbook": g.playbook, "hosts": g.hosts.split(","), "requires_approval": g.requires_approval}
             for g in agents.grants_for(agent)

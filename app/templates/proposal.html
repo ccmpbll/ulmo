@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import line_diff, lock_banner %}
 {% block title %}Proposal {{ p.id }} - ulmo{% endblock %}
 {% block content %}
 <div class="page-header"><h1>{{ p.token_name }} proposes a change</h1><a class="btn secondary" href="/approvals">All requests</a></div>
@@ -14,6 +15,20 @@
     <form method="post" action="/proposals/{{ p.id }}/deny"><button type="submit" class="danger">Deny</button></form>
   </div>
   {% else %}
+  {% if plan.kind == "files" %}
+  {{ lock_banner(locked_by) }}
+  {% for w in plan.warnings %}<p class="error">{{ w }}</p>{% endfor %}
+  {% for e in plan.edits %}
+  <h3>{{ 'New file ' if e.is_new else '' }}<a href="/files/edit?path={{ e.path | urlencode }}">{{ e.path }}</a> <span class="muted">+{{ e.added }} -{{ e.removed }} lines</span></h3>
+  {% if e.grants %}
+  <p class="error"><strong>Roles can run this playbook:</strong>
+    {% for g in e.grants %}{{ g.role }} on {{ g.hosts | join(', ') }}{% if g.requires_approval %} (asks first){% endif %}{{ '; ' if not loop.last }}{% endfor %}.
+    Approving changes what those grants run.</p>
+  {% endif %}
+  {{ line_diff(e.rows) }}
+  {% endfor %}
+  <p class="muted">Approving saves every file shown, or none of them; each old version is kept as a saved copy on the Files page. It waits while a playbook is running.</p>
+  {% else %}
   {% if plan.previews %}
   <h3>What the host would receive</h3>
   {% for pv in plan.previews %}<p>{{ pv.command }}: <code>The host would receive: {{ pv.line }}</code></p>{% endfor %}
@@ -23,6 +38,7 @@
   <pre class="diff">{% for line in plan.diff.split('\n') %}<span style="{% if line.startswith('+') and not line.startswith('+++') %}color: var(--green){% elif line.startswith('-') and not line.startswith('---') %}color: var(--red){% else %}opacity: .7{% endif %}">{{ line }}</span>
 {% endfor %}</pre>
   <p class="muted">Lines starting with <code>-</code> go away; lines starting with <code>+</code> are added. A command that is deleted also leaves every role that held it. The change is saved as one restorable copy on the Commands page.</p>
+  {% endif %}
   {% if locked %}<p class="error">Approving is off while ULMO_DISABLE_AUTH is set.</p>{% endif %}
   <div class="actions form-actions">
     <form method="post" action="/proposals/{{ p.id }}/approve">
@@ -38,7 +54,8 @@
     {% if p.decided_by %}by <strong>{{ p.decided_by }}</strong> {{ p.decided_at | local_time }}{% endif %}
   </p>
   {% if p.status == "failed" %}<p class="error">Approved, but it could not be applied: {{ p.result }}</p>{% endif %}
-  {% if p.status == "applied" %}<p><a href="/commands?tab=copies">See the saved copies on the Commands page</a></p>{% endif %}
+  {% if p.status == "applied" and is_files %}<p>Saved. The old versions are <a href="/files">on the Files page</a>, under each file's saved copies.</p>{% if p.result %}<p class="error">{{ p.result }}</p>{% endif %}
+  {% elif p.status == "applied" %}<p><a href="/commands?tab=copies">See the saved copies on the Commands page</a></p>{% endif %}
   {% endif %}
 </div>
 {% endblock %}

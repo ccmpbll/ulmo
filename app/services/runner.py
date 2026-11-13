@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.config import COLLECTIONS_DIR, RUNNER_DATA_DIR, WORKSPACE_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
-from app.services import settings_store, workspace
+from app.services import playbook_tags, settings_store, workspace
 
 _cancel_events: dict[int, threading.Event] = {}
 _progress: dict[int, dict] = {}
@@ -264,3 +264,19 @@ def read_log(run_id: int) -> tuple[str, int]:
         return "", 0
     raw = path.read_bytes()
     return raw.decode("utf-8", errors="replace"), len(raw)
+
+
+def tag_summary(run: RunHistory, log: str) -> dict | None:
+    """For a finished run that was limited with --tags: which of the playbook's named tasks ran and
+    which were left out because no tag matched. Read from the playbook as it was when the run started
+    and from the run's log (a task that is filtered out by tags never appears in the log, one skipped
+    by a `when` does). None when there is nothing to say."""
+    if not run.tags or run.status == "running":
+        return None
+    text = workspace.text_of_version(run.playbook, run.playbook_rev)
+    outline = playbook_tags.task_outline(text) if text else []
+    if not outline:
+        return None
+    ran = playbook_tags.ran_task_names(log)
+    skipped = [t for t in outline if t["name"] not in ran]
+    return {"tags": [t.strip() for t in run.tags.split(",") if t.strip()], "total": len(outline), "ran": len(outline) - len(skipped), "skipped": skipped}

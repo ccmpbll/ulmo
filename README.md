@@ -73,24 +73,13 @@ GET  /api/v1/catalog           what this agent may run
 POST /api/v1/runs              start a playbook: {"playbook": "playbooks/x.yml", "limit": ["web1"]}
 POST /api/v1/runs/{id}/cancel  cancel a run this agent started
 GET  /api/v1/approvals/{id}    a request of this agent waiting for approval (see Approvals)
-GET  /api/v1/files             the files this agent may read (its "files" setting)
-GET  /api/v1/files/content?path=...   one file as text, with its version
-POST /api/v1/files/edits       propose a new version of a file; waits for your approval
+GET  /api/v1/playbooks/content?path=...   a playbook's text and version (read only)
 ```
 
-**Files.** Each agent has a **files** setting on the Agents page: *no files* (the default), *playbooks
-only* (read the `.yaml`/`.yml` files in the playbooks folder, and propose edits to them or new ones)
-or *all files* (the same for anything in the workspace, including `files/` and `ansible.cfg`, so
-configs with keys in them become readable to that agent). An agent never writes: `POST /api/v1/files/edits`
-with `{"path", "text", "base", "note"}` (`text` is the whole new file, `base` the `version` from the
-read, `""` to create) answers `202` and an Approval appears. It is refused up front for a path
-outside the agent's scope, a stale `base` (409), no change, hidden or direction-override characters, a
-binary file, or more than 256 KB. The approval page shows the diff with line numbers and the roles
-granted that playbook. Approving saves it through the same locked, versioned write as the Files
-page (a saved copy of the old file is kept, a CRLF file stays CRLF) and warns if
-`ansible-playbook --syntax-check` fails; it is refused, and stays pending, while a playbook runs, and
-fails if the file changed after the agent read it or the agent lost its access. An edit waits 24 hours
-for a decision, and the proposed text is dropped once it is decided.
+**Reading playbooks.** Every agent can read the playbooks `GET /api/v1/playbooks` lists, with
+`GET /api/v1/playbooks/content?path=playbooks/x.yaml`. Nothing else in the workspace is readable with an
+agent token (not `files/`, `ansible.cfg` or the inventory), and no agent can change a file: editing is
+done with a change token (below).
 
 **Running playbooks.** Agents can read by default and run nothing. To let one run a playbook,
 create a **role**, add a **grant** (one playbook plus the hosts it may target), and assign the
@@ -226,6 +215,8 @@ contents or passwords), so hand one only to a tool you would trust with that.
 ```
 GET  /api/v1/admin/commands.yml        the file as it is on disk
 GET  /api/v1/admin/roles               each role's commands (with needs_approval) and, read-only, its playbook grants
+GET  /api/v1/admin/files               every file in the workspace: path, size, last edited
+GET  /api/v1/admin/files/content?path= one text file with its version (send it back as `base`)
 POST /api/v1/admin/proposals[?dry_run=true]   {"note": "why", "ops": [ ... ]}  -> 202 {"id", "diff", "previews"}
 GET  /api/v1/admin/proposals[/{id}]    this token's proposals: pending | applied | denied | expired | failed
 ```
@@ -251,6 +242,7 @@ order given, then role operations). Each is a change of one thing, not a replace
 {"op": "host_offer", "host": "ecth", "add": ["x"], "remove": ["y"]}
 {"op": "role_allow", "role": "n8n", "add": [{"command": "x", "needs_approval": false}], "remove": ["y"]}
 {"op": "role_set_approval", "role": "n8n", "command": "x", "needs_approval": true}
+{"op": "save_file", "path": "playbooks/site.yaml", "text": "<the whole new file>", "base": "<version from the read>"}
 ```
 
 - `save_command` creates or replaces one command, checked exactly as the Commands page checks it (the
@@ -264,6 +256,16 @@ order given, then role operations). Each is a change of one thing, not a replace
   to 20 KB, as in the editor. Names are letters, digits, `.`, `_` and `-` only. Any other non-ASCII
   character a proposal adds (a Cyrillic "o" in a command line, say) is allowed but listed in
   `warnings` and in a red notice on the approval page, with its code point.
+- `save_file` creates or replaces any file in the workspace (a playbook, `files/`, `ansible.cfg`, the
+  inventory), not only playbooks. `base` is the `version` of the file when it was read, or `""` to
+  create one that does not exist: an edit against a file that has since changed is refused, and a
+  proposal with a `save_file` has only `save_file` operations (several files are fine, saved together
+  or not at all). `text` is the whole file, up to 256 KB per file and 1 MB per proposal, never a
+  binary. The approval page shows each file's diff with line numbers, flags the roles that are
+  granted a playbook you are changing, and approving saves through the Files page's write (the old
+  version kept as a saved copy, a CRLF file kept CRLF). It waits while a playbook runs, and warns if
+  `ansible-playbook --syntax-check` fails on a saved playbook. Read access to every file includes
+  `files/`, where keys may be, so a change token is as trusted as the person holding it.
 - Adding something already there, or removing something that is not, is an error. A proposal that
   changes nothing is an error. `?dry_run=true` checks a proposal and records nothing.
 - Deleting a command takes it out of every role, so do not also list it in a `role_allow` `remove` in

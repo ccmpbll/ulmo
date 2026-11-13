@@ -33,7 +33,7 @@ def run_detail(request: Request, run_id: int):
         "workspace_same": workspace.revision() == run.workspace_rev if run.workspace_rev else None,
     }
     return templates.TemplateResponse(
-        request, "run_detail.html", {"run": run, "log": log, "log_pos": log_pos, "recap": recap, "ran": ran}
+        request, "run_detail.html", {"run": run, "log": log, "log_pos": log_pos, "recap": recap, "ran": ran, "tag_summary": runner.tag_summary(run, log)}
     )
 
 
