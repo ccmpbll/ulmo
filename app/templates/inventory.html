@@ -7,24 +7,21 @@
 <div class="page-header">
   <div>
     <h1>Ansible</h1>
-    <p class="sub">Playbooks and inventory from the synced git repo.</p>
+    <p class="sub">Playbooks and inventory ulmo keeps, edited on the Files page.</p>
   </div>
-  <form method="post" action="/sync">
-    <input type="hidden" name="back" value="inventory" />
-    <button type="submit" class="secondary">Sync from Git</button>
-  </form>
+  <a class="btn secondary" href="/files">Edit files</a>
 </div>
-{{ subnav([("/ansible", "Playbooks", false), ("/inventory", "Inventory", true)]) }}
+{{ subnav([("/ansible", "Playbooks", false), ("/inventory", "Inventory", true), ("/files", "Files", false)]) }}
 
-{% if not repo_synced %}
+{% if not has_files %}
 <div class="card">
-  <p class="muted">No repo synced yet. Configure a git repo in <a href="/settings">Settings</a>, then press "Sync from Git".</p>
+  <p class="muted">No files yet. Upload an inventory on the <a href="/files">Files</a> page, or import a git repository once in <a href="/settings">Settings</a>.</p>
 </div>
 {% elif not files %}
 <div class="card">
   <p class="muted">
     No inventory found at <code>{{ settings_inventory_path if settings_inventory_path else "inventory.yaml" }}</code>.
-    Check the inventory path in <a href="/settings">Settings</a>.
+    Add it on the <a href="/files">Files</a> page, or check the inventory path in <a href="/settings">Settings</a>.
   </p>
 </div>
 {% else %}
@@ -44,7 +41,8 @@
   <p class="error">{{ error }}</p>
   {% elif content %}
   <div class="page-header" style="margin-bottom: 8px;">
-    <span class="muted">{{ content.rel_path }} ({{ content.size }} bytes) — read-only</span>
+    <span class="muted">{{ content.rel_path }} ({{ content.size }} bytes)</span>
+    <a class="btn secondary sm" href="/files/edit?path={{ content.rel_path | urlencode }}">Edit</a>
   </div>
   {% if content.truncated %}
   <p class="error">File is large — showing the first 512 KB only.</p>

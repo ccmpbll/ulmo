@@ -44,7 +44,7 @@ from app.main import app  # noqa: E402
 from app.models import AdminAudit, AdminToken, AgentAudit, Grant, Proposal, RoleCommand, utcnow  # noqa: E402
 from app.routers import agents as agents_router  # noqa: E402
 from app.routers import proposals as proposals_router  # noqa: E402
-from app.services import agents, command_library as cl, git_sync, inventory, notifier, proposals, settings_store  # noqa: E402
+from app.services import agents, command_library as cl, workspace, inventory, notifier, proposals, settings_store  # noqa: E402
 
 SSH_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 (SSH_STORAGE_DIR / "k").write_text("not a real key")
@@ -62,7 +62,7 @@ LIBRARY = {
 }
 PF = {"description": "pfSense update check", "argv": ["pfSense-upgrade", "-c"], "timeout": 60, "risk": "low"}
 
-git_sync.list_playbooks = lambda: [{"name": "frodo.yaml", "rel_path": "playbooks/frodo.yaml"}]
+workspace.list_playbooks = lambda: [{"name": "frodo.yaml", "rel_path": "playbooks/frodo.yaml"}]
 inventory.list_hosts = lambda: ["frodo", "cirdan"]
 inventory.list_groups = lambda: ["all", "ungrouped"]
 

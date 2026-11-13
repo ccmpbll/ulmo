@@ -2,8 +2,11 @@
 {% block title %}{{ rel_path }} - ulmo{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>{{ rel_path }} <span class="muted" style="font-size:0.8rem;font-weight:normal;">— read-only</span></h1>
-  <a class="btn secondary" href="/ansible">Back to playbooks</a>
+  <h1>{{ rel_path }}</h1>
+  <div class="actions">
+    <a class="btn secondary" href="/files/edit?path={{ rel_path | urlencode }}">Edit</a>
+    <a class="btn secondary" href="/ansible">Back to playbooks</a>
+  </div>
 </div>
 
 <div class="card" style="padding:0; overflow:hidden;">

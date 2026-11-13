@@ -8,20 +8,22 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SECRET_KEY, SECURE_COOKIES
 from app.database import init_db
-from app.routers import activity, admin_api, agents, api, approvals, auth, command_admin, inventory, logs, playbooks, proposals, runs, settings
+from app.routers import activity, admin_api, agents, api, approvals, auth, command_admin, files, inventory, logs, playbooks, proposals, runs, settings
 from app.services import agents as agent_service
-from app.services import commands, git_sync, retention, runner, scheduler, ssh_keys
+from app.services import commands, git_import, retention, runner, scheduler, ssh_keys, workspace
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Any row still "running" here means the process died mid-run/mid-sync
+    # Any row still "running" here means the process died mid-run/mid-import
     # last time (crash, container restart) — settle those before anything
     # else touches them.
     runner.reconcile_orphaned_runs()
     commands.settle_stale(timedelta(0), "ulmo restarted while this was running")
-    git_sync.reconcile_orphaned_syncs()
+    git_import.reconcile_orphaned_imports()
+    workspace.clean_leftovers()
+    workspace.migrate_legacy_repo()  # also schedules the collections install and the caches
     retention.prune()
     ssh_keys.ensure_symlinks()
     scheduler.start()
@@ -58,6 +60,7 @@ app.include_router(api.router)
 app.include_router(approvals.router)
 app.include_router(auth.router)
 app.include_router(command_admin.router)
+app.include_router(files.router)
 app.include_router(inventory.router)
 app.include_router(logs.router)
 app.include_router(playbooks.router)

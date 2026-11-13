@@ -1,4 +1,4 @@
-"""Self-check for requirements-path resolution in app/services/git_sync.py.
+"""Self-check for requirements-path resolution in app/services/workspace.py.
 
 The configured requirements_path is already guarded against escaping the repo;
 this covers the auto-discovery branch, which builds candidates from the
@@ -19,9 +19,9 @@ from pathlib import Path  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import REPO_DIR  # noqa: E402
+from app.config import WORKSPACE_DIR  # noqa: E402
 from app.database import init_db  # noqa: E402
-from app.services import git_sync, settings_store  # noqa: E402
+from app.services import workspace, settings_store  # noqa: E402
 
 
 def test_escaping_subdir_is_not_honored():
@@ -33,22 +33,22 @@ def test_escaping_subdir_is_not_honored():
     outside = Path(DATA_DIR) / "requirements.yaml"
     outside.write_text("---\ncollections: []\n")
 
-    result = git_sync._find_requirements_file()
-    # An escaping subdir must never resolve to a file outside the repo — it's
+    result = workspace._find_requirements_file()
+    # An escaping subdir must never resolve to a file outside the workspace — it's
     # skipped and surfaces as a warning string (like a bad configured path).
     assert result is None or (
-        isinstance(result, str) and "outside the repo" in result
+        isinstance(result, str) and "outside the workspace" in result
     ), f"auto-discovery escaped the repo: {result!r}"
     outside.unlink()
 
 
 def test_valid_subdir_candidate_is_found():
     settings_store.set_many({"playbooks_subdir": "playbooks", "requirements_path": ""})
-    subdir = REPO_DIR / "playbooks"
+    subdir = WORKSPACE_DIR / "playbooks"
     subdir.mkdir(parents=True, exist_ok=True)
     (subdir / "requirements.yaml").write_text("---\ncollections: []\n")
 
-    result = git_sync._find_requirements_file()
+    result = workspace._find_requirements_file()
     assert isinstance(result, Path), f"expected a Path, got {result!r}"
     assert result.resolve() == (subdir / "requirements.yaml").resolve()
 

@@ -484,3 +484,39 @@ table.stack tbody tr:hover { background: none; }
   table.stack td.actions-cell .actions form { display: contents; }
   table.stack td.actions-cell .actions button, table.stack td.actions-cell .actions .btn { width: 100%; text-align: center; justify-content: center; }
 }
+
+/* Files page: one card per top-level folder, subfolders collapsed */
+.group-note { padding: 8px 16px; margin: 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+table.files-table tr.subrow > td { padding: 0; border-bottom: 1px solid var(--border); }
+.card.flush > table.files-table tr.subrow > td:first-child { padding: 0; }
+tr.subrow details summary { display: flex; align-items: center; cursor: pointer; padding: 10px 16px; list-style: none; }
+tr.subrow details summary::-webkit-details-marker { display: none; }
+tr.subrow details summary::before { content: ""; flex: none; width: 0; height: 0; margin-right: 15px; border-left: 9px solid var(--muted); border-top: 6px solid transparent; border-bottom: 6px solid transparent; }
+tr.subrow details[open] summary::before { transform: rotate(90deg); }
+/* the files inside line up under the folder's name, past the arrow */
+
+/* File editor: syntax colours drawn in a <pre> under a transparent textarea. Both use the same box, font and padding. */
+.code-edit { position: relative; margin-top: 6px; }
+.code-edit textarea.code { margin-top: 0; position: relative; }
+.code-edit .code-hl { display: none; position: absolute; inset: 0; margin: 0; padding: 8px 10px; border: 1px solid transparent; border-radius: 6px; overflow: hidden; pointer-events: none;
+  box-sizing: border-box; background: transparent; color: #abb2bf; white-space: pre; tab-size: 8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.5; }
+.code-edit .code-hl code { display: block; min-width: max-content; padding: 0 30px 40px 0; font: inherit; background: none; }
+.code-edit.hl-on .code-hl { display: block; }
+.code-edit.hl-on textarea.code { color: transparent; caret-color: var(--text); background: transparent; }
+.code-edit.hl-on { background: #11141a; border-radius: 6px; }
+table.files-table, table.files-table details { width: 100%; }
+/* the outer table and each folder's inner table share these column widths, so the sizes line up */
+@media (min-width: 641px) {
+  .card.flush table.files-table { table-layout: fixed; }
+  .card.flush table.inner td:first-child { padding-left: 40px; }
+  .card.flush table.files-table col.c-size { width: 130px; }
+  .card.flush table.files-table col.c-mod { width: 210px; }
+  .card.flush table.files-table col.c-act { width: 100px; }
+}
+@media (max-width: 640px) {
+  /* a folder row is not a card: it spans the table, and its files are cards of their own */
+  table.stack tr.subrow { display: block; padding: 0; border: 0; }
+  table.stack tr.subrow > td { display: block; width: auto; padding: 0; border: 0; }
+  tr.subrow details summary { padding: 14px 16px; }
+}

@@ -5,10 +5,10 @@ from pathlib import Path
 import ansible_runner
 from sqlmodel import Session, select
 
-from app.config import COLLECTIONS_DIR, REPO_DIR, RUNNER_DATA_DIR
+from app.config import COLLECTIONS_DIR, RUNNER_DATA_DIR, WORKSPACE_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
-from app.services import git_sync, settings_store
+from app.services import settings_store, workspace
 
 _cancel_events: dict[int, threading.Event] = {}
 _progress: dict[int, dict] = {}
@@ -89,26 +89,35 @@ def start_run(
     tags = tags.strip()
     limit = limit.strip()
 
-    valid_paths = {p["rel_path"] for p in git_sync.list_playbooks()}
-    if playbook_rel_path not in valid_paths:
-        raise ValueError(f"Unknown playbook: {playbook_rel_path}")
+    # One step under the workspace lock: the playbook exists, the row is written and the run is
+    # registered, so no save can land between the check and the run starting (and the workspace
+    # stays read-only until _execute() releases it).
+    with workspace.LOCK:
+        valid_paths = {p["rel_path"] for p in workspace.list_playbooks()}
+        if playbook_rel_path not in valid_paths:
+            raise ValueError(f"Unknown playbook: {playbook_rel_path}")
 
-    with Session(engine) as session:
-        record = RunHistory(
-            playbook=playbook_rel_path,
-            triggered_by=triggered_by,
-            tags=tags or None,
-            limit=limit or None,
-        )
-        session.add(record)
-        session.commit()
-        session.refresh(record)
-        run_id = record.id
+        with Session(engine) as session:
+            record = RunHistory(
+                playbook=playbook_rel_path,
+                triggered_by=triggered_by,
+                tags=tags or None,
+                limit=limit or None,
+            )
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            run_id = record.id
+        workspace.begin_run(run_id, playbook_rel_path)
 
     thread = threading.Thread(
         target=_execute, args=(run_id, playbook_rel_path, tags, limit), daemon=True
     )
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        workspace.end_run(run_id)
+        raise
 
     with Session(engine) as session:
         return session.get(RunHistory, run_id)
@@ -186,7 +195,7 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
 
         run_kwargs = dict(
             private_data_dir=str(RUNNER_DATA_DIR),
-            project_dir=str(REPO_DIR),
+            project_dir=str(WORKSPACE_DIR),
             playbook=playbook_rel_path,
             tags=tags or None,
             limit=limit or None,
@@ -222,6 +231,7 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
         with _lock:
             _cancel_events.pop(run_id, None)
             _progress.pop(run_id, None)
+        workspace.end_run(run_id)  # the files can be edited again
 
     with Session(engine) as session:
         record = session.get(RunHistory, run_id)

@@ -7,7 +7,13 @@ VERSION = os.environ.get("ULMO_VERSION", "dev")
 DATA_DIR = Path(os.environ.get("ULMO_DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-REPO_DIR = DATA_DIR / "repo"
+# The Ansible files ulmo owns: playbooks, inventory, files/, ansible.cfg. Created on
+# first write (or by migrating a pre-workspace ./data/repo), never at import time.
+WORKSPACE_DIR = DATA_DIR / "ansible"
+# Saved copies of files before each change, one folder per file, for Restore.
+WORKSPACE_HISTORY_DIR = DATA_DIR / "ansible.history"
+# Where the git checkout used to live; copied into WORKSPACE_DIR once at startup.
+LEGACY_REPO_DIR = DATA_DIR / "repo"
 
 # ansible-runner private_data_dir; artifacts/{run_id}/stdout is the live log.
 RUNNER_DATA_DIR = DATA_DIR / "runner"

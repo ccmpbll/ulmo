@@ -5,13 +5,10 @@ from app.database import engine
 from app.models import Settings
 
 DEFAULTS = {
-    "git_repo_url": "",
-    "git_branch": "main",
     "playbooks_subdir": "playbooks",
-    "git_sync_cron": "",  # empty = scheduled sync disabled
     "extra_args": "",  # extra ansible-playbook CLI args, e.g. --tags foo
-    "inventory_path": "inventory.yaml",  # relative to repo root; file or directory
-    "requirements_path": "",  # relative to repo root; empty = auto-discover
+    "inventory_path": "inventory.yaml",  # relative to the workspace root; file or directory
+    "requirements_path": "",  # relative to the workspace root; empty = auto-discover
     "run_timeout_minutes": "60",  # kill a run after this long; 0 = no timeout
     "notify_on": "",  # "" | "all" | "failure"
     "notify_pushover_token": "",
@@ -19,6 +16,7 @@ DEFAULTS = {
     "notify_ntfy_url": "",
     "public_url": "",  # how you reach ulmo, e.g. https://ulmo.example.com; used for links in notifications
     "command_history_keep": "20",  # saved copies of the command library kept for Restore
+    "workspace_history_keep": "20",  # saved copies kept per Ansible file, for Restore
 }
 
 

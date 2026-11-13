@@ -3,7 +3,7 @@ import os
 import re
 import subprocess
 
-from app.config import COLLECTIONS_DIR, DATA_DIR, REPO_DIR
+from app.config import COLLECTIONS_DIR, DATA_DIR, WORKSPACE_DIR
 
 TAG_LINE_RE = re.compile(r"TASK TAGS:\s*\[(.*?)\]")
 CACHE_PATH = DATA_DIR / "playbook_tags.json"
@@ -22,7 +22,7 @@ def list_tags(rel_path: str) -> dict:
     try:
         result = subprocess.run(
             ["ansible-playbook", rel_path, "--list-tags"],
-            cwd=REPO_DIR,
+            cwd=WORKSPACE_DIR,
             env=env,
             capture_output=True,
             text=True,
@@ -45,12 +45,11 @@ def list_tags(rel_path: str) -> dict:
 
 
 def refresh_cache(playbooks: list[dict]) -> str | None:
-    """Recompute and persist tags for every playbook. Called after git sync —
+    """Recompute and persist tags for every playbook. Called after the workspace changes —
     keeps dashboard loads fast (no per-request subprocess calls).
 
-    Best-effort: a failure writing the cache file doesn't mean the sync
-    failed (the clone already succeeded) — return a warning string instead
-    of raising, same pattern as git_sync._install_collections.
+    Best-effort: a failure writing the cache file doesn't mean the save
+    failed (the files were saved) — return a warning string instead of raising.
     """
     cache = {pb["rel_path"]: list_tags(pb["rel_path"]) for pb in playbooks}
     try:

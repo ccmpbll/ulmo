@@ -13,6 +13,25 @@
 </div>
 {% endmacro %}
 
+{#
+  Shown while a playbook run is active: the files are read-only until it finishes.
+  locked_by: the list from workspace.active_runs().
+#}
+{% macro lock_banner(locked_by) %}
+{% if locked_by %}
+<div class="card lock-banner">
+  <p class="error" style="margin: 0 0 8px;"><strong>Read-only while a playbook runs.</strong>
+  {% for r in locked_by %}<a href="/runs/{{ r.run_id }}">Run #{{ r.run_id }}</a>{% if r.playbook %} ({{ r.playbook }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+  {{ 'is' if locked_by | length == 1 else 'are' }} in progress. Saving, uploading and deleting work again once {{ 'it' if locked_by | length == 1 else 'they' }} finish{{ 'es' if locked_by | length == 1 }}, so a run never sees files change under it.</p>
+  <div class="actions">
+    {% for r in locked_by %}
+    <form method="post" action="/runs/{{ r.run_id }}/cancel"><button type="submit" class="secondary sm">Cancel run #{{ r.run_id }}</button></form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+
 {% macro checklist(id, field, items, selected, empty="Nothing to choose from yet.") %}
 {% set ticked = namespace(n=0) %}
 {% for value, detail in items %}{% if value in selected %}{% set ticked.n = ticked.n + 1 %}{% endif %}{% endfor %}

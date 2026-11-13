@@ -197,7 +197,7 @@ def test_playbook_and_sync_tabs():
     page = admin.get("/?tab=playbooks")
     assert page.status_code == 200
     assert 'href="/?tab=playbooks" class="active" aria-current="page">Playbook runs</a>' in page.text, "the chosen tab is shown as active"
-    labels = ["All", "Playbook runs", "Command runs", "Syncs", "API requests", "Changes"]
+    labels = ["All", "Playbook runs", "Command runs", "Imports", "API requests", "Changes"]
     positions = [page.text.index(f">{label}</a>") for label in labels]
     assert positions == sorted(positions), "tab order"
     assert _rows(page.text) == 50 and _showing(page.text) == "Showing 1 to 50 of 70"
@@ -420,18 +420,18 @@ def test_page_tabs():
 
     # Settings
     g = admin.get("/settings").text
-    assert active(g) == ["Git sync"] and "Git repository URL" in g and "Pushover" not in g and "Add key" not in g
+    assert active(g) == ["Ansible"] and "Git repository URL" in g and "Pushover" not in g and "Add key" not in g
     assert active(admin.get("/settings?tab=ssh").text) == ["SSH keys"] and "Add key" in admin.get("/settings?tab=ssh").text
     n = admin.get("/settings?tab=notify").text
     assert active(n) == ["Notifications"] and "Pushover" in n and "Git repository URL" not in n
     assert "Download backup" in admin.get("/settings?tab=backup").text
     acct = admin.get("/settings?tab=account").text
     assert active(acct) == ["Account &amp; users"] and "Change your password" in acct and "Users" in acct and "Git repository URL" not in acct
-    assert active(admin.get("/settings?tab=nonsense").text) == ["Git sync"]
+    assert active(admin.get("/settings?tab=nonsense").text) == ["Ansible"]
     resp = admin.post("/settings/notifications", data={"public_url": "ftp://nope"}, follow_redirects=False)
     assert resp.headers["location"].startswith("/settings?tab=notify&error="), "a refused notification setting shows on its tab"
-    resp = admin.post("/settings", data={"git_sync_cron": "not a cron"}, follow_redirects=False)
-    assert resp.headers["location"].startswith("/settings?tab=git&"), "the git form returns to its tab"
+    resp = admin.post("/settings", data={"playbooks_subdir": "playbooks"}, follow_redirects=False)
+    assert resp.headers["location"].startswith("/settings?tab=ansible&"), "the Ansible form returns to its tab"
     resp = admin.post("/settings/users/password", data={"current_password": "wrong", "new_password": "x", "new_password_confirm": "x"}, follow_redirects=False)
     assert resp.headers["location"] == "/settings?tab=account&error=Current+password+is+incorrect"
 
@@ -481,10 +481,10 @@ def test_ansible_rows():
     """Each playbook shows its last run and schedule and is scheduled in place; the old Recent Runs
     table and the schedule form under Settings are gone."""
     from app.routers import playbooks as playbooks_module  # noqa: F401
-    from app.services import git_sync, inventory
-    real = (git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts)
-    git_sync.list_playbooks = lambda: [{"name": "rowtest.yml", "rel_path": "playbooks/rowtest.yml"}, {"name": "unrun.yml", "rel_path": "playbooks/unrun.yml"}]
-    git_sync.repo_synced = lambda: True
+    from app.services import workspace, inventory
+    real = (workspace.list_playbooks, workspace.has_files, inventory.list_hosts)
+    workspace.list_playbooks = lambda: [{"name": "rowtest.yml", "rel_path": "playbooks/rowtest.yml"}, {"name": "unrun.yml", "rel_path": "playbooks/unrun.yml"}]
+    workspace.has_files = lambda: True
     inventory.list_hosts = lambda: ["web1"]
     scheduler.scheduler.start()
     try:
@@ -516,39 +516,39 @@ def test_ansible_rows():
         assert r.headers["location"].startswith("/ansible?ok=Schedule%20disabled") and "<code>" not in admin.get("/ansible").text.split("playbook-row", 2)[1]
         assert scheduler.next_run("playbooks/rowtest.yml") is None
 
-        settings_page = admin.get("/settings?tab=git").text
+        settings_page = admin.get("/settings?tab=ansible").text
         assert "Playbook Schedules" not in settings_page and "schedules" not in admin.get("/settings").text.split("</nav>")[0]
-        # Sync is on both tabs and returns to the tab it was pressed on.
-        assert 'name="back" value="inventory"' in admin.get("/inventory").text
-        for back, where in (("", "/ansible?"), ("inventory", "/inventory?"), ("anything-else", "/ansible?")):
-            r = admin.post("/sync", data={"back": back}, follow_redirects=False)
-            assert r.status_code == 303 and r.headers["location"].startswith(where), (back, r.headers["location"])
+        # There is no git sync any more: no Sync button on either tab, and the route is gone. Files is a tab.
+        for url in ("/ansible", "/inventory"):
+            html = admin.get(url).text
+            assert "Sync from Git" not in html and 'action="/sync"' not in html and ">Files</a>" in html, url
+        assert admin.post("/sync", data={}, follow_redirects=False).status_code in (404, 405)
         with Session(engine) as session:
             session.delete(session.get(RunHistory, run.id))
             session.commit()
     finally:
         scheduler.scheduler.shutdown(wait=False)
-        git_sync.list_playbooks, git_sync.repo_synced, inventory.list_hosts = real
+        workspace.list_playbooks, workspace.has_files, inventory.list_hosts = real
 
 
 def test_settings_forms_are_separate():
-    """Git sync and Run limits are two forms with two handlers; saving one never touches the other."""
+    """Ansible settings and Run limits are two forms with two handlers; saving one never touches the other."""
     page = admin.get("/settings").text
     assert 'action="/settings"' in page and 'action="/settings/limits"' in page and "recent_runs_count" not in page
-    git_form = page.split('action="/settings"')[1].split("</form>")[0]
-    assert "run_timeout_minutes" not in git_form and "command_history_keep" not in git_form and "git_repo_url" in git_form
+    ansible_form = page.split('action="/settings"')[1].split("</form>")[0]
+    assert "run_timeout_minutes" not in ansible_form and "command_history_keep" not in ansible_form and "playbooks_subdir" in ansible_form
     limits_form = page.split('action="/settings/limits"')[1].split("</form>")[0]
-    assert "run_timeout_minutes" in limits_form and "git_repo_url" not in limits_form
+    assert "run_timeout_minutes" in limits_form and "playbooks_subdir" not in limits_form
     from app.services import settings_store
     assert admin.post("/settings/limits", data={"run_timeout_minutes": "11", "command_history_keep": "12"}).status_code == 200
-    admin.post("/settings", data={"git_repo_url": "https://git.example/x.git", "git_branch": "dev"})
-    assert settings_store.get("run_timeout_minutes") == "11" and settings_store.get("command_history_keep") == "12", "saving git settings leaves the limits alone"
+    admin.post("/settings", data={"playbooks_subdir": "plays", "inventory_path": "inv.yaml"})
+    assert settings_store.get("run_timeout_minutes") == "11" and settings_store.get("command_history_keep") == "12", "saving Ansible settings leaves the limits alone"
     admin.post("/settings/limits", data={"run_timeout_minutes": "30", "command_history_keep": "13"})
-    assert settings_store.get("git_repo_url") == "https://git.example/x.git" and settings_store.get("git_branch") == "dev", "saving limits leaves git settings alone"
+    assert settings_store.get("playbooks_subdir") == "plays" and settings_store.get("inventory_path") == "inv.yaml", "saving limits leaves the Ansible settings alone"
     for bad in ("-1", "x"):
         r = admin.post("/settings/limits", data={"run_timeout_minutes": bad, "command_history_keep": "5"}, follow_redirects=False)
         assert "error=" in r.headers["location"] and settings_store.get("run_timeout_minutes") == "30", bad
-    settings_store.set_many({"git_repo_url": "", "git_branch": "main", "run_timeout_minutes": "60", "command_history_keep": "20"})
+    settings_store.set_many({"playbooks_subdir": "playbooks", "inventory_path": "inventory.yaml", "run_timeout_minutes": "60", "command_history_keep": "20"})
 
 
 def test_approve_is_hidden_without_a_login():
@@ -573,10 +573,10 @@ def test_phone_tables():
     templates = Path(__file__).resolve().parent.parent / "app" / "templates"
     for f in templates.glob("*.html"):
         text = f.read_text()
-        for m in re.finditer(r'<table class="stack">', text):
-            opener = re.findall(r'<div class="(card[^"]*|panel[^"]*)"', text[:m.start()])[-1]
+        for m in re.finditer(r'<table class="stack[^"]*">', text):
+            opener = re.findall(r'<div class="(card(?: [^"]*)?|panel[^"]*)"', text[:m.start()])[-1]
             assert opener.startswith("panel") or "flush" in opener.split(), f"{f.name}: a stacked table needs a flush card or a panel, not {opener!r}"
-        for table in re.findall(r'<table class="stack">(.*?)</table>', text, re.S):
+        for table in re.findall(r'<table class="stack[^"]*">(.*?)</table>', text, re.S):
             real = [r for r in re.findall(r"<tr>(.*?)</tr>", table.split("<tbody>")[-1], re.S) if "colspan" not in r]
             assert all("m-title" in r for r in real), f"{f.name}: every stacked row needs a title cell"
     css = (Path(__file__).resolve().parent.parent / "app" / "static" / "style.css").read_text()

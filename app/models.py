@@ -62,7 +62,7 @@ class Grant(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     role_id: int = Field(index=True)
-    playbook: str  # rel_path, as listed by git_sync.list_playbooks()
+    playbook: str  # rel_path, as listed by workspace.list_playbooks()
     hosts: str  # comma-separated inventory host names
     requires_approval: bool = False  # a run waits for an admin's approval before it starts
 

@@ -37,10 +37,7 @@ atomically. A hand edit that no longer parses keeps the last good library in
 service and shows the error.
 """
 import difflib
-import hashlib
-import os
 import re
-import tempfile
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -49,7 +46,7 @@ import regex as _regex  # same syntax as re, but a match can be given a time bud
 import yaml
 
 from app.config import DATA_DIR
-from app.services import settings_store
+from app.services import fileio, settings_store
 
 LIBRARY_PATH = DATA_DIR / "commands.yml"
 HISTORY_DIR = DATA_DIR / "commands.history"
@@ -369,7 +366,7 @@ def dump_yaml(obj) -> str:
 
 
 def version_of(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:16]
+    return fileio.digest(text.encode())
 
 
 def read_text() -> str:
@@ -439,27 +436,9 @@ def _write(data: dict, before_write=None) -> None:
     old = read_text()
     if old and old != text:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        (HISTORY_DIR / f"{stamp}.yml").write_text(old)
-        for stale in sorted(HISTORY_DIR.glob("*.yml"))[: -_history_keep()]:
-            stale.unlink()
-    LIBRARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=LIBRARY_PATH.parent, prefix=".commands-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())  # a power cut must not leave an empty commands.yml after the swap
-        os.replace(tmp, LIBRARY_PATH)
-        dir_fd = os.open(LIBRARY_PATH.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+        (HISTORY_DIR / f"{fileio.stamp()}.yml").write_text(old)
+        fileio.keep_newest(list(HISTORY_DIR.glob("*.yml")), _history_keep())
+    fileio.write_atomic(LIBRARY_PATH, text.encode(), tmp_prefix=".commands-")
     load()  # pick up the new file now, so listeners (role cleanup) run straight away
 
 
