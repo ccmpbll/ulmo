@@ -292,6 +292,7 @@ td.actions-cell .actions { flex-wrap: nowrap; justify-content: flex-end; }
 
 /* Forms: fields side by side where there is room */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+@media (min-width: 900px) { .form-grid.three { grid-template-columns: repeat(3, 1fr); } }  /* five fields: a 3 + 2 grid, not 4 + 1 */
 .subhead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 20px 0 8px; }
 
 /* A list of things to tick: scrolls and filters instead of growing without end */
@@ -519,4 +520,51 @@ table.files-table, table.files-table details { width: 100%; }
   table.stack tr.subrow { display: block; padding: 0; border: 0; }
   table.stack tr.subrow > td { display: block; width: auto; padding: 0; border: 0; }
   tr.subrow details summary { padding: 14px 16px; }
+}
+
+/* Line numbers. Editor: a gutter over the left of the textarea (the text is padded past it); it scrolls with the text. */
+.code-edit textarea.code, .code-edit .code-hl { padding-left: calc(var(--digits, 2) * 1ch + 30px); }
+.code-edit .code-gutter { position: absolute; z-index: 2; left: 1px; top: 1px; margin: 0; padding: 8px 0 0; width: calc(var(--digits, 2) * 1ch + 20px); overflow: hidden;
+  box-sizing: border-box; text-align: right; color: #5c6370; background: #11141a; border-right: 1px solid var(--border); border-radius: 5px 0 0 5px;
+  pointer-events: none; user-select: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.5; }
+.code-edit .code-gutter code { display: block; padding: 0 10px 40px 0; font: inherit; background: none; }
+/* Viewer: the numbers sit beside the code and scroll down with it; the code scrolls sideways on its own. */
+.code-view { display: flex; align-items: stretch; background: #282c34; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.5; }
+.code-view .code-nums { flex: none; margin: 0; padding: 1em 10px 1em 16px; text-align: right; color: #5c6370; border-right: 1px solid var(--border); user-select: none; font: inherit; }
+.code-view .code-body { flex: 1; min-width: 0; margin: 0; font: inherit; }
+
+/* A diff with line numbers (approval page): old and new line number, a sign, the text. */
+.linediff-wrap { overflow-x: auto; background: #11141a; border: 1px solid var(--border); border-radius: 8px; }
+table.linediff { border-collapse: collapse; width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.5; }
+table.linediff td { padding: 0 8px; border: none; vertical-align: top; }
+table.linediff td.no { width: 1%; min-width: 3.2em; text-align: right; color: #5c6370; user-select: none; white-space: nowrap; }
+table.linediff td.sign { width: 1%; user-select: none; }
+table.linediff td.txt { white-space: pre; width: 100%; }
+table.linediff tr.add { background: rgba(62, 207, 142, 0.12); }
+table.linediff tr.add td.sign, table.linediff tr.add td.txt { color: var(--green); }
+table.linediff tr.del { background: rgba(239, 91, 91, 0.12); }
+table.linediff tr.del td.sign, table.linediff tr.del td.txt { color: var(--red); }
+table.linediff tr.gap td { color: var(--muted); background: #181b22; padding: 2px 8px; font-style: italic; }
+
+.mini-label { margin: 0 0 3px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.access-row { display: flex; align-items: center; gap: 8px; }
+.access-row .mini-label { flex: none; width: 2.6rem; margin: 0; }
+.access-row select { flex: 1; min-width: 0; margin: 0; }
+@media (max-width: 1000px) {  /* the cell is too narrow for label and select side by side: stack them */
+  .access-row { display: block; }
+  .access-row .mini-label { width: auto; margin-bottom: 3px; }
+}
+@media (max-width: 640px) {  /* an agent's card: the groups are spaced apart, the buttons share the last line */
+  td .usage { display: block; margin-top: 8px; }
+  table.stack td.agent-actions { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }
+  table.stack td.agent-actions .actions { flex-wrap: nowrap; gap: 10px; }
+  table.stack td.agent-actions .actions > button, table.stack td.agent-actions .actions form { flex: 1 1 0; min-width: 0; }
+  table.stack td.agent-actions .actions button { width: 100%; }
+  table.stack td.agent-actions .actions > button { padding-left: 0; padding-right: 0; border-left-width: 0; border-right-width: 0; }  /* a flex item's padding counts toward its share; the others sit inside forms */
+  /* Per hour reads like Role and Files (label, then the box); its Save moves down to the row of buttons, three of equal width */
+  .limit-form .hour-label { display: block; flex: none; width: 4.2rem; margin: 0; }
+  .limit-form .save-inline { display: none; }
+}
+@media (min-width: 641px) {
+  .hour-label, .save-card { display: none; }
 }

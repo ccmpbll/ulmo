@@ -70,11 +70,14 @@ def token_state(session: Session, row, disabled_reason: str, touch: bool = True)
     return ""
 
 
-def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None) -> tuple[Agent, str]:
+def create_agent(name: str, expires_days: int | None = None, role_id: int | None = None, max_per_hour: int | None = None, file_access: str = "none") -> tuple[Agent, str]:
     """Create an agent and return it with its plaintext token (the only time
     the token exists outside the caller's hands)."""
     name = check_token_args(name, expires_days)
     _check_limit(max_per_hour)
+    from app.services import file_access as _files
+
+    file_access = _files.clean_mode(file_access)
 
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with Session(engine) as session:
@@ -86,6 +89,7 @@ def create_agent(name: str, expires_days: int | None = None, role_id: int | None
             name=name,
             role_id=role_id,
             max_per_hour=max_per_hour,
+            file_access=file_access,
             token_hash=hash_token(token),
             expires_at=utcnow() + timedelta(days=expires_days) if expires_days else None,
         )
@@ -109,6 +113,20 @@ def set_hourly_limit(agent_id: int, value: int | None) -> None:
         agent.max_per_hour = value
         session.add(agent)
         session.commit()
+
+
+def set_file_access(agent_id: int, mode: str) -> str:
+    from app.services import file_access  # imported here: file_access needs this module's callers
+
+    mode = file_access.clean_mode(mode)
+    with Session(engine) as session:
+        agent = session.get(Agent, agent_id)
+        if agent is None:
+            raise ValueError("Unknown agent.")
+        agent.file_access = mode
+        session.add(agent)
+        session.commit()
+    return mode
 
 
 def hourly_limit(agent: Agent) -> int:
@@ -464,3 +482,30 @@ def admin_audit(admin: str, action: str, detail: str = "") -> None:
         session.refresh(row)
         session.exec(delete(AdminAudit).where(AdminAudit.id <= row.id - ADMIN_AUDIT_KEEP))
         session.commit()
+
+
+def follow_playbook(src: str, dst: str) -> None:
+    """A playbook moved to another playbook path: its grants and its schedule go with it. A move out
+    of the playbooks folder (to old/, say) changes nothing here: it is no longer a playbook, so its
+    schedule is dropped with the other orphans and its grants name a path that no longer runs."""
+    if not workspace.is_playbook_path(dst):
+        return
+    from app.models import PlaybookSchedule
+    from app.services import scheduler
+
+    with Session(engine) as session:
+        session.exec(update(Grant).where(Grant.playbook == src).values(playbook=dst))
+        schedule = session.get(PlaybookSchedule, src)
+        cron = None
+        if schedule is not None:
+            cron = schedule.cron
+            session.delete(schedule)
+            if session.get(PlaybookSchedule, dst) is None:
+                session.add(PlaybookSchedule(rel_path=dst, cron=cron))
+        session.commit()
+    if cron is not None:
+        scheduler.reschedule_playbook(src, "")  # drop the old job
+        scheduler.reschedule_playbook(dst, cron)
+
+
+workspace.on_move(follow_playbook)

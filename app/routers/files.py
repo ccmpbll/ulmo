@@ -113,21 +113,6 @@ def edit_page(request: Request, path: str, ok: str | None = None, error: str | N
     return _editor(request, rel, ok=ok, error=error, warn=warn)
 
 
-def _like_the_file(rel: str, text: str) -> str:
-    """The text, with the file's own line endings put back. A textarea cannot hold a mixed or CRLF
-    file as it is (the browser normalises line breaks), so: if nothing changed apart from that, keep
-    every byte of the file; otherwise a file that mostly uses CRLF stays CRLF."""
-    try:
-        old = workspace.file_bytes(rel)
-        old_text = old.decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
-        return text
-    if old_text.replace("\r\n", "\n") == text:
-        return old_text
-    crlf = old.count(b"\r\n")
-    return text.replace("\n", "\r\n") if crlf > old.count(b"\n") - crlf else text
-
-
 @router.post("/files/save")
 def save(request: Request, path: str = Form(...), text: str = Form(""), base: str = Form("")):
     if AUTH_DISABLED:
@@ -135,11 +120,11 @@ def save(request: Request, path: str = Form(...), text: str = Form(""), base: st
     text = text.replace("\r\n", "\n")  # browsers submit a textarea with CRLF
     try:
         rel = workspace.clean(path)
-        body = _like_the_file(rel, text)
+        body = workspace.keep_line_endings(rel, text)
         workspace.store(rel, body.encode(), base=base)
     except ValueError as exc:  # Locked, Conflict and bad paths are all ValueErrors
         return _editor(request, path.strip(), text, base, error=str(exc), status_code=_status_for(exc))
-    warning = workspace.check_syntax(rel, text)
+    warning = workspace.check_syntax(rel, text) or workspace.check_playbook(rel)
     return RedirectResponse(f"/files/edit?path={quote(rel)}&ok=Saved" + (f"&warn={quote(warning)}" if warning else ""), status_code=303)
 
 

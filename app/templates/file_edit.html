@@ -40,6 +40,7 @@
     <input type="hidden" name="base" value="{{ base }}" />
     <label>Contents
       <div class="code-edit" id="code-edit" data-lang="{{ hl_lang }}">
+        <pre class="code-gutter" id="file-gutter" aria-hidden="true"><code></code></pre>
         <pre class="code-hl" aria-hidden="true"><code id="file-hl"></code></pre>
         <textarea class="code" name="text" id="file-text" rows="28" spellcheck="false" wrap="off" {{ 'readonly' if frozen }}>
 {{ text }}</textarea>
@@ -80,23 +81,42 @@
     const s = box.selectionStart, t = box.selectionEnd;
     box.setRangeText("  ", s, t, "end");
   });
+  // Line numbers: a gutter that scrolls with the text; the number column widens at 100, 1000, ... lines.
+  const wrap = document.getElementById("code-edit");
+  const gutter = document.getElementById("file-gutter"), nums = gutter.firstElementChild;
+  let shown = 0;
+  const numbers = () => {
+    const n = box.value.split("\n").length;
+    if (n !== shown) {
+      shown = n;
+      nums.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n");
+      wrap.style.setProperty("--digits", Math.max(2, String(n).length));
+    }
+    gutter.style.height = box.clientHeight + "px";
+  };
   // Syntax colours: the text is drawn, highlighted, in a <pre> under the (then transparent) textarea.
   // Past a size the highlighting is skipped and the textarea shows its own text.
-  const wrap = document.getElementById("code-edit");
-  if (wrap.dataset.lang && window.hljs && hljs.getLanguage(wrap.dataset.lang)) {
-    const hl = document.getElementById("file-hl"), under = hl.parentNode, MAX = 200000;
-    let queued = false;
-    const paint = () => {
-      queued = false;
+  const lang = wrap.dataset.lang, colours = lang && window.hljs && hljs.getLanguage(lang);
+  const under = colours ? document.getElementById("file-hl").parentNode : null, hl = colours ? document.getElementById("file-hl") : null, MAX = 200000;
+  const sync = () => {
+    gutter.scrollTop = box.scrollTop;
+    if (under) { under.scrollTop = box.scrollTop; under.scrollLeft = box.scrollLeft; }
+  };
+  let queued = false;
+  const paint = () => {
+    queued = false;
+    numbers();
+    if (colours) {
       const on = box.value.length <= MAX;
       wrap.classList.toggle("hl-on", on);
-      if (on) hl.innerHTML = hljs.highlight(box.value, { language: wrap.dataset.lang, ignoreIllegals: true }).value + "\n";
-      under.scrollTop = box.scrollTop; under.scrollLeft = box.scrollLeft;
-    };
-    box.addEventListener("input", () => { if (!queued) { queued = true; requestAnimationFrame(paint); } });
-    box.addEventListener("scroll", () => { under.scrollTop = box.scrollTop; under.scrollLeft = box.scrollLeft; });
-    paint();
-  }
+      if (on) hl.innerHTML = hljs.highlight(box.value, { language: lang, ignoreIllegals: true }).value + "\n";
+    }
+    sync();
+  };
+  box.addEventListener("input", () => { if (!queued) { queued = true; requestAnimationFrame(paint); } });
+  box.addEventListener("scroll", sync);
+  if (window.ResizeObserver) new ResizeObserver(numbers).observe(box);  // the textarea can be dragged taller
+  paint();
   // Warn before leaving with unsaved changes.
   const start = box.value;
   let saving = false;

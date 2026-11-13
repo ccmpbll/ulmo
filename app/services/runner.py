@@ -103,6 +103,8 @@ def start_run(
                 triggered_by=triggered_by,
                 tags=tags or None,
                 limit=limit or None,
+                playbook_rev=workspace.file_version(playbook_rel_path),  # what is about to run:
+                workspace_rev=workspace.revision(),  # the files cannot change until the run ends (the workspace lock)
             )
             session.add(record)
             session.commit()

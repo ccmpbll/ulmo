@@ -57,3 +57,19 @@
   <p class="empty check-none" style="padding: 0 12px;" hidden>Nothing matches that filter.</p>
 </div>
 {% endmacro %}
+
+{#
+  A diff with line numbers: rows from file_access.diff_rows() (kind ctx|add|del|gap, old_no, new_no, text).
+  The text is escaped by Jinja, so what an agent wrote cannot add markup.
+#}
+{% macro line_diff(rows) %}
+<div class="linediff-wrap"><table class="linediff">
+  {% for r in rows %}
+  {% if r.kind == "gap" %}
+  <tr class="gap"><td colspan="4">&hellip; {{ r.skipped }} unchanged line{{ "" if r.skipped == 1 else "s" }}</td></tr>
+  {% else %}
+  <tr class="{{ r.kind }}"><td class="no">{{ r.old_no or "" }}</td><td class="no">{{ r.new_no or "" }}</td><td class="sign">{{ "+" if r.kind == "add" else "-" if r.kind == "del" else "" }}</td><td class="txt">{{ r.text }}</td></tr>
+  {% endif %}
+  {% endfor %}
+</table></div>
+{% endmacro %}
