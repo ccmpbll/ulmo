@@ -399,6 +399,17 @@ def test_page_tabs():
     assert admin.post(f"/admin-tokens/{token_id}/toggle", follow_redirects=False).headers["location"] == "/agents?tab=tokens"
     assert admin.post("/agent-runs/toggle", data={"enable": "1"}, follow_redirects=False).headers["location"] == "/agents"
 
+    # The kill switch card is one row: status, what it means, the switch (both states).
+    assert '<form method="post" action="/agent-runs/toggle" class="killswitch">' in a and '<span class="killswitch-text">Agents can start' in a
+    admin.post("/agent-runs/toggle", data={})
+    try:
+        off = admin.get("/agents").text
+        assert 'class="killswitch"' in off and '<span class="killswitch-text">No agent can start a run' in off and ">Switch on</button>" in off
+    finally:
+        admin.post("/agent-runs/toggle", data={"enable": "1"})
+    css = (Path(__file__).resolve().parent.parent / "app" / "static" / "style.css").read_text()
+    assert ".killswitch { display: flex; align-items: center; flex-wrap: wrap;" in css and ".killswitch-text { flex: 1 1 260px;" in css
+
     # Commands
     c = admin.get("/commands").text
     assert active(c) == ["SSH hosts"] and "Add a host" in c and "Command library" not in c.split("</nav>")[-1] and "New command" not in c
@@ -582,6 +593,11 @@ def test_phone_tables():
         assert rows and all(r.count("m-title") == 1 for r in rows), f"{tab}: one title cell per row"
         if tab in ("playbooks", "commands", "syncs", "all"):
             assert all(r.count("m-status") <= 1 for r in rows) and any("m-status" in r for r in rows), f"{tab}: the status badge sits on the title line"
+    assert ".clear { display: flex; align-items: center; flex-wrap: wrap;" in css and ".clear a { font-size: 0.82rem; white-space: nowrap; margin-left: auto; }" in css and ".card-head a { font-size: 0.82rem; white-space: nowrap; }" in css, "a link with an arrow never breaks before the arrow"
+    side = [line for line in css.splitlines() if line.strip().startswith(".sidenav { position: static;")]
+    assert len(side) == 1 and "flex-wrap: wrap" in side[0] and "overflow-x" not in side[0], "Settings sections wrap on a phone instead of scrolling"
+    assert "@media (max-width: 640px) {\n  /* A table marked \"stack\" becomes one card per row" in css, "rows turn into cards on a phone, not on a tablet or small window"
+    assert "table.stack td select { min-width: 6.5rem; }" in css and "@media (min-width: 641px) and (max-width: 1000px)" in css and "table.stack td.actions-cell .actions { flex-direction: column;" in css, "a mid-width table keeps its selects usable and its cells tight"
     agents_page = admin.get("/agents").text
     assert 'class="card flush">\n    <table class="stack">' in agents_page and 'data-label="Name" class="m-title"' in agents_page
 
