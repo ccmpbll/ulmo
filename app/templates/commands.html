@@ -20,16 +20,16 @@
 
 {% if tab == "hosts" %}
 <div class="settings-section">
-  <div class="card">
+  <div class="card flush">
     <table class="stack">
       <thead><tr><th>Host</th><th>Connects as</th><th>Signs in with</th><th>Offers</th><th></th></tr></thead>
       <tbody>
         {% for h in hosts %}
         <tr>
-          <td data-label="Host">{{ h.name }}</td>
-          <td data-label="Connects as">{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
+          <td data-label="Host" class="m-title full">{{ h.name }}</td>
+          <td data-label="Connects as" class="full">{{ h.user }}@{{ h.address }}:{{ h.port }}</td>
           <td data-label="Signs in with" class="muted">{% if h.auth == 'password' %}password{% if h.name not in password_hosts %} <span class="error">(none saved)</span>{% endif %}{% else %}{{ h.ssh_key or 'ssh default' }}{% endif %}</td>
-          <td data-label="Offers" class="muted">
+          <td data-label="Offers" class="muted full">
             {% if h.commands | length > 4 %}
             <details><summary>{{ h.commands | length }} commands</summary>{{ h.commands | join(', ') }}</details>
             {% else %}{{ h.commands | join(', ') or 'nothing' }}{% endif %}
@@ -43,7 +43,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No hosts yet. Add one below, then choose which commands it offers.</td></tr>
+        <tr><td colspan="5" class="muted full">No hosts yet. Add one below, then choose which commands it offers.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -99,14 +99,14 @@
     <h2 style="border: 0; padding: 0; margin: 0;">Commands</h2>
     <a class="btn" href="/commands/edit">New command</a>
   </div>
-  <div class="card">
+  <div class="card flush">
     <table class="stack">
       <thead><tr><th>Command</th><th>Runs</th><th>Parameters</th><th>Offered by</th><th></th></tr></thead>
       <tbody>
         {% for c in commands %}
         <tr>
-          <td data-label="Command">{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
-          <td data-label="Runs"><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
+          <td data-label="Command" class="m-title full">{{ c.id }}<br /><span class="muted">{{ c.description }}{% if c.risk %} · risk {{ c.risk }}{% endif %}</span></td>
+          <td data-label="Runs" class="full"><code>{{ ('sudo -n ' if c.sudo else '') ~ c.argv | join(' ') }}</code></td>
           <td data-label="Parameters" class="muted">{% for name, spec in c.params.items() %}{{ name }} ({{ spec.type }}{{ ', optional' if spec.optional }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
           <td data-label="Offered by" class="muted">{{ offered_by[c.id] | join(', ') or 'no host' }}</td>
           <td data-label="" class="actions-cell">
@@ -117,7 +117,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No commands yet. Press "New command" to write the first one.</td></tr>
+        <tr><td colspan="5" class="muted full">No commands yet. Press "New command" to write the first one.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -128,15 +128,15 @@
 
 {% if tab == "copies" %}
 <div class="settings-section">
-  <div class="card">
+  <div class="card flush">
     <p class="muted">Every change keeps the copy it replaced. Each line says what the change after that copy was; open one to see what restoring it would undo. The number kept is set under Settings.</p>
     <table class="stack">
       <thead><tr><th>Copy from</th><th>What changed after it</th><th></th></tr></thead>
       <tbody>
         {% for v in versions %}
         <tr>
-          <td data-label="Copy from">{{ v.at | local_time }}</td>
-          <td data-label="What changed after it" class="muted">{{ v.change or '(not summarised)' }}</td>
+          <td data-label="Copy from" class="m-title full">{{ v.at | local_time }}</td>
+          <td data-label="What changed after it" class="muted full">{{ v.change or '(not summarised)' }}</td>
           <td data-label="" class="actions-cell">
             <div class="actions">
               <a class="btn secondary" href="/commands/history/{{ v.id }}">View</a>
@@ -148,7 +148,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="muted">No saved copies yet.</td></tr>
+        <tr><td colspan="3" class="muted full">No saved copies yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
