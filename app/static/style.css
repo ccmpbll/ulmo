@@ -565,3 +565,9 @@ table.linediff tr.gap td { color: var(--muted); background: #181b22; padding: 2p
 .tag-summary summary { cursor: pointer; }
 .tag-summary ul { margin: 8px 0 0; padding-left: 22px; }
 .tag-summary li { margin: 2px 0; }
+.key-meta { display: block; font-size: 0.8rem; margin-top: 2px; }
+.key-note { margin: 0 0 10px; font-size: 0.82rem; }
+.user-row .key-meta { overflow-wrap: anywhere; }
+.key-help h3 { margin: 0 0 6px; font-size: 1rem; }
+.key-help p { margin: 6px 0; line-height: 1.5; }
+.key-paths { margin: 6px 0; padding-left: 22px; line-height: 1.8; }

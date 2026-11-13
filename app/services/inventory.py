@@ -85,6 +85,16 @@ def host_conn(host: str) -> dict | None:
     }
 
 
+def key_files() -> dict[str, list[str]]:
+    """The private key files the inventory names (ansible_ssh_private_key_file), each with the hosts that use it."""
+    out: dict[str, list[str]] = {}
+    for host, raw in _data()["conn"].items():
+        path = str(raw.get("ansible_ssh_private_key_file") or "").strip()
+        if path:
+            out.setdefault(path, []).append(host)
+    return {path: sorted(hosts) for path, hosts in sorted(out.items())}
+
+
 _last_good: dict | None = None  # the newest facts that parsed, kept in memory
 _generation = 0  # bumped by every invalidation, so a slow recompute that started earlier cannot save stale facts
 

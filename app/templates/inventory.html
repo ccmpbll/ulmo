@@ -13,6 +13,21 @@
 </div>
 {{ subnav([("/ansible", "Playbooks", false), ("/inventory", "Inventory", true), ("/files", "Files", false)]) }}
 
+<div class="card key-help">
+  <h3>SSH key paths</h3>
+  <p class="muted">Point <code>ansible_ssh_private_key_file</code> at a key saved in <a href="/settings?tab=ssh">Settings → SSH keys</a>. Use the key's name after one of these:</p>
+  <ul class="key-paths">
+    {% for p in key_paths %}<li><code>{{ p }}</code></li>{% endfor %}
+  </ul>
+  <p class="muted">For example, <code>/home/ansible/.ssh/ansible-ed25519</code> uses the key saved as <code>ansible-ed25519</code>. Any other path must exist inside the container.</p>
+  {% if missing_keys %}
+  <p class="error">
+    {% for r in missing_keys %}<code>{{ r.path }}</code> has no saved key named "{{ r.name }}" (used by {{ r.hosts | join(', ') }}){{ "; " if not loop.last }}{% endfor %}.
+    <a href="/settings?tab=ssh">Add it in Settings</a>.
+  </p>
+  {% endif %}
+</div>
+
 {% if not has_files %}
 <div class="card">
   <p class="muted">No files yet. Upload an inventory on the <a href="/files">Files</a> page, or import a git repository once in <a href="/settings">Settings</a>.</p>
