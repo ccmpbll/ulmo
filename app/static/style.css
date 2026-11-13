@@ -560,3 +560,8 @@ table.linediff tr.gap td { color: var(--muted); background: #181b22; padding: 2p
 @media (min-width: 641px) {
   .hour-label, .save-card { display: none; }
 }
+
+.tag-summary { margin: 0 0 12px; }
+.tag-summary summary { cursor: pointer; }
+.tag-summary ul { margin: 8px 0 0; padding-left: 22px; }
+.tag-summary li { margin: 2px 0; }

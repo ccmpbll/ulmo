@@ -3,6 +3,8 @@ import os
 import re
 import subprocess
 
+import yaml
+
 from app.config import COLLECTIONS_DIR, DATA_DIR, WORKSPACE_DIR
 
 TAG_LINE_RE = re.compile(r"TASK TAGS:\s*\[(.*?)\]")
@@ -66,3 +68,49 @@ def load_cache() -> dict:
         return json.loads(CACHE_PATH.read_text())
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _tag_list(value) -> list[str]:
+    if isinstance(value, str):
+        return [t.strip() for t in value.split(",") if t.strip()]
+    if isinstance(value, list):
+        return [str(t).strip() for t in value if str(t).strip()]
+    return []
+
+
+def task_outline(text: str) -> list[dict]:
+    """The named tasks of a playbook, read from its text (no ansible, nothing connects): [{name, tags}] in
+    order, with the tags a play and its blocks pass down. Handlers are left out (they run only when
+    notified), as are tasks without a name, with a templated name, or inside roles and includes."""
+    try:
+        plays = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return []
+    out: list[dict] = []
+
+    def walk(tasks, inherited):
+        for task in tasks if isinstance(tasks, list) else []:
+            if not isinstance(task, dict):
+                continue
+            tags = inherited + [t for t in _tag_list(task.get("tags")) if t not in inherited]
+            for key in ("block", "rescue", "always"):
+                if key in task:
+                    walk(task[key], tags)
+            name = task.get("name")
+            if "block" not in task and isinstance(name, str) and name.strip() and "{{" not in name:
+                out.append({"name": name.strip(), "tags": tags})
+
+    for play in plays if isinstance(plays, list) else []:
+        if isinstance(play, dict):
+            for key in ("pre_tasks", "tasks", "post_tasks"):
+                walk(play.get(key), _tag_list(play.get("tags")))
+    return out
+
+
+TASK_RE = re.compile(r"^TASK \[(.*?)\]", re.M)
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def ran_task_names(log: str) -> set[str]:
+    """Names of the tasks a run started, from its log."""
+    return {m.group(1).strip() for m in TASK_RE.finditer(ANSI_RE.sub("", log))}

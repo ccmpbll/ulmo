@@ -10,7 +10,14 @@
     <a class="btn secondary" href="/ansible">Back to playbooks</a>
   </div>
 </div>
-{% if run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
+{% if tag_summary %}
+<details class="muted tag-summary">
+  <summary>Tags <code>{{ tag_summary.tags | join(', ') }}</code>: {{ tag_summary.ran }} of {{ tag_summary.total }} tasks ran{% if tag_summary.skipped %}, {{ tag_summary.skipped | length }} left out because no tag matched{% endif %}</summary>
+  {% if tag_summary.skipped %}
+  <ul>{% for t in tag_summary.skipped %}<li>{{ t.name }}{% if t.tags %} <code>{{ t.tags | join(', ') }}</code>{% else %} <span>(no tags)</span>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+</details>
+{% elif run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 {% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
 {% if run.playbook_rev %}
 <p class="muted">Playbook version <code>{{ run.playbook_rev }}</code>:

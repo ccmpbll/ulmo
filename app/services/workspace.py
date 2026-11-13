@@ -258,6 +258,25 @@ def file_version(rel: str) -> str | None:
         return None
 
 
+def text_of_version(rel: str, digest: str | None) -> str | None:
+    """The text of `rel` as it was at `digest`: the current file if it is unchanged (or no digest was
+    recorded), else the saved copy holding that version, else None."""
+    try:
+        current = file_bytes(rel)
+    except ValueError:
+        current = None
+    if current is not None and (digest is None or version_of(current) == digest):
+        return current.decode("utf-8", errors="replace")
+    try:
+        for copy in list_versions(rel):
+            data = version_bytes(rel, copy["id"])
+            if version_of(data) == digest:
+                return data.decode("utf-8", errors="replace")
+    except ValueError:
+        pass
+    return None
+
+
 def where_is_version(rel: str, digest: str) -> dict:
     """Where the file `rel` with this digest is now: {"state": "current"} if the file is unchanged,
     {"state": "saved", "id": <saved copy id>, "at": <when>} if a saved copy holds it, else {"state": "gone"}."""
