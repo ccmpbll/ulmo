@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     workspace.migrate_legacy_repo()  # also schedules the collections install and the caches
     retention.prune()
     ssh_keys.ensure_symlinks()
+    ssh_keys.ensure_public_keys()
     scheduler.start()
     yield
     scheduler.scheduler.shutdown(wait=False)

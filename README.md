@@ -240,7 +240,11 @@ Commands page. They are symlinked into the container at `/home/ansible/.ssh` and
 common `ansible_ssh_private_key_file: /home/ansible/.ssh/ansible-ed25519` convention (set
 `ULMO_SSH_LINK_HOMES` if yours differs). A key's **name** must be the file name in the inventory path
 (`/home/ansible/.ssh/ansible-ed25519` uses the key named `ansible-ed25519`); the page lists every key path
-the inventory names and whether a key with that name is saved. Keys must be unencrypted. A private git remote needing its own
+the inventory names and whether a key with that name is saved. Keys must be unencrypted. Saving a key also
+writes its public key next to it as `<name>.pub` (so a playbook can read `/home/ansible/.ssh/<name>.pub`, say for
+`ansible.posix.authorized_key`). Once a key of that name is saved the `.pub` is ulmo's: it is kept if it already holds that key
+(your own comment is fine), replaced if it holds another key or nothing, and removed with the key. Keys saved by an older release
+get theirs at the next start. If a public key cannot be made (a key with a passphrase, say) the key is still saved and the page says why. A private git remote needing its own
 key (for Import from Git) can mount one in `docker-compose.yml`.
 
 ## Environment variables
