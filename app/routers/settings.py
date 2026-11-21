@@ -179,10 +179,14 @@ async def upload_ssh_key(
         if not filename.strip():
             raise ValueError("Give the key a name, or upload a file (its filename will be used).")
 
-        ssh_keys.save_key(filename, content)
+        stored, problem = ssh_keys.save_key(filename, content)
     except ValueError as exc:
         return RedirectResponse(f"/settings?tab=ssh&error={quote(str(exc))}", status_code=303)
-    return RedirectResponse(f"/settings?tab=ssh&ok=SSH+key+%22{quote(filename)}%22+saved", status_code=303)
+    if problem:  # the key is saved, but a playbook that reads its .pub will fail: show it as a problem
+        message = f'SSH key "{stored}" saved, but its public key could not be created: {problem}'
+        return RedirectResponse(f"/settings?tab=ssh&error={quote(message)}", status_code=303)
+    message = f'SSH key "{stored}" saved; its public key is {stored}.pub'  # built apart: no backslashes inside an f-string before Python 3.12
+    return RedirectResponse(f"/settings?tab=ssh&ok={quote(message)}", status_code=303)
 
 
 @router.post("/settings/ssh-key/{filename}/delete")
