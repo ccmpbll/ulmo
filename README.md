@@ -11,6 +11,9 @@ plus an API that lets scripts and AI agents run allowlisted playbooks and SSH co
 
 - **Playbooks:** pick tags (`--tags`) and hosts (`--limit`), watch a live colourised log with per-task
   progress and a Play Recap, cancel, set a run timeout (60 min default) and a cron schedule per playbook.
+  Additional options on a run: extra vars (`--extra-vars`, saved in plain text with the run, so no
+  secrets; refused while `ULMO_DISABLE_AUTH` is set) and an SSH password (`--ask-pass`, used for that run only and
+  never stored), for example `ansible_ssh_user=root` plus the root password on a new host.
   A finished run that used tags lists the tasks no tag matched. Each run records the playbook's version and
   a revision of all files, and links to the saved copy it ran if the file has changed since.
 - **Files** (Ansible → Files): ulmo keeps your Ansible files (playbooks, inventory, `ansible.cfg`,
@@ -228,7 +231,7 @@ be approved (denying always works).
 
 The API is separate from the login session: `ULMO_DISABLE_AUTH` does not open it. While it is set the
 Agents page will not create agents or widen what they may do, though it will still switch runs off. Serve
-ulmo over HTTPS so tokens are not sent in clear.
+ulmo over HTTPS so tokens, and the SSH password typed on a run, are not sent in clear.
 
 ## SSH access to target hosts
 

@@ -28,6 +28,8 @@ class RunHistory(SQLModel, table=True):
     return_code: Optional[int] = None
     tags: Optional[str] = None  # comma-separated --tags used for this run, if any
     limit: Optional[str] = None  # comma-separated --limit hosts, if any
+    extra_vars: Optional[str] = None  # the --extra-vars text typed for this run, if any
+    used_password: bool = False  # an SSH password was supplied for this run (the password itself is never stored)
     playbook_rev: Optional[str] = None  # digest of the playbook file as it was when the run started
     workspace_rev: Optional[str] = None  # digest of every file in the workspace at that moment
     started_at: datetime = Field(default_factory=utcnow)

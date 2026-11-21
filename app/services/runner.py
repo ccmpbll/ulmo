@@ -1,4 +1,5 @@
 import json
+import shlex
 import threading
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from sqlmodel import Session, select
 from app.config import COLLECTIONS_DIR, RUNNER_DATA_DIR, WORKSPACE_DIR
 from app.database import engine
 from app.models import RunHistory, utcnow
-from app.services import playbook_tags, settings_store, workspace
+from app.services import host_secrets, playbook_tags, settings_store, workspace
 
 _cancel_events: dict[int, threading.Event] = {}
 _progress: dict[int, dict] = {}
@@ -80,14 +81,47 @@ def reconcile_orphaned_runs() -> None:
         session.commit()
 
 
+MAX_EXTRA_VARS = 2000
+# ansible-playbook asks for the SSH password with this prompt when it is given --ask-pass
+_SSH_PROMPT = r"^SSH password:\s*?$"
+
+
+# Files in <private_data_dir>/env that ansible-runner wrote for us. We pass these as arguments now, but a
+# file left by an older release is still read when the matching argument is empty, which would replay an
+# old run's --extra-vars / --ask-pass into this one. Only these two: extravars, settings and ssh_key are
+# never written by ulmo, so a copy there was put by the operator and is left alone.
+_STALE_ENV_FILES = ("cmdline", "passwords")
+
+
+def _clear_stale_env_files() -> None:
+    for name in _STALE_ENV_FILES:
+        (RUNNER_DATA_DIR / "env" / name).unlink(missing_ok=True)
+
+
+def check_run_options(extra_vars: str, ssh_password: str) -> str:
+    """Validate the per-run extras and return the trimmed extra vars; raises ValueError with a
+    message that is safe to show the user."""
+    extra_vars = extra_vars.strip()
+    if len(extra_vars) > MAX_EXTRA_VARS or "\0" in extra_vars or "\n" in extra_vars or "\r" in extra_vars:
+        raise ValueError(f"Extra vars must be one line of at most {MAX_EXTRA_VARS} characters.")
+    if extra_vars.startswith("@"):  # --extra-vars @file would read a file from the ulmo container
+        raise ValueError("Extra vars cannot load a file.")
+    if ssh_password:
+        host_secrets.check(ssh_password)
+    return extra_vars
+
+
 def start_run(
     playbook_rel_path: str,
     triggered_by: str = "manual",
     tags: str = "",
     limit: str = "",
+    extra_vars: str = "",
+    ssh_password: str = "",
 ) -> RunHistory:
     tags = tags.strip()
     limit = limit.strip()
+    extra_vars = check_run_options(extra_vars, ssh_password)
 
     # One step under the workspace lock: the playbook exists, the row is written and the run is
     # registered, so no save can land between the check and the run starting (and the workspace
@@ -103,6 +137,8 @@ def start_run(
                 triggered_by=triggered_by,
                 tags=tags or None,
                 limit=limit or None,
+                extra_vars=extra_vars or None,
+                used_password=bool(ssh_password),
                 playbook_rev=workspace.file_version(playbook_rel_path),  # what is about to run:
                 workspace_rev=workspace.revision(),  # the files cannot change until the run ends (the workspace lock)
             )
@@ -112,8 +148,9 @@ def start_run(
             run_id = record.id
         workspace.begin_run(run_id, playbook_rel_path)
 
+    # The password goes to the thread and nowhere else: it is not in the database row or the log.
     thread = threading.Thread(
-        target=_execute, args=(run_id, playbook_rel_path, tags, limit), daemon=True
+        target=_execute, args=(run_id, playbook_rel_path, tags, limit, extra_vars, ssh_password), daemon=True
     )
     try:
         thread.start()
@@ -134,7 +171,14 @@ def cancel_run(run_id: int) -> bool:
     return True
 
 
-def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "") -> None:
+def _execute(
+    run_id: int,
+    playbook_rel_path: str,
+    tags: str = "",
+    limit: str = "",
+    extra_vars: str = "",
+    ssh_password: str = "",
+) -> None:
     from app.services import notifier
 
     cancel_event = threading.Event()
@@ -183,7 +227,12 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
     run_status = None
     try:
         settings = settings_store.get_all()
-        extra_args = settings.get("extra_args", "").strip() or None
+        extra_args = settings.get("extra_args", "").strip()
+        if extra_vars:
+            extra_args += " " + shlex.join(["--extra-vars=" + extra_vars])  # one argument: a value starting with "-" is not read as an option
+        if ssh_password:
+            extra_args += " --ask-pass"
+        extra_args = extra_args.strip() or None
         try:
             timeout_minutes = int(settings.get("run_timeout_minutes", "60") or "0")
         except ValueError:
@@ -208,9 +257,13 @@ def _execute(run_id: int, playbook_rel_path: str, tags: str = "", limit: str = "
             cancel_callback=cancel_event.is_set,
             event_handler=event_handler,
             status_handler=status_handler,
+            suppress_env_files=True,  # keep the SSH password (and old runs' arguments) out of <runner>/env
         )
+        _clear_stale_env_files()
         if timeout_seconds:
             run_kwargs["timeout"] = timeout_seconds
+        if ssh_password:
+            run_kwargs["passwords"] = {_SSH_PROMPT: ssh_password}
 
         ar_thread, run_result = ansible_runner.run_async(**run_kwargs)
         ar_thread.join()

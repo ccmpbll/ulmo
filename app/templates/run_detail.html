@@ -19,6 +19,8 @@
 </details>
 {% elif run.tags %}<p class="muted">tags: <code>{{ run.tags }}</code></p>{% endif %}
 {% if run.limit %}<p class="muted">limit: <code>{{ run.limit }}</code></p>{% endif %}
+{% if run.extra_vars %}<p class="muted">extra vars: <code>{{ run.extra_vars }}</code></p>{% endif %}
+{% if run.used_password %}<p class="muted">SSH password: supplied for this run (not stored)</p>{% endif %}
 {% if run.playbook_rev %}
 <p class="muted">Playbook version <code>{{ run.playbook_rev }}</code>:
   {% if ran.playbook.state == "current" %}the file has not changed since.

@@ -1,10 +1,14 @@
+from urllib.parse import quote_plus
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
+from app.config import AUTH_DISABLED
 from app.database import engine
 from app.deps import require_login
 from app.models import PlaybookSchedule, RunHistory
+from app.routers.files import LOGIN_REQUIRED
 from app.services import inventory, playbook_tags, runner, scheduler, workspace
 from app.templating import templates
 
@@ -57,14 +61,20 @@ def run_playbook(
     rel_path: str = Form(...),
     tags: list[str] = Form([]),
     limit: list[str] = Form([]),
+    extra_vars: str = Form(""),
+    ssh_password: str = Form(""),
 ):
+    if AUTH_DISABLED and extra_vars.strip():  # extra vars can set connection variables, which is a way to run code
+        return RedirectResponse(f"/ansible?error={quote_plus(LOGIN_REQUIRED)}", status_code=303)
     try:
         record = runner.start_run(
             rel_path,
             triggered_by=user.username,
             tags=",".join(tags),
             limit=",".join(limit),
+            extra_vars=extra_vars,
+            ssh_password=ssh_password,
         )
-    except ValueError:
-        return RedirectResponse("/ansible?error=Unknown+playbook", status_code=303)
+    except ValueError as exc:  # unknown playbook, or extra vars / password refused by check_run_options
+        return RedirectResponse(f"/ansible?error={quote_plus(str(exc))}", status_code=303)
     return RedirectResponse(f"/runs/{record.id}", status_code=303)
