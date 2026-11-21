@@ -103,7 +103,7 @@ def test_unreadable_key_is_saved_with_a_reason_and_leaves_no_public_key():
 
     junk = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"
     warning = save("junk", junk)
-    assert warning and "correct horse" not in warning and "ssh-keygen" in warning and "invalid format" in warning, warning  # the cause, not a bare "could not read"
+    assert warning and "correct horse" not in warning and warning.startswith("ssh-keygen: Load key"), warning  # ssh-keygen's own words (they differ by OpenSSH version), not a bare "could not read"
     assert (SSH_STORAGE_DIR / "junk").exists() and not pub("junk").exists()
 
 
