@@ -242,7 +242,6 @@ pre.log {
 .playbook-facts { grid-column: 1; grid-row: 2; }
 .run-btn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .playbook-run-form { grid-column: 1 / -1; grid-row: 3; margin: 0; }
-.playbook-run-form:not(:has(.run-options)) { display: none; }
 .run-options { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .chip-section { display: flex; flex-direction: column; gap: 4px; }
 .chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -264,11 +263,17 @@ pre.log {
 .tag-chip input[type="checkbox"] { display: inline; width: auto; margin: 0; }
 .tag-chip:has(input:checked) { border-color: var(--accent); background: rgba(79, 140, 255, 0.12); }
 
-.limit-details { padding: 0; }
-.limit-details summary { cursor: pointer; list-style: none; display: inline-block; }
-.limit-details summary::-webkit-details-marker { display: none; }
-.limit-details summary::before { content: "▸ "; font-size: 0.65rem; }
-.limit-details[open] summary::before { content: "▾ "; }
+.limit-details, .extra-details { padding: 0; }
+.limit-details summary, .extra-details summary { cursor: pointer; list-style: none; display: inline-block; }
+.limit-details summary::-webkit-details-marker, .extra-details summary::-webkit-details-marker { display: none; }
+.limit-details summary::before, .extra-details summary::before { content: "▸ "; font-size: 0.65rem; }
+.limit-details[open] summary::before, .extra-details[open] summary::before { content: "▾ "; }
+.extra-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin-top: 8px; }
+.extra-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; min-width: 0; }
+.extra-fields input { margin: 0; width: 100%; }
+.extra-fields .hint { color: var(--muted); font-size: 0.72rem; }
+.extra-badge { font-size: 0.68rem; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent); text-transform: none; letter-spacing: 0; }
+@media (max-width: 640px) { .extra-fields { grid-template-columns: 1fr; } }
 
 .schedule-row { display: grid; grid-template-columns: 1fr 220px auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); margin: 0; }
 .schedule-row:last-child { border-bottom: none; }

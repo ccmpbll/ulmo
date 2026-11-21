@@ -30,6 +30,10 @@ def notify_run_complete(run: RunHistory) -> None:
         parts.append(f"tags: {run.tags}")
     if run.limit:
         parts.append(f"limit: {run.limit}")
+    if run.extra_vars:  # the values can hold a secret and this goes to an outside service
+        parts.append("extra vars")
+    if run.used_password:
+        parts.append("SSH password")
     message = title + (f" ({', '.join(parts)})" if parts else "")
 
     _send(settings, title, message)

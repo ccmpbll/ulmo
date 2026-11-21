@@ -52,7 +52,6 @@
     <button type="submit" form="run-{{ loop.index }}" class="run-btn">Run</button>
     <form method="post" action="/playbooks/run" class="playbook-run-form" id="run-{{ loop.index }}">
       <input type="hidden" name="rel_path" value="{{ pb.rel_path }}" />
-      {% if pb.tags or pb.tag_error or hosts %}
       <div class="run-options">
         {% if pb.tags %}
         <div class="chip-section">
@@ -82,8 +81,20 @@
           </div>
         </details>
         {% endif %}
+        <details class="extra-details">
+          <summary class="chip-label muted">Additional options <span class="extra-badge">this run only</span></summary>
+          <div class="extra-fields">
+            <label>Extra vars
+              <input type="text" name="extra_vars" placeholder="key=value key2=value2  or  {&quot;key&quot;: &quot;value&quot;}" maxlength="2000" autocomplete="off" spellcheck="false" onkeydown="if (event.key === 'Enter') event.preventDefault();"{% if AUTH_DISABLED %} disabled{% endif %} />
+              <span class="hint">{% if AUTH_DISABLED %}Needs a login: turn off <code>ULMO_DISABLE_AUTH</code> to use it.{% else %}Same as <code>--extra-vars</code>. Saved with the run, so put passwords in the SSH password field.{% endif %}</span>
+            </label>
+            <label>SSH password
+              <input type="password" name="ssh_password" placeholder="blank = use key" maxlength="256" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore data-form-type="other" onkeydown="if (event.key === 'Enter') event.preventDefault();" />
+              <span class="hint">Same as <code>--ask-pass</code>. Used for this run only, never saved or logged.</span>
+            </label>
+          </div>
+        </details>
       </div>
-      {% endif %}
     </form>
   </div>
   {% endfor %}

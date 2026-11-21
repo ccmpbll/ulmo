@@ -178,7 +178,7 @@
       {% for r in rows %}
       <tr>
         <td data-label="Started" class="full">{{ r.started_at | local_time }}</td>
-        <td data-label="Playbook" class="m-title">{{ r.playbook }}{% if r.tags or r.limit %}<br /><span class="muted">{% if r.tags %}tags: {{ r.tags }}{% endif %}{% if r.tags and r.limit %} · {% endif %}{% if r.limit %}limit: {{ r.limit }}{% endif %}</span>{% endif %}</td>
+        <td data-label="Playbook" class="m-title">{{ r.playbook }}{% set detail = [("tags: " ~ r.tags) if r.tags, ("limit: " ~ r.limit) if r.limit, "extra vars" if r.extra_vars, "SSH password" if r.used_password] | select | list %}{% if detail %}<br /><span class="muted">{{ detail | join(" · ") }}</span>{% endif %}</td>
         <td data-label="Status" class="m-status"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
         <td data-label="Started by">{{ r.triggered_by }}</td>
         <td data-label="Took" class="muted">{{ took(r.started_at, r.finished_at) }}</td>

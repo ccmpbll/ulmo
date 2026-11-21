@@ -62,7 +62,7 @@ def _feed(session, page: str):
     reach = current * PAGE_SIZE
     rows = []
     for r in _newest(session, RunHistory, RunHistory.started_at, reach):
-        detail = " · ".join(x for x in (f"tags: {r.tags}" if r.tags else "", f"limit: {r.limit}" if r.limit else "") if x)
+        detail = " · ".join(x for x in (f"tags: {r.tags}" if r.tags else "", f"limit: {r.limit}" if r.limit else "", "extra vars" if r.extra_vars else "", "SSH password" if r.used_password else "") if x)
         rows.append(_row("playbook", r.started_at, r.playbook, detail, r.triggered_by, r.status, r.status, r.started_at, r.finished_at, f"/runs/{r.id}"))
     for c in _newest(session, CommandRun, CommandRun.started_at, reach, [defer(CommandRun.output)]):
         status = "success" if c.status == "success" else ("running" if c.status == "running" else "failed")
